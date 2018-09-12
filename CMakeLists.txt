@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 
 project(cls)
 
-set(VERSION_STRING "1.0.0")
+set(VERSION_STRING "0.9.0")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   set(TARGET_MODIFIER "32")
