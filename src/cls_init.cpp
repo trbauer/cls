@@ -22,6 +22,7 @@ namespace fs = std::experimental::filesystem;
 
 using namespace cls;
 
+#if 0
 init::init(loc l) : location(l), intval(0), fltval(0) { }
 
 init::~init() {
@@ -662,8 +663,8 @@ void init::readDevMem(cl::CommandQueue &cq, const ErrorHandler &eh)
       eh("unsupported transfer");
     }
   } else if (image) {
-    cl::size_t<3> origin;
-    cl::size_t<3> region;
+    cl::array<size_t,3> origin;
+    cl::array<size_t,3> region;
     region[0] = img->width;
     region[1] = img->height;
     region[2] = 1;
@@ -691,8 +692,8 @@ void init::writeDevMem(cl::CommandQueue &cq, const ErrorHandler &eh) {
         eh("unsupported transfer");
       }
     } else if (image) {
-      cl::size_t<3> origin;
-      cl::size_t<3> region;
+      cl::array<size_t,3> origin;
+      cl::array<size_t,3> region;
       region[0] = img->width;
       region[1] = img->height;
       region[2] = 1;
@@ -701,7 +702,7 @@ void init::writeDevMem(cl::CommandQueue &cq, const ErrorHandler &eh) {
     }
   } catch (const cl::Error &e) {
     std::stringstream ss;
-    ss << e.what() << " " << e.err() << " (" << ErrorToString(e.err()) << ")";
+    ss << e.what() << " " << e.err() << " (" << status_to_symbol(e.err()) << ")";
     eh(ss.str().c_str());
   }
 }
@@ -906,7 +907,7 @@ void init::setKernelArgImg(
   } catch (const cl::Error &e) {
     std::stringstream ss;
     ss << "clCreateImage: " << e.err() <<
-      " (" << ErrorToString(e.err()) << ")";
+      " (" << status_to_symbol(e.err()) << ")";
     eh(ss.str().c_str());
   }
   this->img = img;
@@ -1013,3 +1014,5 @@ std::string ndr::str() const
   str(ss);
   return ss.str();
 }
+
+#endif

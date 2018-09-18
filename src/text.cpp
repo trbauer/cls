@@ -155,13 +155,15 @@ void text::printf_to(std::ostream &os, const char *patt, ...)
   va_end(va);
 }
 
-std::string text::printf(std::ostream &os, const char *patt, ...)
+
+
+std::string text::printf(const char *patt, ...)
 {
   std::stringstream ss;
 
   va_list va;
   va_start(va, patt);
-  printf_to(os, patt,va);
+  printf_to(ss, patt,va);
   va_end(va);
 
   return ss.str();

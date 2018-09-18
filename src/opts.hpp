@@ -34,7 +34,7 @@ struct ErrorHandler {
     ErrorHandler(const char *exe) : exeName(exe) {}
 
     void operator()(const std::string &msg) const {
-        FATAL("%s",msg.c_str());
+        FATAL("%s\n",msg.c_str());
     }
     void operator()(const std::string &msg, const std::string &usage) const {
         sys::message_for_level(2,msg.c_str());
@@ -48,9 +48,10 @@ static std::string concat(
     const std::string &b,
     const std::string &c = "",
     const std::string &d = "",
-    const std::string &e = "") {
+    const std::string &e = "",
+    const std::string &f = "") {
     std::stringstream ss;
-    ss << a << b << c << d << e;
+    ss << a << b << c << d << e << f;
     return ss.str();
 }
 
@@ -171,7 +172,8 @@ struct Opt {
                     ": invalid ",
                     optCheck ? "option" : "argument",
                     ": ",
-                    msg),
+                    msg,
+                    "\n"),
                 msgHelp);
         };
         const char *token = argv[argIx];

@@ -1,483 +1,20 @@
-#include "cls.hpp"
-#include "svm.hpp"
-#include "system.hpp"
-#include "text.hpp"
-
-#define YY_DECL cls::Lexeme yylex (yyscan_t yyscanner, unsigned &inp_off, unsigned &strlit_off)
-#ifndef YY_NO_UNISTD_H
-#define YY_NO_UNISTD_H
-#endif
-#include "cls_lex.yy.hpp"
-YY_DECL;
+#include "cls_parser.hpp"
+#include "parser.hpp"
+#include "../cls.hpp"
+// TODO: remove (since we now use cl2.hpp
+#include "../svm.hpp"
+#include "../system.hpp"
 
 #include <sstream>
 #include <iostream>
 // #include <filesystem>
 // using namespace std::tr2::sys;
 // namespace fs = std::tr2::sys;
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
+// #include <experimental/filesystem>
+// namespace fs = std::experimental::filesystem;
 
-using namespace cls;
+#if 0
 
-loc loc::INVALID(0, 0, 0, 0);
-
-static const char *LexemeString(const Lexeme &l)
-{
-#define CLS_LEXEME_TOKEN(T) case Lexeme::T: return #T
-  switch (l) {
-    CLS_LEXEME_TOKEN(LEXICAL_ERROR);
-    CLS_LEXEME_TOKEN(NEWLINE);
-
-    CLS_LEXEME_TOKEN(LANGLE); // <
-    CLS_LEXEME_TOKEN(RANGLE); // >
-    CLS_LEXEME_TOKEN(LBRACK); // [
-    CLS_LEXEME_TOKEN(RBRACK); // ]
-    CLS_LEXEME_TOKEN(LBRACE); // {
-    CLS_LEXEME_TOKEN(RBRACE); // }
-    CLS_LEXEME_TOKEN(LPAREN); // (
-    CLS_LEXEME_TOKEN(RPAREN); // )
-
-    CLS_LEXEME_TOKEN(AMP);    // &
-    CLS_LEXEME_TOKEN(PIPE);   // |
-    CLS_LEXEME_TOKEN(DOT);    // .
-    CLS_LEXEME_TOKEN(COMMA);  // ,
-    CLS_LEXEME_TOKEN(SEMI);   // ;
-    CLS_LEXEME_TOKEN(COLON);  // :
-
-    CLS_LEXEME_TOKEN(TILDE);  // ~
-
-    CLS_LEXEME_TOKEN(BANG);   // !
-    CLS_LEXEME_TOKEN(AT);     // @
-    CLS_LEXEME_TOKEN(HASH);   // #
-    CLS_LEXEME_TOKEN(EQ);     // =
-
-    CLS_LEXEME_TOKEN(MUL);    // *
-    CLS_LEXEME_TOKEN(DIV);    // /
-    CLS_LEXEME_TOKEN(MOD);    // %
-    CLS_LEXEME_TOKEN(ADD);    // +
-    CLS_LEXEME_TOKEN(SUB);    // -
-    CLS_LEXEME_TOKEN(LSH);    // <<
-    CLS_LEXEME_TOKEN(RSH);    // >>
-
-    CLS_LEXEME_TOKEN(IDENT);  // [_a-zA-Z][_a-zA-Z0-9]*
-    CLS_LEXEME_TOKEN(INTLIT02); // an integral pattern
-    CLS_LEXEME_TOKEN(INTLIT10); // an integral pattern
-    CLS_LEXEME_TOKEN(INTLIT16); // an integral pattern
-    CLS_LEXEME_TOKEN(FLTLIT); // a floating point pattern
-
-    CLS_LEXEME_TOKEN(END_OF_FILE);
-#undef CLS_LEXEME_TOKEN
-  default: return "?";
-    //  default: {
-    //    static char buf[16];
-    //    sprintf(buf,"%d?",(int)l);
-    //    return buf;
-    //    }
-  }
-}
-
-static const char *LexemeSyntax(const Lexeme &l)
-{
-#define CLS_LEXEME_TOKEN(T,S) case Lexeme::T: return S;
-  switch (l) {
-  CLS_LEXEME_TOKEN(LEXICAL_ERROR,"ERROR");
-  CLS_LEXEME_TOKEN(NEWLINE,"newline");
-
-  CLS_LEXEME_TOKEN(LANGLE,"<"); // <
-  CLS_LEXEME_TOKEN(RANGLE,">"); // >
-  CLS_LEXEME_TOKEN(LBRACK,"["); // [
-  CLS_LEXEME_TOKEN(RBRACK,"]"); // ]
-  CLS_LEXEME_TOKEN(LBRACE,"{"); // {
-  CLS_LEXEME_TOKEN(RBRACE,"}"); // }
-  CLS_LEXEME_TOKEN(LPAREN,"("); // (
-  CLS_LEXEME_TOKEN(RPAREN,")"); // )
-
-  CLS_LEXEME_TOKEN(AMP,"&");    // &
-  CLS_LEXEME_TOKEN(PIPE,"|");   // |
-  CLS_LEXEME_TOKEN(DOT,".");    // .
-  CLS_LEXEME_TOKEN(COMMA,",");  // ,
-  CLS_LEXEME_TOKEN(SEMI,";");   // ;
-  CLS_LEXEME_TOKEN(COLON,":");  // :
-
-  CLS_LEXEME_TOKEN(TILDE,"~");  // ~
-
-  CLS_LEXEME_TOKEN(BANG,"!");   // !
-  CLS_LEXEME_TOKEN(AT,"@");     // @
-  CLS_LEXEME_TOKEN(HASH,"#");   // #
-  CLS_LEXEME_TOKEN(EQ,"=");     // =
-
-  CLS_LEXEME_TOKEN(MUL,"*");    // *
-  CLS_LEXEME_TOKEN(DIV,"/");    // /
-  CLS_LEXEME_TOKEN(MOD,"%");    // %
-  CLS_LEXEME_TOKEN(ADD,"+");    // +
-  CLS_LEXEME_TOKEN(SUB,"-");    // -
-  CLS_LEXEME_TOKEN(LSH,"<<");    // <<
-  CLS_LEXEME_TOKEN(RSH,">>");    // >>
-
-  CLS_LEXEME_TOKEN(IDENT,"identifier");  // [_a-zA-Z][_a-zA-Z0-9]*
-  CLS_LEXEME_TOKEN(INTLIT02,"int"); // an integral pattern
-  CLS_LEXEME_TOKEN(INTLIT10,"int"); // an integral pattern
-  CLS_LEXEME_TOKEN(INTLIT16,"int"); // an integral pattern
-  CLS_LEXEME_TOKEN(FLTLIT,"float"); // a floating point pattern
-
-  CLS_LEXEME_TOKEN(END_OF_FILE,"<<EOF>>");
-#undef CLS_LEXEME_TOKEN
-  default: return "?";
-    //  default: {
-    //    static char buf[16];
-    //    sprintf(buf,"%d?",(int)l);
-    //    return buf;
-    //    }
-  }
-}
-
-std::string diag::toString() const
-{
-  std::stringstream ss;
-  if (location != loc::INVALID) {
-    ss << location.line << "." << location.col << ": ";
-  }
-  ss << message << "\n";
-
-  size_t off = location.offset - (location.col - 1);
-  while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
-    ss << input[off++];
-  }
-  ss << "\n";
-  if (location.col > 0) {
-    for (size_t i = 0; i < location.col - 1; i++) {
-      ss << ' ';
-    }
-  }
-  ss << "^\n";
-  return ss.str();
-}
-
-struct Token {
-  Lexeme lexeme;
-  loc    loc;
-
-  Token() : lexeme(Lexeme::LEXICAL_ERROR) { }
-  Token(
-    const Lexeme &lxm,
-    uint32_t ln,
-    uint32_t cl,
-    uint32_t off,
-    uint32_t len) : lexeme(lxm), loc(ln, cl, off, len)
-  {
-  }
-};
-
-class Parser {
-  std::vector<Token>  m_tokens;
-  size_t              m_offset;
-  Token               m_eof;
-  std::string         m_input;
-public:
-  Parser(const std::string &inp)
-    : m_offset(0)
-    , m_eof(Lexeme::END_OF_FILE, 0, 0, 0, 0)
-    , m_input(inp)
-  {
-    yyscan_t yy;
-
-    yylex_init(&yy);
-    yy_scan_string(inp.c_str(), yy);
-    yyset_lineno(1, yy);
-    yyset_column(1, yy);
-
-    unsigned inpOff = 0, bolOff = 0;
-    unsigned strLitOff;
-
-    Lexeme lxm;
-    while (true) {
-      lxm = yylex(yy, inpOff, strLitOff);
-      uint32_t lno = (uint32_t)yyget_lineno(yy);
-      uint32_t len =
-        (lxm == cls::Lexeme::STRLIT) ?
-          inpOff - strLitOff : (uint32_t)yyget_leng(yy);
-      uint32_t col = (uint32_t)yyget_column(yy) - len;
-      uint32_t off =
-        (lxm == cls::Lexeme::STRLIT) ?
-          strLitOff : (uint32_t)inpOff;
-      if (lxm == cls::Lexeme::LEXICAL_ERROR) {
-        fatalAt(loc(lno,col,off,len), "lexical error");
-      }
-
-      if (lxm == Lexeme::NEWLINE) {
-        // flex increments yylineno and clear's column before this
-        // we fix this by backing up the newline for that case
-        // and inferring the final column from the beginning of
-        // the last line
-        lno--;
-        col = inpOff - bolOff + 1;
-        bolOff = inpOff;
-      }
-      // const char *str = yyget_text(yy);
-      // printf("AT %u.%u(%u:%u:\"%s\"): %s\n",
-      //  lno,col,off,len,str,LexemeString(lxm));
-      // struct Loc loc(lno,col,off,len);
-      // ShowToken(inp,loc,std::cout);
-
-      if (lxm == Lexeme::END_OF_FILE) {
-        m_eof = Token(lxm, lno, col, off, len); // update EOF w/ loc
-        m_tokens.push_back(m_eof);
-        break;
-      }
-      m_tokens.emplace_back(lxm, lno, col, off, len);
-      if (lxm != cls::Lexeme::STRLIT)
-        inpOff += len;
-    }
-
-    yylex_destroy(yy);
-  } // CLSParser::CLSParser
-
-  template <typename...Ts>
-  void fatal(Ts... ts) {
-    fatalAt(nextLoc(),ts...);
-  }
-  template <typename...Ts>
-  void fatalAt(loc loc, Ts... ts) {
-    std::stringstream ss;
-    text::format_to(ss, ts...);
-    throw diag(loc, ss.str(), m_input);
-  }
-
-  /*
-  template <typename T1>
-  void fatal(const T1 &t1) {
-    fatalAt(nextLoc(),t1);
-  }
-  template <typename T1,typename T2>
-  void fatal(const T1 &t1,const T2 &t2) {
-    fatalAt(nextLoc(),t1,t2);
-  }
-  template <typename T1,typename T2,typename T3>
-  void fatal(const T1 &t1,const T2 &t2,const T3 &t3) {
-    fatalAt(nextLoc(),t1,t2,t3);
-  }
-  template <typename T1,typename T2,typename T3,typename T4>
-  void fatal(const T1 &t1,const T2 &t2,const T3 &t3,const T4 &t4) {
-    fatalAt(nextLoc(),t1,t2,t3,t4);
-  }
-  template <typename T1,typename T2,typename T3,typename T4,typename T5>
-  void fatal(const T1 &t1,const T2 &t2,const T3 &t3,const T4 &t4,const T5 &t5) {
-    fatalAt(nextLoc(),t1,t2,t3,t4,t5);
-  }
-
-  template <typename T, typename...Ts>
-  void appendAll(std::stringstream &ss, T t, Ts...ts) {
-    ss << t;
-    appendAll(ss,ts...);
-  }
-  template <typename T, typename...Ts>
-  void appendAll(std::stringstream &ss, T t) {
-    ss << t;
-  }
-  template <typename T1>
-  void fatalAt(loc loc, const T1 &t1) {
-    std::stringstream ss;
-    ss << t1;
-    throw diag(loc, ss.str(), m_input);
-  }
-  template <typename T1,typename T2>
-  void fatalAt(loc loc, const T1 &t1, const T2 &t2) {
-    std::stringstream ss;
-    ss << t1;
-    ss << t2;
-    throw diag(loc, ss.str(), m_input);
-  }
-  template <typename T1,typename T2,typename T3>
-  void fatalAt(loc loc, const T1 &t1, const T2 &t2, const T3 &t3) {
-    std::stringstream ss;
-    ss << t1;
-    ss << t2;
-    ss << t3;
-    throw diag(loc, ss.str(), m_input);
-  }
-  template <typename T1,typename T2,typename T3,typename T4>
-  void fatalAt(loc loc, const T1 &t1, const T2 &t2, const T3 &t3, const T4 &t4) {
-    std::stringstream ss;
-    ss << t1;
-    ss << t2;
-    ss << t3;
-    ss << t4;
-    throw diag(loc, ss.str(),m_input);
-  }
-  template <typename T1,typename T2,typename T3,typename T4,typename T5>
-  void fatalAt(loc loc, const T1 &t1, const T2 &t2, const T3 &t3, const T4 &t4, const T5 &t5) {
-    std::stringstream ss;
-    ss << t1;
-    ss << t2;
-    ss << t3;
-    ss << t4;
-    ss << t5;
-    throw diag(loc, ss.str(), m_input);
-  }
-  */
-
-  const std::string &input() const {return m_input;}
-
-  bool endOfFile() const {
-    return m_tokens[m_offset].lexeme == Lexeme::END_OF_FILE;
-  }
-  std::string tokenString() const {
-    auto loc = nextLoc();
-    return input().substr(loc.offset, loc.extent);
-  }
-  std::string tokenStringLiteral() const {
-    if (!lookingAt(STRLIT)) {
-      FATAL("INTERNAL ERROR: need to be looking at strlit\n");
-    }
-    auto str = tokenString();
-    std::stringstream ss;
-    for (size_t i = 1; i < str.length() - 1; i++) {
-      if (str[i] == '\\') {
-        ss << str[i + 1];
-        i++;
-      } else {
-        ss << str[i];
-      }
-    }
-    return ss.str();
-  }
-  const Token &next(int i = 0) const {
-    int k = (int)m_offset + i;
-    if (k < 0 || k >= (int)m_tokens.size()) {
-      return m_eof;
-    } else {
-      return m_tokens[k];
-    }
-  }
-  const loc &nextLoc(int i = 0) const {
-    return next(i).loc;
-  }
-  bool skip(int i = 1) {
-    int k = (int)m_offset + i;
-    if (k < 0 || k >= (int)m_tokens.size()) {
-      return false;
-    }
-    m_offset = (size_t)k;
-    return true;
-  }
-  bool lookingAt(Lexeme lx, int i = 0) const {
-    return next(i).lexeme == lx;
-  }
-  bool lookingAtIdent(int i = 0) const {
-    return next(i).lexeme == IDENT;
-  }
-  bool lookingAtIdent(const char *v, int i = 0) {
-    if (!lookingAt(IDENT)) {
-      return false;
-    }
-    auto loc = nextLoc();
-    auto slen = strlen(v);
-    if (loc.extent > slen)
-      return false;
-    auto str = input().c_str() + loc.offset;
-    if (strncmp(str,v,slen) != 0) {
-      return false;
-    }
-    return true;
-  }
-  bool lookingAtIdent(const char *v1, const char *v2, int i = 0) {
-    return lookingAtIdent(v1, i) || lookingAtIdent(v2, i);
-  }
-  bool lookingAtInt() const {
-    return lookingAt(INTLIT02) || lookingAt(INTLIT10) || lookingAt(INTLIT16);
-  }
-  bool lookingAtFloat() const {
-    return lookingAt(FLTLIT);
-  }
-
-  void consume(Lexeme lx) {
-    if (lookingAt(lx)) {
-      (void)skip();
-    } else {
-      fatal("expected ", LexemeSyntax(lx));
-    }
-  }
-  bool consumeIf(Lexeme lx) {
-    if (lookingAt(lx)) {
-      (void)skip();
-      return true;
-    }
-    return false;
-  }
-  void consumeOneOf(const char *expected, Lexeme lx1, Lexeme lx2) {
-    consumeOneOf(expected, lx1, lx2, lx2);
-  }
-  void consumeOneOf(const char *expected, Lexeme lx1, Lexeme lx2, Lexeme lx3) {
-    if (lookingAt(lx1) || lookingAt(lx2) || lookingAt(lx3)) {
-      (void)skip();
-    } else {
-      std::string str;
-      if (expected == nullptr) {
-        std::stringstream ss;
-        ss << "expected " << LexemeString(lx1) << ", " <<
-          LexemeString(lx2) << " or " << LexemeString(lx3);
-        str = ss.str();
-      } else {
-        str = expected;
-      }
-      fatal(str.c_str());
-    }
-  }
-  std::string consumeIdentStringAs(const char *group = "identifier") {
-    if (!lookingAt(IDENT)) {
-      fatal("expected ", group);
-    }
-    auto s = tokenString();
-    skip();
-    return s;
-  }
-  void consumeIdentAs(const char *kw, const char *group = "identifier") {
-    if (!lookingAt(IDENT)) {
-      fatal("expected \"", group, "\"");
-    }
-    auto loc = nextLoc();
-    auto str = input().c_str() + loc.offset;
-    if (strncmp(str,kw,strlen(kw)) != 0) {
-      fatal("expected \"", group, "\"");
-    }
-    skip();
-  }
-  bool consumeIfIdent(const char *ident) {
-    if(lookingAtIdent(ident)) {
-      skip();
-      return true;
-    }
-    return false;
-  }
-  bool consumeIfIdent(const char *ident1, const char *ident2) {
-    if(lookingAtIdent(ident1,ident2)) {
-      skip();
-      return true;
-    }
-    return false;
-  }
-  int64_t consumeInt() {
-    if (!lookingAtInt()) {
-      fatal("expected int");
-    }
-    std::stringstream ss(tokenString());
-    int64_t x;
-    ss >> x;
-    skip();
-    return x;
-  }
-  double consumeFloat() {
-    if (!lookingAtFloat()) {
-      fatal("expected float");
-    }
-    std::stringstream ss(tokenString());
-    double x;
-    ss >> x;
-    skip();
-    return x;
-  }
-}; // class Parser
 
 std::string arg::toSyntax() const {
   std::stringstream ss;
@@ -512,13 +49,12 @@ std::string arg::toSyntax() const {
   return ss.str();
 }
 
-
 // used to parse raw opencl code
-struct CLParser : Parser {
+struct CLParser : parser {
   ndr &clc;
   const size_t device_ptr_size;
   CLParser(ndr &_clc, size_t ptr_size)
-    : Parser(_clc.prg.source), clc(_clc), device_ptr_size(ptr_size)
+    : parser(_clc.prg.source), clc(_clc), device_ptr_size(ptr_size)
   {
   }
 
@@ -812,13 +348,13 @@ std::string PreProcessPath(
 
 
 // used to parse cl scripts
-struct CLSParser : Parser {
+struct CLSParser : parser {
   ndr *clc = nullptr;
   const cl::Device &device;
   cl::Context &context;
 
   CLSParser(cl::Context &c, const cl::Device &d, const std::string &inp)
-    : Parser(inp), context(c), device(d)
+    : parser(inp), context(c), device(d)
   { }
 
   // foo-bar/baz.cl[-DT=int]`kernel<...>(...)
@@ -964,7 +500,7 @@ struct CLSParser : Parser {
   // e.g. "foo-bar/baz.cl/"
   // or "../foo/bar/baz.cl"
   // or "/foo/bar/baz"
-  std::string parsePath(cls::Lexeme endLxm) {
+  std::string parsePath(cls::lexeme endLxm) {
     if (lookingAt(STRLIT)) {
       return tokenStringLiteral();
     } else {
@@ -1125,7 +661,7 @@ struct CLSParser : Parser {
           default:
             fatalAt(
               loc(attrsLoc.line,
-                attrsLoc.col + (uint32_t)ci, attrsLoc.offset +  (uint32_t)ci, 1),
+                attrsLoc.column + (uint32_t)ci, attrsLoc.offset +  (uint32_t)ci, 1),
               "invalid buffer attribute");
           }  // for switch
         } // for attr chars
@@ -1241,7 +777,7 @@ struct CLSParser : Parser {
     ci->type = init::LIT_VEC;
   }
 
-  void applyBinary(const Token &op, init *lhs, init *rhs) {
+  void applyBinary(const token &op, init *lhs, init *rhs) {
     if (lhs->type == init::LIT_VEC || rhs->type == init::LIT_VEC) {
       // ensure both are vectors, promote if needed
       if (lhs->type != init::LIT_VEC) {
@@ -1339,7 +875,7 @@ struct CLSParser : Parser {
         }
         toVector(&negOne, e->children.size());
       }
-      Token t(MUL, loc.line, loc.col, loc.offset, loc.extent);
+      token t(MUL, loc.line, loc.column, loc.offset, loc.extent);
       applyBinary(t, e, &negOne);
     }
     return e;
@@ -1461,4 +997,489 @@ ndr *cls::ParseCLS(
   CLSParser p(ctx, dev, inp);
   return p.parse();
 }
+#endif
 
+// a hacky solution to enable use to read tokens including spaces
+// e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
+//       ^^^^^^^^^^^^^^^^^^^^^^
+//                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+static std::string consumeToChar(cls::parser &p, const char *set)
+{
+  const std::string &s = p.input();
+  size_t start = p.nextLoc().offset;
+  size_t len = 0;
+  while (start + len < s.length()) {
+    if (strchr(set, s[start + len])) {
+      break;
+    }
+    len++;
+  }
+  while(p.nextLoc().offset != start + len)
+    p.skip();
+  return s.substr(start, len);
+}
+
+static cls::init_spec_atom *parseInitAtom(cls::parser &p);
+
+static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
+{
+  auto loc = p.nextLoc();
+  if (p.lookingAt(STRLIT)) {
+    auto s = p.tokenStringLiteral();
+    p.skip();
+    return new cls::init_spec_file(loc, s);
+  } else if (p.lookingAtFloat()) {
+    return new cls::init_spec_float(loc, p.consumeFloat());
+  } else if (p.lookingAtInt()) {
+    return new cls::init_spec_int(loc, p.consumeInt());
+  } else if (p.lookingAtIdent()) {
+    // e.g. "X" or "g.x"
+    auto s = p.tokenString();
+    p.skip();
+    if (p.lookingAt(DOT)) {
+      while (p.consumeIf(DOT)) {
+        s += '.';
+        if (p.lookingAt(IDENT)) {
+          p.fatal("syntax error in initializer expression field access");
+        }
+        s += p.tokenString();
+      }
+      return new cls::init_spec_symbol(loc, s);
+    } else if (p.lookingAt(LPAREN) || p.consumeIf(LANGLE)) {
+      if (s == "random") {
+        int64_t seed = 0;
+        if (p.consumeIf(LANGLE)) {
+          seed = p.consumeInt("seed (int)");
+          p.consume(RANGLE);
+        }
+        auto func = new cls::init_spec_rng_generator(loc, seed);
+        if (p.consumeIf(LBRACK)) {
+          func->e_lo = parseInitAtom(p);
+          if (p.consumeIf(COMMA))
+            func->e_hi = parseInitAtom(p);
+          p.consume(RBRACK);
+        }
+        return func;
+      } else if (s == "seq") {
+        p.fatal("parseInitAtomPrim: finish adding functions");
+      } else {
+        p.fatal("undefined function");
+      }
+      return nullptr; // unreachable
+    } else {
+      // regular symbol
+      //
+      // TODO: support E and PI
+      return new cls::init_spec_symbol(loc, s);
+    }
+  } else if (p.consumeIf(LBRACK)) {
+    auto re = new cls::init_spec_record(loc);
+    if (!p.lookingAt(RPAREN))
+      re->children.push_back(parseInitAtom(p));
+    while (!p.lookingAt(COMMA))
+      re->children.push_back(parseInitAtom(p));
+    p.consume(RBRACK);
+    return re;
+  } else if (p.lookingAt(LPAREN)) {
+    cls::init_spec_atom *e = parseInitAtom(p);
+    p.consume(RPAREN);
+    return e;
+  } else {
+    p.fatal("syntax error in initializer expression");
+    return nullptr;
+  }
+}
+static cls::init_spec_atom *parseInitAtomMul(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomPrim(p);
+  auto loc = p.nextLoc();
+  while (p.lookingAt(MUL) || p.lookingAt(DIV)) {
+    auto op = p.lookingAt(MUL) ?
+      cls::init_spec_bin_expr::bin_op::E_MUL :
+      cls::init_spec_bin_expr::bin_op::E_DIV;
+    p.skip();
+    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomPrim(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtomAdd(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomMul(p);
+  auto loc = p.nextLoc();
+  while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
+    auto op = p.lookingAt(ADD) ?
+      cls::init_spec_bin_expr::bin_op::E_ADD :
+      cls::init_spec_bin_expr::bin_op::E_SUB;
+    p.skip();
+    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomMul(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtomShift(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomAdd(p);
+  auto loc = p.nextLoc();
+  while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
+    auto op = p.lookingAt(LSH) ?
+      cls::init_spec_bin_expr::bin_op::E_LSH :
+      cls::init_spec_bin_expr::bin_op::E_RSH;
+    p.skip();
+    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomAdd(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtomBitwiseAND(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomShift(p);
+  auto loc = p.nextLoc();
+  while (p.consumeIf(AMP)) {
+    e = new cls::init_spec_bin_expr(
+      loc,
+      cls::init_spec_bin_expr::bin_op::E_AND,
+      e,
+      parseInitAtomShift(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtomBitwiseXOR(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomBitwiseAND(p);
+  auto loc = p.nextLoc();
+  while (p.consumeIf(CIRC)) {
+    e = new cls::init_spec_bin_expr(
+      loc,
+      cls::init_spec_bin_expr::bin_op::E_XOR,
+      e,
+      parseInitAtomBitwiseAND(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtomBitwiseOR(cls::parser &p)
+{
+  cls::init_spec_atom *e = parseInitAtomBitwiseXOR(p);
+  auto loc = p.nextLoc();
+  while (p.consumeIf(PIPE)) {
+    e = new cls::init_spec_bin_expr(
+      loc,
+      cls::init_spec_bin_expr::bin_op::E_OR,
+      e,
+      parseInitAtomBitwiseXOR(p));
+    loc = p.nextLoc();
+  }
+  return e;
+}
+static cls::init_spec_atom *parseInitAtom(cls::parser &p)
+{
+  return parseInitAtomBitwiseOR(p);
+}
+
+static cls::init_spec *parseInit(cls::parser &p)
+{
+  auto l = p.nextLoc();
+  cls::init_spec_atom *e = parseInitAtom(p);
+  if (p.consumeIf(COLON)) {
+    // memory initializer
+    cls::init_spec_memory *m = new cls::init_spec_memory(l);
+    m->root = e;
+    if (p.consumeIf(LBRACK)) {
+      cls::init_spec_atom *de = parseInitAtom(p);
+      m->dimension = de;
+      p.consume(RBRACK);
+    }
+    // attributes
+    if (!p.lookingAt(IDENT)) {
+      p.fatal("expected buffer/image attributes");
+    }
+    auto s = p.tokenString();
+    p.skip();
+    for (size_t i = 0; i < s.size(); i++) {
+      auto setTx = [&] (cls::init_spec_memory::transfer t) {
+        if (m->transfer_properties != cls::init_spec_memory::transfer::TX_INVALID) {
+          p.fatalAt(l, "memory transfer respecification");
+        }
+        m->transfer_properties = t;
+      };
+
+      switch (s[i]) {
+      case 'r':
+        m->access_properties = (cls::init_spec_memory::access)(
+          m->access_properties |
+          cls::init_spec_memory::access::INIT_SPEC_MEM_READ);
+        break;
+      case 'w':
+        m->access_properties = (cls::init_spec_memory::access)(
+          m->access_properties |
+          cls::init_spec_memory::access::INIT_SPEC_MEM_WRITE);
+        break;
+      case 's': // SVM
+        if (i < s.size() - 1) {
+          i++;
+          switch (s[i]) {
+          case 'c':
+          case 'f':
+            if (m->transfer_properties != cls::init_spec_memory::transfer::TX_INVALID)
+              p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
+            setTx(s[i] == 'c' ?
+              cls::init_spec_memory::transfer::TX_SVM_COARSE :
+              cls::init_spec_memory::transfer::TX_SVM_FINE);
+            break;
+          default:
+            // p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
+            // assume coarse if only one char given
+            setTx(cls::init_spec_memory::transfer::TX_SVM_COARSE);
+          }
+        }
+        break;
+      case 'm':
+        setTx(cls::init_spec_memory::transfer::TX_MAP);
+        break;
+      case 'c':
+        setTx(cls::init_spec_memory::transfer::TX_COPY);
+        break;
+      default:
+        l.column += (uint32_t)i;
+        l.offset += (uint32_t)i;
+        p.fatalAt(l, "invalid memory attribute");
+      }
+    }
+    if (m->transfer_properties == cls::init_spec_memory::transfer::TX_INVALID)
+      m->transfer_properties = cls::init_spec_memory::transfer::TX_COPY; // default to copy
+    return m;
+  } else {
+    // regular primitive
+    return e;
+  }
+}
+
+// let X=...
+static void parseLetStatement(cls::parser &p, cls::script &s)
+{
+  auto let_loc = p.nextLoc();
+  p.skip();      // let
+  auto name = p.tokenString(); // X
+  if (s.let_bindings.find(name) != s.let_bindings.end()) {
+    p.fatal(name, ": redefinition of let binding");
+  }
+  p.skip();      // X
+  p.consume(EQ); // =
+  auto init = parseInit(p); // TODO: need to partial applications
+  s.let_bindings[name] = init;
+  s.statements.push_back(new cls::let_spec(let_loc, name, init));
+}
+
+
+// #1`path/foo.cl`kernel<128,16>(...)
+static void parseDispatchStatement(cls::parser &p, cls::script &s)
+{
+  auto loc = p.nextLoc();
+  auto d = new cls::dispatch_spec(loc);
+  if (p.consumeIf(HASH)) {
+    if (p.lookingAt(STRLIT)) {
+      if (p.lookingAt(STRLIT)) {
+        d->device.setSource(p.tokenStringLiteral());
+      } else {
+        d->device.setSource(p.tokenString());
+      }
+      p.skip();
+    } else if (p.lookingAtInt()) {
+      d->device.setSource((int)p.consumeInt("device index (integer)"));
+    } else {
+      p.fatal("invalid device specification");
+    }
+    p.consume(BACKTICK);
+  } else {
+    d->device.kind = cls::device_spec::BY_DEFAULT;
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //    ^^^^^^^^^^^
+  // #GTX`"foo/spaces in path/k.cl"`kernel<...>(...)
+  //      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  d->program.defined_at = p.nextLoc();
+  if (p.lookingAt(STRLIT)) {
+    d->program.program_path = p.tokenStringLiteral(); p.skip();
+  } else {
+    d->program.program_path = consumeToChar(p, "[`");
+  }
+
+  // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
+  //               ^^^^^^^^^^^^
+  if (p.consumeIf(LBRACK)) {
+    d->program.build_opts = consumeToChar(p, "]");
+    p.consume(RBRACK);
+  }
+  p.consume(BACKTICK);
+
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //                ^^^^^^
+  if (p.lookingAt(IDENT)) {
+    d->kernel.defined_at =
+      d->kernel.defined_at = p.nextLoc();
+    d->kernel.kernel_name = p.tokenString(); p.skip();
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024>(...)
+  //                      ^^^^^^^^^^^
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //                      ^^^^^^^^^^^^^^^^^
+  if (p.consumeIf(LANGLE)) {
+    auto parseDim = [&](bool allow_null) {
+      cls::dim_spec d(p.nextLoc());
+      if (p.lookingAtIdent("nullptr") || p.lookingAtIdent("NULL")) {
+        if (!allow_null)
+          p.fatal(p.tokenString(), " not allowed here");
+        p.skip();
+      } else if (p.lookingAtInt()) {
+        // 1024 x 768
+        // 0x200 x 0x100
+        d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
+        while (p.lookingAtIdent("x")) {
+          p.skip();
+          d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
+        }
+      } else if (p.lookingAt(DIMENSION)) {
+        // 1024x768
+        auto s = p.tokenString();
+        size_t s_off = 0;
+        auto parseDimCoord = [&]() {
+          if (s_off == s.size() || !isdigit(s[s_off])) {
+            p.fatal("syntax error in dimension");
+          }
+          size_t val = 0;
+          while (s_off < s.size() && isdigit(s[s_off])) {
+            s_off++;
+            val = 10*val + s[s_off] - '0';
+          }
+          return val;
+        };
+        d.dims.push_back(parseDimCoord());
+        while (s_off < s.size() && s[s_off] == 'x') {
+          s_off++;
+          d.dims.push_back(parseDimCoord());
+        }
+        p.skip();
+      } else {
+        p.fatal("expected dimension");
+      }
+      return d;
+    };
+    d->global_size = parseDim(false);
+    if (p.consumeIf(COMMA)) {
+      d->local_size = parseDim(true);
+    }
+    p.consume(RANGLE);
+  } // end dimension part <...>
+
+  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33)
+  //                                 ^^^^^^^^^^^^^
+  p.consume(LPAREN);
+  while (!p.lookingAt(RPAREN)) {
+    d->arguments.push_back(parseInit(p));
+    if (!p.consumeIf(COMMA))
+      break;
+  }
+  p.consume(RPAREN);
+
+  s.statements.push_back(d);
+}
+
+static cls::init_spec_symbol *parseSymbol(cls::parser &p)
+{
+  auto loc = p.nextLoc();
+  if (p.lookingAtIdent()) {
+    auto ident = p.tokenString();
+    return new cls::init_spec_symbol(loc, ident);
+  } else {
+    p.fatal("expected identifier");
+    return nullptr;
+  }
+}
+
+// template<typename T>
+// static bool parseBuiltIn(Parser &p, cls::script &s) {
+//  s.statements.emplace_back(T,);
+// }
+
+// barrier | diff(X,Y) | print(X) | save(sym,X)
+static bool parseBuiltIn(cls::parser &p, cls::script &s)
+{
+  auto loc = p.nextLoc();
+  if (p.lookingAtIdent("barrier")) {
+      s.statements.push_back(new cls::barrier_spec(loc));
+      p.skip();
+      if (p.consumeIf(LPAREN)) // optional ()
+        p.consume(RPAREN);
+    return true;
+  } else if (p.lookingAtIdent("diff")) {
+    p.skip();
+    p.consume(LPAREN);
+    auto *ref = parseInit(p);
+    p.consume(COMMA);
+    cls::init_spec_symbol *sut = parseSymbol(p);
+    s.statements.push_back(new cls::diff_spec(loc, ref, sut));
+    p.consume(RPAREN);
+    return true;
+  } else if (p.lookingAtIdent("print")) {
+    p.skip();
+    p.consume(LPAREN);
+    cls::init_spec_symbol *val = parseSymbol(p);
+    s.statements.push_back(new cls::print_spec(loc, val));
+    p.consume(RPAREN);
+    return true;
+  } else if (p.lookingAtIdent("save")) {
+    p.skip();
+    p.consume(LPAREN);
+    if (!p.lookingAt(STRLIT))
+      p.fatal("expected file name (string literal)");
+    std::string file = p.tokenStringLiteral();
+    cls::init_spec_symbol *val = parseSymbol(p);
+    s.statements.push_back(new cls::save_spec(loc, file, val));
+    p.consume(RPAREN);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+static void parseStatementLine(cls::parser &p, cls::script &s)
+{
+  if (p.lookingAtIdent("let") && p.lookingAt(IDENT,1) && p.lookingAt(EQ,2)) {
+    // let X = ...
+    parseLetStatement(p, s);
+  } else if (parseBuiltIn(p,s)) {
+    ;
+  } else {
+    // #1`foo/bar.cl
+    parseDispatchStatement(p, s);
+  } // TODO: other statements
+}
+
+cls::script cls::ParseScript(
+  const Opts &os,
+  const std::string &input,
+  const std::string &filename)
+{
+  cls::script s;
+  s.source = &input;
+
+  parser p(input);
+  while (p.consumeIf(NEWLINE))
+    ;
+  while (!p.endOfFile()) {
+    parseStatementLine(p,s); // S ((<NEWLINE> | ';') S)*
+    if (p.consumeIf(SEMI)) { // ';' S
+      parseStatementLine(p, s);
+    } else if (!p.endOfFile()) { // '<NEWLINE>' S
+      p.consume(NEWLINE);
+      while (p.consumeIf(NEWLINE))
+       ;
+    }
+  }
+
+  return s;
+}

@@ -158,7 +158,7 @@ static void emitDeviceInfo(
   if (err != CL_SUCCESS) {
     os <<
       ANSI_RED <<
-      "[ERROR: " << cls::ErrorToString(err) << "]" <<
+      "[ERROR: " << cls::status_to_symbol(err) << "]" <<
       ANSI_RESET;
     return;
   }
@@ -188,7 +188,7 @@ static void emitDeviceInfo(
   if (err1 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
-      "[ERROR: " << cls::ErrorToString(err1) << "]" <<
+      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
       ANSI_RESET;
     return;
   }
@@ -198,7 +198,7 @@ static void emitDeviceInfo(
   if (err2 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
-      "[ERROR: " << cls::ErrorToString(err2) << "]" <<
+      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
       ANSI_RESET;
     return;
   }
@@ -229,7 +229,7 @@ static void emitDeviceInfo(
   if (err1 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
-      "[ERROR: " << cls::ErrorToString(err1) << "]" <<
+      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
       ANSI_RESET;
     return;
   }
@@ -240,7 +240,7 @@ static void emitDeviceInfo(
   if (err2 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
-      "[ERROR: " << cls::ErrorToString(err2) << "]" <<
+      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
       ANSI_RESET;
     return;
   }
@@ -332,22 +332,18 @@ void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx
     }
     std::cout <<
       "    " <<
-      d.getInfo<CL_DEVICE_OPENCL_C_VERSION>() << "\n";
+      d.getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str() << "\n";
     return;
   }
   std::cout << "\n";
 
-  std::string cl_version = d.getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str();
-  bool is_2_2_plus =
-      cl_version.find("2.2") != std::string::npos;
-  bool is_2_1_plus = is_2_2_plus ||
-    cl_version.find("2.1") != std::string::npos;
-  bool is_2_0_plus = is_2_1_plus ||
-    cl_version.find("2.0") != std::string::npos;
-  bool is_1_2_plus = is_2_0_plus ||
-    cl_version.find("1.2") != std::string::npos;
-  bool is_1_1_plus = is_1_2_plus ||
-    cl_version.find("1.1") != std::string::npos;
+  auto spec = getDeviceSpec(d);
+
+  bool is_2_2_plus = spec >= cl_spec::CL_2_2;
+  bool is_2_1_plus = spec >= cl_spec::CL_2_1;
+  bool is_2_0_plus = spec >= cl_spec::CL_2_0;
+  bool is_1_2_plus = spec >= cl_spec::CL_1_2;
+  bool is_1_1_plus = spec >= cl_spec::CL_1_1;
 
   std::string extensions_string = d.getInfo<CL_DEVICE_EXTENSIONS>().c_str();
   auto hasExtension = [&](const char *ext) {
@@ -517,6 +513,91 @@ void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx
     // DEVICE_INFO(CL_DEVICE_TRANSFORM_MASK_MAX_HEIGHT_INTEL,cl_uint);
     // DEVICE_INFO(CL_DEVICE_TRANSFORM_FILTER_MAX_WIDTH_INTEL,cl_uint);
     // DEVICE_INFO(CL_DEVICE_TRANSFORM_FILTER_MAX_HEIGHT_INTEL,cl_uint);
+  }
+
+  if (hasExtension("cl_nv_device_attribute_query")) {
+    // NVidia device properties
+    // https://www.khronos.org/registry/cl/extensions/nv/cl_nv_device_attribute_query.txt
+    START_GROUP("cl_nv_device_attribute_query");
+#ifndef CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV
+#define CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV       0x4000
+#endif
+#ifndef CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV
+#define CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV       0x4001
+#endif
+#ifndef CL_DEVICE_REGISTERS_PER_BLOCK_NV
+#define CL_DEVICE_REGISTERS_PER_BLOCK_NV            0x4002
+#endif
+#ifndef CL_DEVICE_WARP_SIZE_NV
+#define CL_DEVICE_WARP_SIZE_NV                      0x4003
+#endif
+#ifndef CL_DEVICE_GPU_OVERLAP_NV
+#define CL_DEVICE_GPU_OVERLAP_NV                    0x4004
+#endif
+#ifndef CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV
+#define CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV            0x4005
+#endif
+#ifndef CL_DEVICE_INTEGRATED_MEMORY_NV
+#define CL_DEVICE_INTEGRATED_MEMORY_NV              0x4006
+#endif
+#ifndef CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV
+#define CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV   0x4007
+#endif
+#ifndef CL_DEVICE_PCI_BUS_ID_NV
+#define CL_DEVICE_PCI_BUS_ID_NV                     0x4008
+#endif
+#ifndef CL_DEVICE_PCI_SLOT_ID_NV
+#define CL_DEVICE_PCI_SLOT_ID_NV                    0x4009
+#endif
+    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_WARP_SIZE_NV,cl_uint,"channels");
+    DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
+    DEVICE_INFO_BOOL(CL_DEVICE_GPU_OVERLAP_NV);
+    DEVICE_INFO_BOOL(CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV);
+    DEVICE_INFO_BOOL(CL_DEVICE_INTEGRATED_MEMORY_NV);
+    DEVICE_INFO(CL_DEVICE_PCI_BUS_ID_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PCI_SLOT_ID_NV,cl_uint);
+  }
+
+  if (hasExtension("cl_amd_device_attribute_query")) {
+    // https://www.khronos.org/registry/OpenCL/extensions/amd/cl_amd_device_attribute_query.txt
+    //
+    // cl_device_topology_amd topology
+    // #define CL_DEVICE_TOPOLOGY_AMD 0x4037
+    // topology.raw.type == CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD
+    //
+  START_GROUP("cl_amd_device_attribute_query");
+#ifndef CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD
+#define CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD 0x4040
+#endif
+#ifndef CL_DEVICE_SIMD_WIDTH_AMD
+#define CL_DEVICE_SIMD_WIDTH_AMD 0x4041
+#endif
+#ifndef CL_DEVICE_SIMD_INSTRUCTION_WIDTH_AMD
+#define CL_DEVICE_SIMD_INSTRUCTION_WIDTH_AMD 0x4042
+#endif
+#ifndef CL_DEVICE_WAVEFRONT_WIDTH_AMD
+#define CL_DEVICE_WAVEFRONT_WIDTH_AMD 0x4043
+#endif
+#ifndef CL_DEVICE_PCIE_ID_AMD
+#define CL_DEVICE_PCIE_ID_AMD 0x4034
+#endif
+#ifndef CL_DEVICE_GFXIP_MAJOR_AMD
+#define CL_DEVICE_GFXIP_MAJOR_AMD 0x404A
+#endif
+#ifndef CL_DEVICE_GFXIP_MINOR_AMD
+#define CL_DEVICE_GFXIP_MINOR_AMD 0x404B
+#endif
+    DEVICE_INFO(CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_SIMD_WIDTH_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_SIMD_INSTRUCTION_WIDTH_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_WAVEFRONT_WIDTH_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_GFXIP_MAJOR_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_GFXIP_MINOR_AMD, cl_uint);
+    DEVICE_INFO(CL_DEVICE_PCIE_ID_AMD, cl_uint);
+    // TODO: others ...
   }
 
   /////////////////////////////////////////////////////////////////////////////

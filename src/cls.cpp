@@ -1,6 +1,6 @@
 #include "cls.hpp"
 
-std::string cls::ErrorToString(cl_int error)
+std::string cls::status_to_symbol(cl_int error)
 {
 #define CASE(X) case X: return #X
   switch(error) {

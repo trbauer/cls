@@ -9,6 +9,10 @@
 #include <string>
 #include <vector>
 
+// TODO:
+// text::col(FOO,16)  places a std::setw and std::right or std::right
+//     depending on FOO's type (integer or not)
+//
 
 
 namespace text {
@@ -44,7 +48,7 @@ namespace text {
   #define ANSI_DWHITE         text::ansi_literal("\033[2;37m")
 
   // #define ANSI_INTEL_BLUE     "\033[38;2;0;113;197m"
-  // this fits nicer on a black background
+  // better on black background
   #define ANSI_COLOR_INTEL_BLUE     text::ansi("\033[38;2;10;153;245m")
   // #define ANSI_COLOR_INTEL_BLUE_ON_WHITE     "\033[38;2;0;113;197m\033[47m"
 
@@ -74,12 +78,20 @@ namespace text {
   std::string   prefix_lines(const std::string &pfx, const std::string &str);
   void          printf_to(std::ostream &os, const char *patt, va_list va);
   void          printf_to(std::ostream &os, const char *patt, ...);
-  std::string   printf(std::ostream &os, const char *patt, ...);
+  std::string   printf(const char *patt, ...);
 
   template <typename...Ts>
   void          format_to(std::ostream &os) { }
   template <typename T, typename...Ts>
   void          format_to(std::ostream &os, T t, Ts...ts) {os << t; format_to(os, ts...);}
+
+  template <typename...Ts>
+  std::string   format(Ts...ts) {
+    std::stringstream ss;
+    format_to(ss, ts...);
+    return ss.str();
+  }
+
 
   void          format_buffer(
     std::ostream &os,
@@ -206,5 +218,6 @@ namespace text {
 
 std::ostream &operator <<(std::ostream &os, text::ansi e);
 std::ostream &operator <<(std::ostream &os, text::ansi_literal e);
+
 
 #endif
