@@ -378,72 +378,133 @@ std::string text::format_buffer_diff(
 }
 
 
+static std::string searchEnv(const char *exe)
+{
+  return sys::find_exe(exe);
+}
+
+#define RETURN_IF_EXISTS(X) \
+  do {std::string s = (X); if (sys::file_exists(s)) return s;} while(0)
+
+static std::string findGnuCppExe()
+{
+#ifndef _WIN32
+  RETURN_IF_EXISTS("/usr/bin/cpp");
+#endif
+  return searchEnv("cpp");
+}
+#ifdef _WIN32
+static std::string findMsvcExe()
+{
+  // VS2017 has a versioned toolchain in the link
+  const char *msvc_2017_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Tools\\MSVC\\";
+  // C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
+  //                                                                                ^^^^^^^^^^^
+  if (sys::directory_exists(msvc_2017_root)) {
+    for (auto &p : sys::get_directory_contents(msvc_2017_root)) {
+      p += "\\bin\\HostX86\\x86\\cl.exe";
+      RETURN_IF_EXISTS(p);
+    }
+  }
+  RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\BIN\\cl.exe");
+  RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 12.0\\VC\\BIN\\cl.exe");
+  // VS2012 requires .bat setup script (missing DLL otherwise)
+  // RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 11.0\\VC\\BIN\\cl.exe");
+
+  return searchEnv("cl");
+}
+#endif
+static std::string findClangExe()
+{
+#ifdef _WIN32
+  RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
+  RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
+//  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
+//  RETURN_IF_EXISTS("C:\\Progra~2\\LLVM\\bin\\clang.exe");
+#else
+  RETURN_IF_EXISTS("/usr/bin/clang");
+#endif
+  return searchEnv("clang");
+}
+
+static std::string ppc_exe;
+
+static const std::string &findPreprocessorExe()
+{
+  if (!ppc_exe.empty())
+    return ppc_exe;
+#ifdef _WIN32
+  if (ppc_exe.empty())
+    ppc_exe = findMsvcExe();
+#endif
+  if (ppc_exe.empty())
+    ppc_exe = findClangExe();
+  if (ppc_exe.empty()) // even Win32, we might find it in %PATH%
+    ppc_exe = findGnuCppExe();
+
+  return ppc_exe;
+}
+
 
 std::string text::load_c_preprocessed(
   const std::string &inp_path,
   const std::string &args)
 {
-  auto temp_out_path = sys::get_temp_path("pp.cl");
-
-  auto findClangExe = [] {
-    static const char *paths [] = {
-      "C:\\Progra~2\\LLVM\\bin\\clang.exe", // 32-bit Program Files (x86)
-      "C:\\Progra~1\\LLVM\\bin\\clang.exe", // 64-bit
-    };
-    static const char *good_clang;
-    if (good_clang == nullptr) {
-      for (size_t i = 0; i < sizeof(paths)/sizeof(paths[0]); i++) {
-        if (sys::file_exists(paths[i])) {
-          good_clang = paths[i];
-          break;
-        }
-      }
-      if (good_clang == nullptr) {
-        good_clang = "clang";
-      }
-    }
-    return good_clang;
-  };
-  auto clang_exe = findClangExe();
-
-  std::vector<std::string> p_args {
-    "-E",
-    "-o",
-    temp_out_path
-  };
-   for (auto &w : text::to_words(args)) {
-     p_args.push_back(w);
-   }
-
-  auto pr = sys::process_exec(clang_exe, p_args);
-
-  std::string outp;
-  if (!pr.succeeded()) {
-    WARNING("text::PreProcess: unable to preprocess with clang.exe\n");
+  auto pp_exe = findPreprocessorExe();
+  if (pp_exe.empty()) {
+    WARNING("text::load_c_preprocessed: no preprocessor found on system\n");
     // punt, and just return the .cl contents
-    outp =sys::read_file_text(inp_path);
-  } else {
-    outp = sys::read_file_text(temp_out_path);
+    return sys::read_file_text(inp_path);
   }
 
-  (void)remove(temp_out_path.c_str());
+  // MSVC
+  // this works all the way back to VS2013 at least
+  // % cl -E examples\vec.cl -D TYPE=int
+  // to a file
+  // % cl /E examples\vec.cl /P /Fi:file.ppc -D TYPE=int
+  //
+  // CLANG
+  // CPP
+  // % cpp -E file.cl
+  // % cpp -E file.cl -DTYPE=int -o out.ppc
+  std::vector<std::string> p_args {
+    inp_path,
+    "-E", // works for MSVC too
+  };
+  // add all preprocessor argument tokens
+  //    -D foo=bar
+  // this works on all preprocessors including cl.exe
+  for (auto &w : text::to_words(args)) {
+    p_args.push_back(w);
+  }
 
-  return outp;
+  // using stdout doesn't seem to work
+#define USE_TEMP_FILE
 
-//  std::stringstream ss;
-//  ss << clang_exe << " -E -o " <<
-//    temp_out_path << " " << args << " " << inp_path;
-//  int e = system(ss.str().c_str());
-//  std::string outp;
-//  if (e != 0) {
-//    WARNING("text::PreProcess: unable to preprocess with clang.exe\n");
-//    // punt, and just return the .cl contents
-//    outp = sys::read_file_text(inp_path);
-//  } else {
-//    outp = sys::read_file_text(temp_out_path);
-//  }
-//  (void)remove(temp_out_path.c_str());
-//  return outp;
+#ifdef USE_TEMP_FILE
+  auto tmp_file = sys::get_temp_path(".ppc");
+  if (pp_exe.find("cl.exe") != std::string::npos) {
+    p_args.push_back("/P");
+    p_args.push_back("/Fi:" + tmp_file);
+  } else {
+    p_args.push_back("-o");
+    p_args.push_back(tmp_file);
+  }
+#endif
+
+  auto pr = sys::process_read(pp_exe, p_args);
+  if (!pr.succeeded()) {
+    // punt, and just return the .cl contents
+    WARNING("text::load_c_preprocessed: unable to preprocess\n");
+    return sys::read_file_text(inp_path);
+  } else {
+#ifdef USE_TEMP_FILE
+    return sys::read_file_text(tmp_file);
+#else
+    return pr.out;
+#endif
+  }
 }
 
 

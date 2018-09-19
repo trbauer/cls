@@ -1,11 +1,12 @@
 #include "system.hpp"
 #include "text.hpp"
 
-#include <Windows.h>
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -18,6 +19,9 @@
 #define IS_STDERR_TTY (isatty(STDERR_FILENO) != 0)
 #define IS_STDOUT_TTY (isatty(STDOUT_FILENO) != 0)
 #endif
+
+
+
 
 using namespace sys;
 
@@ -104,29 +108,6 @@ void sys::fatal_exit()
 
 ///////////////////////////////////////////////////////////////////////////////
 // FILE SYSTEM
-
-std::string sys::get_temp_dir()
-{
-  std::string path;
-#ifdef _WIN32
-  DWORD tmpdirlen = GetTempPathA(0, NULL);
-  char *tmp_path = (char *)alloca(tmpdirlen + 1);
-  (void)GetTempPathA(tmpdirlen, tmp_path);
-  tmp_path[tmpdirlen] = 0;
-  path = tmp_path;
-#else
-  const char *e = getenv("TEMP");
-  if (!e) {
-    e = getenv("TMP");
-  }
-  path = e;
-#endif
-  if (!path.empty() && path[path.size() - 1] != dir_separator) {
-    path += dir_separator;
-  }
-  return path;
-}
-
 bool sys::file_exists(const std::string &path) {
   return file_exists(path.c_str());
 }
@@ -151,6 +132,56 @@ bool sys::file_exists(const char *path)
 #endif
 }
 
+bool sys::directory_exists(const std::string &path)
+{
+#ifdef _WIN32
+  //  WIN32_FIND_DATAA ffd;
+  //  HANDLE h = FindFirstFileA(tmp_daf.c_str(), &ffd);
+  //  if (h == INVALID_HANDLE_VALUE) {
+  //    FATAL("kdc -off failed to generate .daf file (is DafEnable set?)\n");
+  //  }
+  //  FindClose(h);
+  DWORD dwAttrib = GetFileAttributesA(path.c_str());
+  return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
+         (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
+  struct stat sb = {0};
+  if (stat(path, &sb)) {
+      return false;
+  }
+  return S_ISDIR(sb.st_mode);
+#endif
+}
+
+std::vector<std::string> sys::get_directory_contents(const std::string &path)
+{
+  std::vector<std::string> elems;
+  for (auto &p : fs::directory_iterator(path))
+    elems.push_back(p.path().string());
+  return elems;
+}
+
+std::string sys::get_temp_dir()
+{
+  std::string path;
+#ifdef _WIN32
+  DWORD tmpdirlen = GetTempPathA(0, NULL);
+  char *tmp_path = (char *)alloca(tmpdirlen + 1);
+  (void)GetTempPathA(tmpdirlen, tmp_path);
+  tmp_path[tmpdirlen] = 0;
+  path = tmp_path;
+#else
+  const char *e = getenv("TEMP");
+  if (!e) {
+    e = getenv("TMP");
+  }
+  path = e;
+#endif
+  if (!path.empty() && path[path.size() - 1] != path_separator) {
+    path += path_separator;
+  }
+  return path;
+}
 
 static std::mutex temp_path_mutex;
 
@@ -162,7 +193,6 @@ std::string sys::get_temp_path(const char *sfx)
   int pid = (int)getpid();
 #endif
   std::stringstream ss;
-  // TODO: use executable name
   auto exe = get_main_executable();
   // foo/bar/baz.exe => foo/bar/baz
   auto ext = exe.rfind('.');
@@ -172,25 +202,30 @@ std::string sys::get_temp_path(const char *sfx)
   // foo/bar/baz => baz
   size_t last_slash = exe.size() - 1;
   while (last_slash > 0) {
-    if (exe[last_slash] == '\\' || exe[last_slash] == '/')
+    if (exe[last_slash] == '\\' || exe[last_slash] == '/') {
       exe = exe.substr(last_slash+1);
       break;
+    } else {
+      last_slash--;
+    }
   }
 
-  ss << exe << pid;
-  std::string pfx = get_temp_dir() + "\\" + ss.str() + "_";
+  ss << exe << "_" << pid;
+  std::string pfx = get_temp_dir() + sys::path_separator + ss.str() + "_";
 
   // protect this part under a mutex
   std::lock_guard<std::mutex> guard(temp_path_mutex);
   static int i = 0;
   while (1) {
     std::stringstream ss;
-    ss << pfx << sfx << i++;
+    ss << pfx << std::setw(4) << std::setfill('0') << i++;
+    ss << "_" << sfx;
     std::string file = ss.str();
     if (!file_exists(file.c_str())) {
       // technically should touch the path to create file, but we take a
       // weak assumption that we're the only process modifying this file
-      // currently (pretty safe given that we use a pid in it)
+      // currently (pretty safe given that we use a pid in it and a
+      // monotonically increasing integer)
       return file;
     }
   }
@@ -203,6 +238,50 @@ std::string sys::get_main_executable()
     // overflow
   }
   return std::string(buffer);
+}
+
+std::string sys::find_exe(const char *exe)
+{
+  std::string filename_exe = exe;
+#ifdef _WIN32
+  // "foo" -> "foo.exe"
+  if (strlen(exe) > 4 && strncmp(".exe",exe + strlen(exe) - 4,4) != 0) {
+    filename_exe += ".exe";
+  }
+#endif
+  const char *path_value = nullptr;
+
+#ifdef _MSC_VER
+  char *msc_buf = nullptr;
+  size_t msc_buf_len = 0;
+  std::string msc_dummy;
+  if (_dupenv_s(&msc_buf, &msc_buf_len, "PATH") == 0 && msc_buf != nullptr) {
+    msc_dummy = msc_buf;
+    path_value = msc_dummy.c_str();
+    free(msc_buf);
+  }
+#else
+  path_value = getenv("PATH");
+#endif
+  std::stringstream stream(path_value);
+#ifdef _WIN32
+  const char path_sep = ';';
+#else
+  const char path_sep = ':';
+#endif
+  std::string path_component;
+  while(std::getline(stream, path_component, path_sep)) {
+    if (path_component.empty())
+      continue;
+    std::string possible_path = path_component;
+    if (path_component[path_component.size()-1] != sys::path_separator) {
+      possible_path += sys::path_separator;
+    }
+    possible_path += filename_exe;
+    if (sys::file_exists(filename_exe))
+      return filename_exe;
+  }
+  return "";
 }
 
 bits sys::read_file_binary(std::string fname)
@@ -258,44 +337,6 @@ void sys::write_bin_file(
         FATAL("%s: error writing file", fname.c_str());
 }
 
-std::vector<std::string> sys::lines(const std::string &str)
-{
-  std::vector<std::string> lns;
-  if (str.empty()) {
-    return lns;
-  }
-  size_t line_start = 0;
-  for (size_t i = 0; i < str.length(); i++) {
-    if (str[i] == '\n' || str[i] == '\r') {
-      lns.push_back(str.substr(line_start,i - line_start));
-      if (i < str.size() - 1 && str[i] == '\r' && str[i+1] == '\n')
-        i++; // windows style
-      line_start = i + 1;
-    }
-  }
-  return lns;
-}
-
-std::string sys::prefix_lines(const std::string &pfx, std::string &str)
-{
-  std::stringstream ss;
-  if (str.empty())
-    return "";
-
-  ss << pfx;
-  for (size_t i = 0; i < str.length(); i++) {
-    if (str[i] == '\n') {
-      ss << std::endl;
-      if (i == str.length() - 1) {
-        return ss.str();
-      }
-      ss << pfx;
-    } else {
-      ss << str[i];
-    }
-  }
-  return ss.str();
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PROCESS CREATION
@@ -304,14 +345,24 @@ static void process_reader(HANDLE read_handle, std::string &save_target)
   std::stringstream ss;
 
   while (true) {
-    char buf[512];
+    OVERLAPPED o;
+    ZeroMemory(&o, sizeof(0));
+
+    char buf[513];
     DWORD nr = 0;
-    if (!ReadFile(read_handle, buf, sizeof(buf), &nr, NULL)) {
+    if (!ReadFile(read_handle, buf, sizeof(buf) - 1, &nr, NULL)) {
       DWORD err = GetLastError();
+      if (err = ERROR_BROKEN_PIPE) {
+        if (nr > 0) {
+          buf[nr] = 0;
+          ss << buf;
+        }
+        break;
+      }
       FATAL("process_reader failed %d\n", (int)err);
+    } else if (nr == 0) {
+      break;
     } else {
-      // TODO: we could pass through here e.g. prefix the exe name
-      //   [iga64] ... output
       buf[nr] = 0;
       ss << buf;
     }
@@ -333,18 +384,26 @@ static void process_writer(HANDLE write_handle, std::string data)
       NULL))
     {
       DWORD err = GetLastError();
+      if (err = ERROR_BROKEN_PIPE) {
+        break;
+      }
       FATAL("process_writer failed %d\n", (int)err);
     }
   }
 }
 
-process_result sys::process_exec(
+process_result sys::process_read(
   std::string exe,
   std::vector<std::string> args,
   std::string input)
 {
+  // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/creating-a-child-process-with-redirected-input-and-output
   process_result pr;
   memset(&pr, 0, sizeof(pr));
+
+  // surround in " if there's a space (and it's not already surrounded)
+  if (exe.find(' ') != std::string::npos && exe.find('"') != 0)
+    exe = '\"' + exe + '\"';
 
   std::string cmdline = exe;
   for (std::string a : args)
@@ -360,18 +419,38 @@ process_result sys::process_exec(
 	si.cb = sizeof(si);
 	ZeroMemory(&pi, sizeof(pi));
 
-  HANDLE stdout_read_handle;
-  if (!CreatePipe(&stdout_read_handle,&si.hStdOutput,NULL,0)) {
-    FATAL("exec_process: failed to create pipe");
+  SECURITY_ATTRIBUTES sa;
+  ZeroMemory(&sa,sizeof(sa));
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = NULL;
+
+  HANDLE stdout_read_handle, stdout_write_handle;
+  if (!CreatePipe(&stdout_read_handle,&stdout_write_handle,&sa,64*1024)) {
+    FATAL("process_read: failed to create pipe");
   }
-  HANDLE stderr_read_handle;
-  if (!CreatePipe(&stderr_read_handle,&si.hStdError,NULL,0)) {
-    FATAL("exec_process: failed to create pipe");
+  if (!SetHandleInformation(stdout_read_handle, HANDLE_FLAG_INHERIT,0)) {
+    FATAL("process_read: set inherit flag");
   }
-  HANDLE stdin_write_handle;
-  if (!CreatePipe(&si.hStdInput,&stdin_write_handle,NULL,0)) {
-    FATAL("exec_process: failed to create pipe");
+  si.hStdOutput = stdout_write_handle;
+
+  HANDLE stderr_read_handle, stderr_write_handle;
+  if (!CreatePipe(&stderr_read_handle,&stderr_write_handle,&sa,0)) {
+    FATAL("process_read: failed to create pipe");
   }
+  if (!SetHandleInformation(stderr_write_handle, HANDLE_FLAG_INHERIT,0)) {
+    FATAL("process_read: set inherit flag");
+  }
+  si.hStdError = stderr_write_handle;
+
+  HANDLE stdin_write_handle, stdin_read_handle;
+  if (!CreatePipe(&stdin_read_handle,&stdin_write_handle,&sa,0)) {
+    FATAL("process_read: failed to create pipe");
+  }
+  if (!SetHandleInformation(stdin_write_handle, HANDLE_FLAG_INHERIT,0)) {
+    FATAL("process_read: set inherit flag");
+  }
+  si.hStdInput = stdin_read_handle;
   si.dwFlags = STARTF_USESTDHANDLES;
 
 	if (!CreateProcessA(
@@ -393,59 +472,66 @@ process_result sys::process_exec(
 		// } else {
 		// 	WARNING("exec_process: CreateProcess failed (GLE: %d)\n", (int)err);
 		//  }
+    // close the pipes (both sides)
+    // ours
     (void)CloseHandle(stdout_read_handle);
     (void)CloseHandle(stderr_read_handle);
     (void)CloseHandle(stdin_write_handle);
-
+    // theirs
+    (void)CloseHandle(stdout_write_handle);
+    (void)CloseHandle(stderr_write_handle);
+    (void)CloseHandle(stdin_read_handle);
+    // bail
 		return pr;
 	}
+  // CreateProcess at least succeeded
   pr.startup_status = 0;
+
+  // we don't need the child's main thread handle
+  (void)CloseHandle(pi.hThread);
+
+  // close our copy of the pipes so that reader threads get an EOF
+  (void)CloseHandle(stdout_write_handle);
+  (void)CloseHandle(stderr_write_handle);
+  (void)CloseHandle(stdin_read_handle);
 
   // spawn threads for IO
   std::thread thr_out(process_reader, stdout_read_handle, pr.out);
-  std::thread thr_err(process_reader, stderr_read_handle, pr.out);
+  std::thread thr_err(process_reader, stderr_read_handle, pr.err);
   std::thread thr_in(process_writer, stdin_write_handle, input);
 
+  // fetch the exit code and release the process object
 	auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
-	if ((exit_code == WAIT_FAILED)
-		|| (exit_code == WAIT_ABANDONED))
-	{
-		WARNING("exec_process(%s): unable to wait for process\n", exe.c_str());
+	if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
+		WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
     pr.exit_code = -1;
 	} else {
 		DWORD exit_code = 0;
 		(void)GetExitCodeProcess(pi.hProcess, &exit_code);
 		pr.exit_code = (int)exit_code;
 	}
-
-  // TODO: Can I create detached threads?
+  (void)CloseHandle(pi.hProcess);
+  // wait for the IO threads to complete
+  thr_in.join();
   thr_out.join();
   thr_err.join();
-  thr_in.join();
-
+  // close our side of the pipes
+  (void)CloseHandle(stdin_write_handle);
   (void)CloseHandle(stdout_read_handle);
   (void)CloseHandle(stderr_read_handle);
-  (void)CloseHandle(stdin_write_handle);
 
   return pr;
 }
-process_result sys::process_exec(
+process_result sys::process_read(
   std::string exe,
   std::initializer_list<std::string> args)
 {
   std::vector<std::string> argv;
   for (auto a : args)
     argv.push_back(a);
-  return process_exec(exe, argv, "");
+  return process_read(exe, argv, "");
 }
-/*
-process_result exec_process(
-  std::string exe,
-  std::vector<std::string> args,
-  std::string input)
-{
-}
-*/
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // REGISTRY

@@ -20,7 +20,11 @@ void cls::formatMessageWithContextImpl(
 
   size_t off = location.offset - (location.column - 1);
   while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
+    if (off == location.offset && location.extent > 0)
+      os << ANSI_RED;
     os << input[off++];
+    if (off == location.offset + location.extent)
+      os << ANSI_RESET;
   }
   os << "\n";
   if (location.column > 0) {
@@ -28,5 +32,8 @@ void cls::formatMessageWithContextImpl(
       os << ' ';
     }
   }
-  os << "^\n";
+  os << "^";
+  for (size_t ext = 1; ext < location.extent; ext++)
+    os << "^";
+  os << "\n";
 }

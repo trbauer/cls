@@ -131,6 +131,25 @@ cl_spec getDeviceSpec(const cl::Device &dev) {
   }
 }
 
+cl_vendor           getDeviceVendor(const cl::Device &dev)
+{
+  auto vendor = dev.getInfo<CL_DEVICE_VENDOR_ID>();
+  if (vendor == 0x8086) {
+    return cl_vendor::CL_INTEL;
+  } else if (vendor == 0x10DE) {
+    return cl_vendor::CL_NVIDIA;
+  } else {
+    std::string nm = dev.getInfo<CL_DEVICE_NAME>().c_str();
+    if (nm.find("AMD") != std::string::npos || nm.find("Raedeon") != std::string::npos) {
+      return cl_vendor::CL_NVIDIA;
+    } else if (nm.find("Intel") != std::string::npos) {
+      return cl_vendor::CL_INTEL;
+    } else if (nm.find("GTX") != std::string::npos || nm.find("RTX") != std::string::npos) {
+    }
+    return cl_vendor::CL_OTHER;
+  }
+}
+
 // We use the old 1.0 style command queue creation since the host running
 // this might not be 1.2+.
 #ifdef _MSC_VER

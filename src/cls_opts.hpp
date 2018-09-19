@@ -41,6 +41,7 @@ struct Opts {
   int                         iterations = 1;
   bool                        wall_time = false;
   bool                        prof_time = false;
+  bool                        save_binaries = false;
 
   filtered_stream warning() const{
     std::cout << ANSI_YELLOW << "WARNING:" << ANSI_RESET << " ";

@@ -11,14 +11,22 @@ void              listDeviceInfo(const cls::Opts &opts);
 
 
 enum class cl_spec {
-  CL_1_0,
-  CL_1_1,
-  CL_1_2,
-  CL_2_0,
-  CL_2_1,
-  CL_2_2,
+  CL_1_0 = 100,
+  CL_1_1 = 110,
+  CL_1_2 = 120,
+  CL_2_0 = 200,
+  CL_2_1 = 210,
+  CL_2_2 = 220,
 };
 cl_spec           getDeviceSpec(const cl::Device &dev);
+
+enum class cl_vendor {
+  CL_AMD    = 0x2222,
+  CL_INTEL  = 0x8086,
+  CL_NVIDIA = 0x4444,
+  CL_OTHER  = 0xFFFF,
+};
+cl_vendor        getDeviceVendor(const cl::Device &dev);
 
 // uses OpenCL 1.0 functions to create the command queue so that 1.1
 // implementations can still functions

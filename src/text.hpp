@@ -92,7 +92,18 @@ namespace text {
     return ss.str();
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // runs the C preprocessor
+  template <typename F>
+  std::string  str_extract(F f) {
+    std::stringstream ss;
+    f.str(ss);
+    return ss.str();
+  }
 
+
+  /////////////////////////////////////////////////////////////////////////////
+  // formats buffers
   void          format_buffer(
     std::ostream &os,
     const void *buf,           // buffer base pointer
@@ -111,6 +122,7 @@ namespace text {
     unsigned cols = 0,
     bool showChars = false);
 
+  /////////////////////////////////////////////////////////////////////////////
   // runs the C preprocessor
   std::string   load_c_preprocessed(
     const std::string &inp,

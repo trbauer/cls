@@ -1,9 +1,13 @@
 #include "cls_interp.hpp"
 #include "../cl_headers.hpp"
 #include "../devices.hpp"
+#include "../stats.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
+#include "../parser/kargs.hpp"
 
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 #include <functional>
 #include <map>
 #include <tuple>
@@ -23,6 +27,7 @@ struct dispatch_command {
   }
   const cls::dispatch_spec *dispatch = nullptr;
   device_state *device_state;
+  sampler times;
 
   // move this to some shared program object
   cl::Program *program = nullptr;
@@ -114,8 +119,8 @@ struct script_compiler : public cls::fatal_handler {
 private:
   device_state *instantiateDeviceSpec(const cls::device_spec &ds);
   void dispatchCompileProgram(dispatch_command &dc);
-  void dispatchCreateKernel(dispatch_command &dc);
-  void dispatchParseKernelArgs(dispatch_command &dc);
+  void dispatchCreateKernel(dispatch_command &dc,const cls::program_source &ps);
+  void dispatchParseKernelArgs(dispatch_command &dc,const cls::program_source &ps);
 };
 
 
@@ -283,6 +288,7 @@ void script_compiler::compile()
   //
   // Set kernel arguments for all programs
 }
+
 device_state *script_compiler::instantiateDeviceSpec(
   const cls::device_spec &ds)
 {
@@ -350,6 +356,15 @@ device_state *script_compiler::instantiateDeviceSpec(
   return dstt;
 }
 
+static std::string getLabeledBuildLog(cls::loc at, cl::Program &prog) {
+  auto logs = prog.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
+  std::stringstream ss;
+  ss << "[" << at.str() << "]: ";
+  return text::prefix_lines(
+    ss.str(),
+    logs.front().second.c_str());
+}
+
 void script_compiler::dispatchCompileProgram(dispatch_command &dc)
 {
   auto file = dc.dispatch->program.program_path;
@@ -384,12 +399,17 @@ void script_compiler::dispatchCompileProgram(dispatch_command &dc)
       " (", cls::status_to_symbol(err), ") on device [",dev_nm,"]");
   };
   std::string build_opts = dc.dispatch->program.build_opts;
-  std::string build_opts_with_arg_info;
+  std::string build_opts_with_arg_info = build_opts;
   if (build_opts.empty()) {
     build_opts_with_arg_info = "-cl-kernel-arg-info";
   } else if (build_opts.find("-cl-kernel-arg-info") == std::string::npos) {
-    build_opts_with_arg_info = build_opts + " -cl-kernel-arg-info";
+    build_opts_with_arg_info += " -cl-kernel-arg-info";
   }
+
+  cls::program_source src;
+  src.path = file;
+  src.build_opts = build_opts;
+  src.is_binary = is_bin;
 
   if (is_bin) {
     std::vector<cl::Device> devs{dc.device_state->device};
@@ -420,34 +440,42 @@ void script_compiler::dispatchCompileProgram(dispatch_command &dc)
     } catch (const cl::Error &err) {
       fatalHere("create","source",err.err());
     }
-    auto getLabeledBuildLog = [&]() {
-      auto logs = dc.program->getBuildInfo<CL_PROGRAM_BUILD_LOG>();
-      std::stringstream ss;
-      ss << "[" << dc.dispatch->device.defined_at.str() << "]: ";
-      return text::prefix_lines(
-        ss.str(),
-        logs.front().second.c_str());
-    };
     try {
       dc.program->build(build_opts_with_arg_info.c_str()); // clBuildProgram
       if (os.verbosity >= 2) {
-        os.debug() << getLabeledBuildLog();
+        os.debug() <<
+          getLabeledBuildLog(dc.dispatch->device.defined_at, *dc.program);
+      }
+      if (os.save_binaries) {
+        auto vend = getDeviceVendor(dc.device_state->device);
+        std::string bin_ext;
+        if (vend == cl_vendor::CL_NVIDIA)
+          bin_ext = ".ptx";
+        else
+          bin_ext = ".bin";
+        auto bin_path =
+          fs::path(".") / fs::path(file).filename().replace_extension(bin_ext);
+        auto bin = dc.program->getInfo<CL_PROGRAM_BINARIES>().front();
+        sys::write_bin_file(bin_path.string(),bin.data(),bin.size());
       }
     } catch (const cl::Error &err) {
       if (err.err() == CL_BUILD_PROGRAM_FAILURE) {
         std::stringstream ss;
         ss << "failed to build source:\n";
-        ss << ANSI_YELLOW << getLabeledBuildLog() << ANSI_RESET << "\n";
+        ss << getLabeledBuildLog(
+          dc.dispatch->device.defined_at, *dc.program) << "\n";
         fatalAt(dc.dispatch->program.defined_at,ss.str());
       } else {
         fatalHere("build","source",err.err());
       }
     } // catch
   }
-  dispatchCreateKernel(dc);
+  dispatchCreateKernel(dc,src);
 }
 
-void script_compiler::dispatchCreateKernel(dispatch_command &dc)
+void script_compiler::dispatchCreateKernel(
+  dispatch_command &dc,
+  const cls::program_source &src)
 {
   // create the kernel from the program
   try {
@@ -468,29 +496,35 @@ void script_compiler::dispatchCreateKernel(dispatch_command &dc)
         // ignore it (live without the extra ouput)
       }
       fatalAt(dc.dispatch->kernel.defined_at,
-        dc.dispatch->kernel.kernel_name, "unable to find kernel in program",
+        dc.dispatch->kernel.kernel_name, ": unable to find kernel in program",
         ss.str());
     } else {
       fatalAt(dc.dispatch->kernel.defined_at,
         dc.dispatch->kernel.kernel_name,
-        "unable to create kernel (", cls::status_to_symbol(err.err()), ")");
+        " unable to create kernel (", cls::status_to_symbol(err.err()), ")");
     }
   }
-  dispatchParseKernelArgs(dc);
+  dispatchParseKernelArgs(dc,src);
 }
 
-void script_compiler::dispatchParseKernelArgs(dispatch_command &dc) {
+void script_compiler::dispatchParseKernelArgs(
+  dispatch_command &dc,
+  const cls::program_source &src)
+{
   /////////////////////////////////////////////////////////////////////////////
   // parse and bind the arguments
   if (getDeviceSpec(dc.device_state->device) < cl_spec::CL_1_2) {
     fatalAt(dc.dispatch->program.defined_at,
-      "manual argument parsing not supported yet!");
+      " manual argument parsing not supported yet!");
   }
   cl_uint num_args = dc.kernel->getInfo<CL_KERNEL_NUM_ARGS>();
   if ((size_t)num_args != dc.dispatch->arguments.size()) {
     fatalAt(dc.dispatch->kernel.defined_at,
-      "wrong number of arguments (expected ",num_args,")");
+      " wrong number of arguments (expected ",num_args,")");
   }
+  auto p = cls::k::parseProgramInfo(this, dc.dispatch->program.defined_at, src);
+
+  // TODO: remove
   for (cl_uint i = 0; i < num_args; i++) {
     std::string arg_type;
     try {
@@ -507,7 +541,7 @@ cls::compiled_script cls::compile(const cls::Opts &os, const cls::script &s)
 {
   cls::compiled_script cs;
   auto *csi = new compiled_script_impl(s);
-  cs.state = csi;
+  cs.impl = csi;
 
   script_compiler sc(os,s,csi);
   sc.compile();
@@ -518,9 +552,24 @@ cls::compiled_script cls::compile(const cls::Opts &os, const cls::script &s)
 
 void cls::compiled_script::setup(const cls::Opts &os, int)
 {
+  std::cout << "compiled_script::setup\n";
 }
 
 void cls::compiled_script::execute(const cls::Opts &os, int)
 {
+  std::cout << "compiled_script::execute\n";
+  compiled_script_impl *csi = (compiled_script_impl *)impl;
+  for (const dispatch_command &dc : csi->dispatch_commands) {
+    std::cout << "  we would execute " <<
+      text::str_extract(*dc.dispatch) << "\n";
+  }
+}
 
+cls::times cls::compiled_script::get_times() const
+{
+  cls::times ts;
+  const compiled_script_impl *csi = (const compiled_script_impl *)impl;
+  for (const dispatch_command &dc : csi->dispatch_commands)
+    ts.emplace_back(dc.dispatch,dc.times);
+  return ts;
 }

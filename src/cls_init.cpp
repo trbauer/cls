@@ -1,6 +1,5 @@
 #include "cls.hpp"
 #include "system.hpp"
-#include "svm.hpp"
 #include "text.hpp"
 
 #include <string>

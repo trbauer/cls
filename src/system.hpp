@@ -96,7 +96,7 @@ namespace sys
   // FILE SYSTEM
 
   static
-  const char         dir_separator =
+  const char         path_separator =
 #ifdef _WIN32
     '\\'
 #else
@@ -104,16 +104,25 @@ namespace sys
 #endif
     ;
 
+  bool               file_exists(const char *path);
+  bool               file_exists(const std::string &path);
+  bool               directory_exists(const std::string &path);
+  std::vector<std::string>
+                     get_directory_contents(const std::string &path);
   // if not found, then returns ""
   // if found, then it always ends with a / or backslash
   std::string        get_temp_dir();
-
-  bool               file_exists(const char *path);
-  bool               file_exists(const std::string &path);
-
+  // creates a path to a temporary file
   std::string        get_temp_path(const char *sfx);
-
+  // gets the main exe filename of this program
   std::string        get_main_executable();
+
+
+  // searches $PATH for an executable name
+  // returns "" if not found
+  //
+  // NOTE: We will add the ".exe" suffix for Windows
+  std::string        find_exe(const char *exe);
 
   void               read_file_binary(std::string fname, bits &cs);
   bits               read_file_binary(std::string fname);
@@ -121,11 +130,6 @@ namespace sys
   std::string        char_file_to_str(const bits &cs);
 
   void               write_bin_file(std::string fname, const void *buf, size_t buflen);
-
-  std::vector<std::string>
-                     lines(const std::string &str);
-
-  std::string        prefix_lines(const std::string &pfx, std::string &str);
 
   /////////////////////////////////////////////////////////////////////////////
   // PROCESS CREATION
@@ -149,11 +153,12 @@ namespace sys
     bool succeeded() const {return executed() && exit_code == 0;}
   };
   // returns the exit code, output, and error streams
-  process_result     process_exec(
+  process_result     process_read(
     std::string exe,
     std::vector<std::string> args,
     std::string input = "");
-  process_result     process_exec(
+  // allows one to write: sys::process_read("ls","-la","file");
+  process_result     process_read(
     std::string exe,
     std::initializer_list<std::string> args);
   // return stdout only; fatal if non-zero exit; stderr goes to our stderr

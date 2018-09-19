@@ -113,8 +113,7 @@ namespace cls {
     }
     std::string tokenStringLiteral() const {
       if (!lookingAt(STRLIT)) {
-        fatal("INTERNAL ERROR: Parser::tokenStringLiteral: "
-          "need to be looking at STRLIT\n");
+        fatal("expected string literal");
       }
       auto str = tokenString();
       std::stringstream ss;
@@ -128,10 +127,13 @@ namespace cls {
             auto loc = nextLoc();
             loc.column += (uint32_t)i;
             loc.offset += (uint32_t)i;
+            loc.extent = 2;
             fatalAt(loc, "invalid escape sequence in string literal");
           }
           }
           i++;
+        } else if (str[i] == '\n') {
+            fatal("newline in string literal");
         } else {
           ss << str[i];
         }

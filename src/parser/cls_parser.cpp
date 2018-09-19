@@ -1,8 +1,6 @@
 #include "cls_parser.hpp"
 #include "parser.hpp"
 #include "../cls.hpp"
-// TODO: remove (since we now use cl2.hpp
-#include "../svm.hpp"
 #include "../system.hpp"
 
 #include <sstream>

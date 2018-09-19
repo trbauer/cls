@@ -116,6 +116,21 @@ static void formatDeviceSvmCapabilities(
     BITSET_FINISH();
 }
 
+template <typename T,int W>
+static void fmtHex(
+  std::ostream &os,
+  T value)
+{
+  std::stringstream ss;
+  ss << "0x" << std::setfill('0') << std::hex << std::setw(W) << value;
+  os << ss.str();
+}
+static void fmtDeviceId(
+  std::ostream &os,
+  cl_uint x)
+{
+  fmtHex<cl_uint,4>(os,x);
+}
 ///////////////////////////////////////////////////////////////////////////////
 // new approach
 
@@ -306,18 +321,19 @@ void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx
   if (devIx >= 0) {
     std::cout << "DEVICE[" << devIx << "]: ";
   }
-  std::string device_name = d.getInfo<CL_DEVICE_NAME>().c_str();
-  bool is_intc = device_name.find("Intel") != std::string::npos;
-  bool is_nvda = device_name.find("GTX") != std::string::npos;
-  bool is_amd = false;
+  auto vend = getDeviceVendor(d);
+  bool is_intc = vend == cl_vendor::CL_INTEL;
+  bool is_nvda = vend == cl_vendor::CL_NVIDIA;
+  bool is_amd =  vend == cl_vendor::CL_AMD;
 
   if (is_intc) {
     std::cout << ANSI_COLOR_INTEL_BLUE;
-  } else if (device_name.find("GTX") != std::string::npos) {
+  } else if (is_nvda) {
     std::cout << ANSI_COLOR_NVIDIA_GREEN;
-  } else if (device_name.find("AMD") != std::string::npos) {
+  } else if (is_amd) {
     std::cout << ANSI_COLOR_AMD_ORANGE;
   }
+  std::string device_name = d.getInfo<CL_DEVICE_NAME>().c_str();
   std::cout << std::setw(48) << std::left << device_name;
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
@@ -365,6 +381,7 @@ void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx
   DEVICE_INFO_WITH(CL_DEVICE_TYPE,cl_device_type,formatDeviceType);
   DEVICE_INFO_STRING(CL_DEVICE_VERSION);
   DEVICE_INFO_STRING(CL_DEVICE_VENDOR);
+  DEVICE_INFO_WITH(CL_DEVICE_VENDOR_ID,cl_uint,fmtHex<cl_uint,4>);
   DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION);
   DEVICE_INFO_BOOL(CL_DEVICE_AVAILABLE);
   DEVICE_INFO_STRING(CL_DRIVER_VERSION);

@@ -15,12 +15,21 @@ else()
 endif()
 
 add_definitions(-DVERSION_STRING="${VERSION_STRING}")
-
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+add_definitions(-DCLS_HOST_POINTER_SIZE=32)
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+add_definitions(-DCLS_HOST_POINTER_SIZE=64)
+endif()
 
 ##############################
 # cls##.exe
 ##############################
-file(GLOB CLS_SOURCES "src/*.hpp" "src/*.cpp")
+file(GLOB CLS_SOURCES
+  "src/*.hpp" "src/*.cpp"
+  "src/ir/*.hpp" "src/ir/*.cpp"
+  "src/parser/*.hpp" "src/parser/*.cpp" "src/parser/cls.flex"
+  "src/processors/*.hpp" "src/processors/*.cpp"
+	)
 
 add_executable("cls${TARGET_MODIFIER}"
   ${CLS_SOURCES}
@@ -28,9 +37,11 @@ add_executable("cls${TARGET_MODIFIER}"
 #   cls.flex
 
 find_package(OpenCL REQUIRED)
-include_directories(${OpenCL_INCLUDE_DIRS})
+include_directories(. ${OpenCL_INCLUDE_DIRS})
+# include_directories(.)
 target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})
 
 set_target_properties("cls${TARGET_MODIFIER}" PROPERTIES
-   OUTPUT_NAME  "cls${TARGET_MODIFIER}"
+  CXX_STANDARD 17
+  OUTPUT_NAME  "cls${TARGET_MODIFIER}"
 )

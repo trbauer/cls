@@ -63,7 +63,7 @@ int main(int argc, const char **argv)
   );
   cmdspec.defineArg(
     "EXPR","a cls expression", "", opts::NONE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
       opts.input_files.push_back(value);
     });
 //  cmdspec.defineOpt(
@@ -73,16 +73,21 @@ int main(int argc, const char **argv)
 //    });
   cmdspec.defineOpt(
     "e","expression","EXPR","pass an expression as an argument","",opts::NONE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
       opts.input_expr = value;
     });
   cmdspec.defineOpt(
     "i","iterations","INT","number of samples to execute","",opts::NONE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
     if (!readDecInt(value, opts.iterations)) {
       eh("malformed iterations");
     }
   });
+  cmdspec.defineFlag(
+    "B","save-binaries","saves the binaries","",opts::NONE,
+    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+      opts.save_binaries = true;
+    });
   cmdspec.defineOpt(
     "l","list-devices","list the devices by index or name","DEVICE",
     "Lists devices by index or name.\n"
@@ -189,6 +194,7 @@ static void runFile(
         std::chrono::high_resolution_clock::now() - start_execute);
     execute_times.add(duration_exec.count()/1000.0/1000.0);
   }
+
   text::table t;
   auto &ckl_col = t.define_col("CLOCK", false, 1);
   auto &med_col = t.define_col("med", true, 1);
@@ -214,6 +220,14 @@ static void runFile(
     emitStats("Setup",setup_times);
   }
   emitStats("Execute",execute_times);
+  std::cout << "=================================================\n";
+  auto dispatch_times = cs.get_times();
+  for (const auto &p_ds : dispatch_times) {
+    const cls::dispatch_spec &ds = *std::get<0>(p_ds);
+    const sampler &ts = std::get<1>(p_ds);
+    std::string str = text::str_extract(ds); // call ds.str(ss); return ss.str();
+    emitStats(str,ts);
+  }
 }
 
 
