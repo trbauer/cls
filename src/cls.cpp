@@ -1,9 +1,11 @@
-#include "cls.hpp"
+#include "cl_headers.hpp"
+
+#include <sstream>
 
 std::string cls::status_to_symbol(cl_int error)
 {
 #define CASE(X) case X: return #X
-  switch(error) {
+  switch (error) {
   CASE(CL_SUCCESS);
   CASE(CL_DEVICE_NOT_FOUND);
   CASE(CL_DEVICE_NOT_AVAILABLE);
@@ -63,8 +65,10 @@ std::string cls::status_to_symbol(cl_int error)
   CASE(CL_INVALID_COMPILER_OPTIONS);
   CASE(CL_INVALID_LINKER_OPTIONS);
   CASE(CL_INVALID_DEVICE_PARTITION_COUNT);
-  case -69: return "CL_INVALID_PIPE_SIZE"; // 2.0
-  case -70: return "CL_INVALID_DEVICE_QUEUE"; // 2.0
+  CASE(CL_INVALID_PIPE_SIZE);
+  CASE(CL_INVALID_DEVICE_QUEUE);
+  CASE(CL_INVALID_SPEC_ID);
+  CASE(CL_MAX_SIZE_RESTRICTION_EXCEEDED);
   default:
     std::stringstream ss;
     ss << error << "?";

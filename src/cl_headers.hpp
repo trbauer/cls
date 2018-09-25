@@ -9,4 +9,9 @@
 // cl2.hpp rejects higher values than 200
 #include "CL/cl2.hpp"
 
+namespace cls
+{
+  std::string status_to_symbol(cl_int error);
+} // namespace cls
+
 #endif

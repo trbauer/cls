@@ -37,3 +37,7 @@ void cls::formatMessageWithContextImpl(
     os << "^";
   os << "\n";
 }
+
+void cls::diagnostic::str(std::ostream &os) const {
+  cls::formatMessageWithContextImpl(os, location, input, message);
+}

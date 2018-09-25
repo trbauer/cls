@@ -5,11 +5,8 @@
 
 #include <sstream>
 #include <iostream>
-// #include <filesystem>
-// using namespace std::tr2::sys;
-// namespace fs = std::tr2::sys;
-// #include <experimental/filesystem>
-// namespace fs = std::experimental::filesystem;
+
+using namespace cls;
 
 #if 0
 
@@ -498,7 +495,7 @@ struct CLSParser : parser {
   // e.g. "foo-bar/baz.cl/"
   // or "../foo/bar/baz.cl"
   // or "/foo/bar/baz"
-  std::string parsePath(cls::lexeme endLxm) {
+  std::string parsePath(lexeme endLxm) {
     if (lookingAt(STRLIT)) {
       return tokenStringLiteral();
     } else {
@@ -987,7 +984,7 @@ struct CLSParser : parser {
   } // setKernelArgs
 };
 
-ndr *cls::ParseCLS(
+ndr *ParseCLS(
   cl::Context &ctx,
   const cl::Device &dev,
   const std::string& inp)
@@ -1001,7 +998,7 @@ ndr *cls::ParseCLS(
 // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
 //       ^^^^^^^^^^^^^^^^^^^^^^
 //                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
-static std::string consumeToChar(cls::parser &p, const char *set)
+static std::string consumeToChar(parser &p, const char *set)
 {
   const std::string &s = p.input();
   size_t start = p.nextLoc().offset;
@@ -1017,19 +1014,19 @@ static std::string consumeToChar(cls::parser &p, const char *set)
   return s.substr(start, len);
 }
 
-static cls::init_spec_atom *parseInitAtom(cls::parser &p);
+static init_spec_atom *parseInitAtom(parser &p);
 
-static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
+static init_spec_atom *parseInitAtomPrim(parser &p)
 {
   auto loc = p.nextLoc();
   if (p.lookingAt(STRLIT)) {
     auto s = p.tokenStringLiteral();
     p.skip();
-    return new cls::init_spec_file(loc, s);
+    return new init_spec_file(loc, s);
   } else if (p.lookingAtFloat()) {
-    return new cls::init_spec_float(loc, p.consumeFloat());
+    return new init_spec_float(loc, p.consumeFloat());
   } else if (p.lookingAtInt()) {
-    return new cls::init_spec_int(loc, p.consumeInt());
+    return new init_spec_int(loc, p.consumeInt());
   } else if (p.lookingAtIdent()) {
     // e.g. "X" or "g.x"
     auto s = p.tokenString();
@@ -1042,7 +1039,7 @@ static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
         }
         s += p.tokenString();
       }
-      return new cls::init_spec_symbol(loc, s);
+      return new init_spec_symbol(loc, s);
     } else if (p.lookingAt(LPAREN) || p.consumeIf(LANGLE)) {
       if (s == "random") {
         int64_t seed = 0;
@@ -1050,7 +1047,7 @@ static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
           seed = p.consumeInt("seed (int)");
           p.consume(RANGLE);
         }
-        auto func = new cls::init_spec_rng_generator(loc, seed);
+        auto func = new init_spec_rng_generator(loc, seed);
         if (p.consumeIf(LBRACK)) {
           func->e_lo = parseInitAtom(p);
           if (p.consumeIf(COMMA))
@@ -1068,18 +1065,19 @@ static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
       // regular symbol
       //
       // TODO: support E and PI
-      return new cls::init_spec_symbol(loc, s);
+      return new init_spec_symbol(loc, s);
     }
   } else if (p.consumeIf(LBRACK)) {
-    auto re = new cls::init_spec_record(loc);
+    auto re = new init_spec_record(loc);
     if (!p.lookingAt(RPAREN))
       re->children.push_back(parseInitAtom(p));
     while (!p.lookingAt(COMMA))
       re->children.push_back(parseInitAtom(p));
     p.consume(RBRACK);
+    re->defined_at.extend_to(p.nextLoc());
     return re;
   } else if (p.lookingAt(LPAREN)) {
-    cls::init_spec_atom *e = parseInitAtom(p);
+    init_spec_atom *e = parseInitAtom(p);
     p.consume(RPAREN);
     return e;
   } else {
@@ -1087,105 +1085,118 @@ static cls::init_spec_atom *parseInitAtomPrim(cls::parser &p)
     return nullptr;
   }
 }
-static cls::init_spec_atom *parseInitAtomMul(cls::parser &p)
+static init_spec_atom *parseInitAtomMul(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomPrim(p);
+  init_spec_atom *e = parseInitAtomPrim(p);
   auto loc = p.nextLoc();
   while (p.lookingAt(MUL) || p.lookingAt(DIV)) {
     auto op = p.lookingAt(MUL) ?
-      cls::init_spec_bin_expr::bin_op::E_MUL :
-      cls::init_spec_bin_expr::bin_op::E_DIV;
+      init_spec_bin_expr::bin_op::E_MUL :
+      init_spec_bin_expr::bin_op::E_DIV;
     p.skip();
-    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomPrim(p));
+    init_spec_atom *t = parseInitAtomPrim(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(loc, op, e, t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtomAdd(cls::parser &p)
+static init_spec_atom *parseInitAtomAdd(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomMul(p);
+  init_spec_atom *e = parseInitAtomMul(p);
   auto loc = p.nextLoc();
   while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
     auto op = p.lookingAt(ADD) ?
-      cls::init_spec_bin_expr::bin_op::E_ADD :
-      cls::init_spec_bin_expr::bin_op::E_SUB;
+      init_spec_bin_expr::bin_op::E_ADD :
+      init_spec_bin_expr::bin_op::E_SUB;
     p.skip();
-    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomMul(p));
+    init_spec_atom *t = parseInitAtomMul(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(loc, op, e, t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtomShift(cls::parser &p)
+static init_spec_atom *parseInitAtomShift(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomAdd(p);
+  init_spec_atom *e = parseInitAtomAdd(p);
   auto loc = p.nextLoc();
   while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
     auto op = p.lookingAt(LSH) ?
-      cls::init_spec_bin_expr::bin_op::E_LSH :
-      cls::init_spec_bin_expr::bin_op::E_RSH;
+      init_spec_bin_expr::bin_op::E_LSH :
+      init_spec_bin_expr::bin_op::E_RSH;
     p.skip();
-    e = new cls::init_spec_bin_expr(loc, op, e, parseInitAtomAdd(p));
+    init_spec_atom *t = parseInitAtomAdd(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(loc, op, e, t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtomBitwiseAND(cls::parser &p)
+static init_spec_atom *parseInitAtomBitwiseAND(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomShift(p);
+  init_spec_atom *e = parseInitAtomShift(p);
   auto loc = p.nextLoc();
   while (p.consumeIf(AMP)) {
-    e = new cls::init_spec_bin_expr(
+    init_spec_atom *t = parseInitAtomShift(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(
       loc,
-      cls::init_spec_bin_expr::bin_op::E_AND,
+      init_spec_bin_expr::bin_op::E_AND,
       e,
-      parseInitAtomShift(p));
+      t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtomBitwiseXOR(cls::parser &p)
+static init_spec_atom *parseInitAtomBitwiseXOR(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomBitwiseAND(p);
+  init_spec_atom *e = parseInitAtomBitwiseAND(p);
   auto loc = p.nextLoc();
   while (p.consumeIf(CIRC)) {
-    e = new cls::init_spec_bin_expr(
+    init_spec_atom *t = parseInitAtomBitwiseAND(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(
       loc,
-      cls::init_spec_bin_expr::bin_op::E_XOR,
+      init_spec_bin_expr::bin_op::E_XOR,
       e,
-      parseInitAtomBitwiseAND(p));
+      t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtomBitwiseOR(cls::parser &p)
+static init_spec_atom *parseInitAtomBitwiseOR(parser &p)
 {
-  cls::init_spec_atom *e = parseInitAtomBitwiseXOR(p);
+  init_spec_atom *e = parseInitAtomBitwiseXOR(p);
   auto loc = p.nextLoc();
   while (p.consumeIf(PIPE)) {
-    e = new cls::init_spec_bin_expr(
+    init_spec_atom *t = parseInitAtomBitwiseXOR(p);
+    e->defined_at.extend_to(p.nextLoc());
+    e = new init_spec_bin_expr(
       loc,
-      cls::init_spec_bin_expr::bin_op::E_OR,
+      init_spec_bin_expr::bin_op::E_OR,
       e,
-      parseInitAtomBitwiseXOR(p));
+      t);
     loc = p.nextLoc();
   }
   return e;
 }
-static cls::init_spec_atom *parseInitAtom(cls::parser &p)
+static init_spec_atom *parseInitAtom(parser &p)
 {
   return parseInitAtomBitwiseOR(p);
 }
 
-static cls::init_spec *parseInit(cls::parser &p)
+static init_spec *parseInit(parser &p)
 {
   auto l = p.nextLoc();
-  cls::init_spec_atom *e = parseInitAtom(p);
+  init_spec_atom *e = parseInitAtom(p);
+
   if (p.consumeIf(COLON)) {
     // memory initializer
-    cls::init_spec_memory *m = new cls::init_spec_memory(l);
+    init_spec_memory *m = new init_spec_memory(l);
     m->root = e;
     if (p.consumeIf(LBRACK)) {
-      cls::init_spec_atom *de = parseInitAtom(p);
+      init_spec_atom *de = parseInitAtom(p);
       m->dimension = de;
       p.consume(RBRACK);
     }
@@ -1196,8 +1207,8 @@ static cls::init_spec *parseInit(cls::parser &p)
     auto s = p.tokenString();
     p.skip();
     for (size_t i = 0; i < s.size(); i++) {
-      auto setTx = [&] (cls::init_spec_memory::transfer t) {
-        if (m->transfer_properties != cls::init_spec_memory::transfer::TX_INVALID) {
+      auto setTx = [&] (init_spec_memory::transfer t) {
+        if (m->transfer_properties != init_spec_memory::transfer::TX_INVALID) {
           p.fatalAt(l, "memory transfer respecification");
         }
         m->transfer_properties = t;
@@ -1205,14 +1216,14 @@ static cls::init_spec *parseInit(cls::parser &p)
 
       switch (s[i]) {
       case 'r':
-        m->access_properties = (cls::init_spec_memory::access)(
+        m->access_properties = (init_spec_memory::access)(
           m->access_properties |
-          cls::init_spec_memory::access::INIT_SPEC_MEM_READ);
+          init_spec_memory::access::INIT_SPEC_MEM_READ);
         break;
       case 'w':
-        m->access_properties = (cls::init_spec_memory::access)(
+        m->access_properties = (init_spec_memory::access)(
           m->access_properties |
-          cls::init_spec_memory::access::INIT_SPEC_MEM_WRITE);
+          init_spec_memory::access::INIT_SPEC_MEM_WRITE);
         break;
       case 's': // SVM
         if (i < s.size() - 1) {
@@ -1220,24 +1231,24 @@ static cls::init_spec *parseInit(cls::parser &p)
           switch (s[i]) {
           case 'c':
           case 'f':
-            if (m->transfer_properties != cls::init_spec_memory::transfer::TX_INVALID)
+            if (m->transfer_properties != init_spec_memory::transfer::TX_INVALID)
               p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
             setTx(s[i] == 'c' ?
-              cls::init_spec_memory::transfer::TX_SVM_COARSE :
-              cls::init_spec_memory::transfer::TX_SVM_FINE);
+              init_spec_memory::transfer::TX_SVM_COARSE :
+              init_spec_memory::transfer::TX_SVM_FINE);
             break;
           default:
             // p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
             // assume coarse if only one char given
-            setTx(cls::init_spec_memory::transfer::TX_SVM_COARSE);
+            setTx(init_spec_memory::transfer::TX_SVM_COARSE);
           }
         }
         break;
       case 'm':
-        setTx(cls::init_spec_memory::transfer::TX_MAP);
+        setTx(init_spec_memory::transfer::TX_MAP);
         break;
       case 'c':
-        setTx(cls::init_spec_memory::transfer::TX_COPY);
+        setTx(init_spec_memory::transfer::TX_COPY);
         break;
       default:
         l.column += (uint32_t)i;
@@ -1245,8 +1256,9 @@ static cls::init_spec *parseInit(cls::parser &p)
         p.fatalAt(l, "invalid memory attribute");
       }
     }
-    if (m->transfer_properties == cls::init_spec_memory::transfer::TX_INVALID)
-      m->transfer_properties = cls::init_spec_memory::transfer::TX_COPY; // default to copy
+    if (m->transfer_properties == init_spec_memory::transfer::TX_INVALID)
+      m->transfer_properties = init_spec_memory::transfer::TX_COPY; // default to copy
+    m->defined_at.extend_to(p.nextLoc());
     return m;
   } else {
     // regular primitive
@@ -1254,81 +1266,50 @@ static cls::init_spec *parseInit(cls::parser &p)
   }
 }
 
-// let X=...
-static void parseLetStatement(cls::parser &p, cls::script &s)
-{
-  auto let_loc = p.nextLoc();
-  p.skip();      // let
-  auto name = p.tokenString(); // X
-  if (s.let_bindings.find(name) != s.let_bindings.end()) {
-    p.fatal(name, ": redefinition of let binding");
-  }
-  p.skip();      // X
-  p.consume(EQ); // =
-  auto init = parseInit(p); // TODO: need to partial applications
-  s.let_bindings[name] = init;
-  s.statements.push_back(new cls::let_spec(let_loc, name, init));
-}
 
-
-// #1`path/foo.cl`kernel<128,16>(...)
-static void parseDispatchStatement(cls::parser &p, cls::script &s)
+template <typename T>
+static refable<T*> consumeLetReference(
+  parser &p,
+  script &s,
+  enum spec::spec_kind kind,
+  const char *what)
 {
   auto loc = p.nextLoc();
-  auto d = new cls::dispatch_spec(loc);
-  if (p.consumeIf(HASH)) {
-    if (p.lookingAt(STRLIT)) {
-      if (p.lookingAt(STRLIT)) {
-        d->device.setSource(p.tokenStringLiteral());
-      } else {
-        d->device.setSource(p.tokenString());
-      }
-      p.skip();
-    } else if (p.lookingAtInt()) {
-      d->device.setSource((int)p.consumeInt("device index (integer)"));
-    } else {
-      p.fatal("invalid device specification");
-    }
-    p.consume(BACKTICK);
-  } else {
-    d->device.kind = cls::device_spec::BY_DEFAULT;
+  std::string name = p.consumeIdent();
+  auto itr = s.let_bindings.find(name);
+  if (itr == s.let_bindings.end()) {
+    p.fatalAt(loc,what," not defined");
   }
-
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //    ^^^^^^^^^^^
-  // #GTX`"foo/spaces in path/k.cl"`kernel<...>(...)
-  //      ^^^^^^^^^^^^^^^^^^^^^^^^^
-  d->program.defined_at = p.nextLoc();
-  if (p.lookingAt(STRLIT)) {
-    d->program.program_path = p.tokenStringLiteral(); p.skip();
-  } else {
-    d->program.program_path = consumeToChar(p, "[`");
+  spec *rs = itr->second;
+  if (rs->kind != kind) {
+    std::stringstream ss;
+    ss << "identifier does not reference a " << what;
+    ss << " (defined on line " << rs->defined_at.line << ")";
+    p.fatalAt(loc,ss.str());
   }
+  return refable<T*>((T *)rs);
+}
 
-  // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
-  //               ^^^^^^^^^^^^
-  if (p.consumeIf(LBRACK)) {
-    d->program.build_opts = consumeToChar(p, "]");
-    p.consume(RBRACK);
-  }
-  p.consume(BACKTICK);
-
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //                ^^^^^^
-  if (p.lookingAt(IDENT)) {
-    d->kernel.defined_at =
-      d->kernel.defined_at = p.nextLoc();
-    d->kernel.kernel_name = p.tokenString(); p.skip();
-  }
-
+// Three full forms
+// Full form:                   #1`path/foo.cl`kernel<128,16>(...)
+// Partially applied program:   BAR`baz<1024,128>(...)
+// Paritally applied kernel:    FOO<1024,128>(...)
+//
+// static void parseDispatchStatement####(parser &p, script &s, dispatch_spec &ds)
+static void parseDispatchStatementDimensions(
+  parser &p,
+  script &s,
+  dispatch_spec &ds)
+{
   // #1`path/foo.cl`kernel<1024x1024>(...)
   //                      ^^^^^^^^^^^
   // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
   //                      ^^^^^^^^^^^^^^^^^
   if (p.consumeIf(LANGLE)) {
-    auto parseDim = [&](bool allow_null) {
-      cls::dim_spec d(p.nextLoc());
-      if (p.lookingAtIdent("nullptr") || p.lookingAtIdent("NULL")) {
+    auto parseDim = [&] (bool allow_null) {
+      dispatch_spec::dim d;
+      d.defined_at = p.nextLoc();
+      if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL")) {
         if (!allow_null)
           p.fatal(p.tokenString(), " not allowed here");
         p.skip();
@@ -1336,7 +1317,7 @@ static void parseDispatchStatement(cls::parser &p, cls::script &s)
         // 1024 x 768
         // 0x200 x 0x100
         d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
-        while (p.lookingAtIdent("x")) {
+        while (p.lookingAtIdentEq("x")) {
           p.skip();
           d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
         }
@@ -1366,32 +1347,217 @@ static void parseDispatchStatement(cls::parser &p, cls::script &s)
       }
       return d;
     };
-    d->global_size = parseDim(false);
+    ds.global_size = parseDim(false);
     if (p.consumeIf(COMMA)) {
-      d->local_size = parseDim(true);
+      ds.local_size = parseDim(true);
     }
     p.consume(RANGLE);
   } // end dimension part <...>
+}
+
+
+// #1`path/foo.cl
+static program_spec *parseDispatchStatementDeviceProgramPart(
+  parser &p,
+  script &s)
+{
+  device_spec dev(p.nextLoc());
+  if (p.consumeIf(HASH)) {
+    if (p.lookingAt(STRLIT) || p.lookingAt(IDENT)) {
+      if (p.lookingAt(STRLIT)) {
+        dev.setSource(p.tokenStringLiteral());
+      } else {
+        dev.setSource(p.tokenString());
+      }
+      p.skip();
+    } else if (p.lookingAtInt()) {
+      dev.setSource((int)p.consumeInt("device index (integer)"));
+    } else {
+      p.fatal("invalid device specification");
+    }
+    p.consume(BACKTICK);
+    dev.defined_at.extend_to(p.nextLoc());
+  } else {
+    dev.kind = device_spec::BY_DEFAULT;
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //    ^^^^^^^^^^^
+  // #GTX`"foo/spaces in path/prog.cl"`kernel<...>(...)
+  //      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  program_spec *ps = new program_spec(p.nextLoc());
+  ps->device = dev;
+  if (p.lookingAt(STRLIT)) {
+    ps->path = p.tokenStringLiteral(); p.skip();
+  } else {
+    ps->path = consumeToChar(p, "[`");
+  }
+
+  // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
+  //               ^^^^^^^^^^^^
+  if (p.consumeIf(LBRACK)) {
+    ps->build_options = consumeToChar(p, "]");
+    p.consume(RBRACK);
+  }
+  ps->defined_at.extend_to(p.nextLoc());
+  p.consume(BACKTICK);
+
+  return ps;
+}
+
+static kernel_spec *parseDispatchStatementKernelPart(
+  program_spec *ps, parser &p, script &s)
+{
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //                ^^^^^^
+  kernel_spec *ks = new kernel_spec(ps);
+  if (p.lookingAt(IDENT)) {
+    ks->name = p.tokenString(); p.skip();
+  }
+  ks->defined_at.extend_to(p.nextLoc());
+  ks->program = ps;
+  return ks;
+}
+
+// allows for default devices:
+//   EASY CSE:  #1`....
+//              ^ yes!
+//   HARD CASE: long/path with/spaces/foo.cl[long args]`kernel<...>()
+//                                                     ^ YES!
+static bool lookingAtImmediateDispatchStatement(parser &p) {
+    if (p.lookingAt(HASH))
+      return true;
+    // let foo = ...;
+    if (p.lookingAtIdentEq("let"))
+      return false;
+    // barrier(...)
+    if (p.lookingAtIdent() && p.lookingAt(LPAREN,1))
+      return false;
+    int i = 1;
+    while (i < (int)p.tokensLeft()) {
+      if (p.lookingAt(BACKTICK,i) || // correct dispatch
+        p.lookingAt(LANGLE,i)) // malformed dispatch   foo.cl<1024>(...)
+      {
+        return true;
+      } else if (p.lookingAt(NEWLINE,i) || // malformed statement
+        p.lookingAt(SEMI,i) || // malformed statement
+        p.lookingAt(EQ,i)) // malformed let possibly
+      {
+        break;
+      }
+      i++;
+    }
+    return false;
+}
+
+static dispatch_spec *parseDispatchStatement(parser &p, script &s)
+{
+  auto loc = p.nextLoc();
+  dispatch_spec *ds = new dispatch_spec(loc);
+  if (lookingAtImmediateDispatchStatement(p)) {
+      // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
+      // ^^^^^^^^^^^^^^^^^^^^^^^
+      program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
+      // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
+      //                        ^
+      p.consume(BACKTICK);
+      // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+      //                ^^^^^^
+      ds->kernel = parseDispatchStatementKernelPart(ps, p, s);
+  } else if (p.lookingAt(IDENT) && p.lookingAt(LANGLE,1)) {
+    // KERNEL<...>(...)
+    ds->kernel =
+      consumeLetReference<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
+  } else if (p.lookingAt(IDENT) && p.lookingAt(BACKTICK,1) &&
+    p.lookingAt(IDENT,2) && p.lookingAt(LANGLE,3))
+  {
+    // PROG`kernel<...>(...)
+    // 000012222223...
+    refable<program_spec *> ps =
+      consumeLetReference<program_spec>(p,s,spec::PROGRAM_SPEC,"program");
+    p.consume(BACKTICK);
+    std::string kernel_name = p.consumeIdent("kernel name");
+    ds->kernel = refable<kernel_spec*>(new kernel_spec(ps));
+  } else {
+    p.fatal("expected statement");
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+  //                      ^^^^^^^^^^^^^^^^^
+  parseDispatchStatementDimensions(p,s,*ds);
 
   // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33)
   //                                 ^^^^^^^^^^^^^
   p.consume(LPAREN);
   while (!p.lookingAt(RPAREN)) {
-    d->arguments.push_back(parseInit(p));
+    ds->arguments.push_back(parseInit(p));
     if (!p.consumeIf(COMMA))
       break;
   }
   p.consume(RPAREN);
+  ds->defined_at.extend_to(p.nextLoc());
 
-  s.statements.push_back(d);
+  // resolve references after the where clause
+  if (p.consumeIfIdentEq("where")) {
+    auto loc = p.nextLoc();
+    auto name = p.consumeIdent("variable name");
+
+    auto itr = s.let_bindings.find(name);
+    if (itr != s.let_bindings.end()) {
+      p.warningAt(loc,
+        "where binding shadows let binding (from line ",
+        itr->second->defined_at.line, ")");
+    }
+    for (auto w : ds->where_bindings)
+      if (std::get<0>(w) == name)
+        p.fatalAt(loc,"repeated where binding name");
+    p.consume(EQ);
+    init_spec *i = parseInit(p);
+    ds->where_bindings.emplace_back(name,i);
+    bool where_used_at_least_once = false;
+    for (int ai = 0; ai < ds->arguments.size(); ai++) {
+      init_spec *is = ds->arguments[ai];
+      if (is->kind == init_spec::IS_SYM &&
+        ((init_spec_symbol *)is)->identifier == name)
+      {
+        ds->arguments[ai] = refable<init_spec*>(i);
+        where_used_at_least_once = true;
+      }
+    }
+    if (!where_used_at_least_once) {
+      p.warningAt(loc, "where binding never used");
+    }
+  }
+
+  // resolve anything that's not
+  for (int ai = 0; ai < ds->arguments.size(); ai++) {
+    init_spec *is = ds->arguments[ai];
+    if (is->kind == init_spec::IS_SYM) {
+      auto itr = s.let_bindings.find(((init_spec_symbol *)is)->identifier);
+      if (itr == s.let_bindings.end()) {
+        p.fatalAt(is->defined_at,"undefined symbol");
+      }
+      spec *s = itr->second;
+      if (s->kind != s->INIT_SPEC) {
+        p.fatalAt(is->defined_at,
+          "symbol does not refer to a kernel argument (see line ",
+          s->defined_at.line,
+          ")");
+      }
+      // otherwise make the replacement
+      ds->arguments[ai] = refable<init_spec*>((init_spec*)s);
+    }
+  }
+
+  return ds;
 }
 
-static cls::init_spec_symbol *parseSymbol(cls::parser &p)
+static init_spec_symbol *parseSymbol(parser &p)
 {
   auto loc = p.nextLoc();
   if (p.lookingAtIdent()) {
     auto ident = p.tokenString();
-    return new cls::init_spec_symbol(loc, ident);
+    return new init_spec_symbol(loc, ident);
   } else {
     p.fatal("expected identifier");
     return nullptr;
@@ -1399,44 +1565,44 @@ static cls::init_spec_symbol *parseSymbol(cls::parser &p)
 }
 
 // template<typename T>
-// static bool parseBuiltIn(Parser &p, cls::script &s) {
+// static bool parseBuiltIn(Parser &p, script &s) {
 //  s.statements.emplace_back(T,);
 // }
 
 // barrier | diff(X,Y) | print(X) | save(sym,X)
-static bool parseBuiltIn(cls::parser &p, cls::script &s)
+static bool parseBuiltIn(parser &p, script &s)
 {
   auto loc = p.nextLoc();
-  if (p.lookingAtIdent("barrier")) {
-      s.statements.push_back(new cls::barrier_spec(loc));
+  if (p.lookingAtIdentEq("barrier")) {
+      s.statements.push_back(new barrier_spec(loc));
       p.skip();
       if (p.consumeIf(LPAREN)) // optional ()
         p.consume(RPAREN);
     return true;
-  } else if (p.lookingAtIdent("diff")) {
+  } else if (p.lookingAtIdentEq("diff")) {
     p.skip();
     p.consume(LPAREN);
     auto *ref = parseInit(p);
     p.consume(COMMA);
-    cls::init_spec_symbol *sut = parseSymbol(p);
-    s.statements.push_back(new cls::diff_spec(loc, ref, sut));
+    init_spec_symbol *sut = parseSymbol(p);
+    s.statements.push_back(new diff_spec(loc, ref, sut));
     p.consume(RPAREN);
     return true;
-  } else if (p.lookingAtIdent("print")) {
+  } else if (p.lookingAtIdentEq("print")) {
     p.skip();
     p.consume(LPAREN);
-    cls::init_spec_symbol *val = parseSymbol(p);
-    s.statements.push_back(new cls::print_spec(loc, val));
+    init_spec_symbol *val = parseSymbol(p);
+    s.statements.push_back(new print_spec(loc, val));
     p.consume(RPAREN);
     return true;
-  } else if (p.lookingAtIdent("save")) {
+  } else if (p.lookingAtIdentEq("save")) {
     p.skip();
     p.consume(LPAREN);
     if (!p.lookingAt(STRLIT))
       p.fatal("expected file name (string literal)");
     std::string file = p.tokenStringLiteral();
-    cls::init_spec_symbol *val = parseSymbol(p);
-    s.statements.push_back(new cls::save_spec(loc, file, val));
+    init_spec_symbol *val = parseSymbol(p);
+    s.statements.push_back(new save_spec(loc, file, val));
     p.consume(RPAREN);
     return true;
   } else {
@@ -1444,25 +1610,66 @@ static bool parseBuiltIn(cls::parser &p, cls::script &s)
   }
 }
 
-static void parseStatementLine(cls::parser &p, cls::script &s)
+// let X=...
+static void parseLetStatement(parser &p, script &s)
 {
-  if (p.lookingAtIdent("let") && p.lookingAt(IDENT,1) && p.lookingAt(EQ,2)) {
+  auto let_loc = p.nextLoc();
+  p.skip();      // let
+  auto name = p.tokenString(); // X
+  if (s.let_bindings.find(name) != s.let_bindings.end()) {
+    p.fatal(name, ": redefinition of let binding");
+  }
+  p.skip();      // X
+  let_spec *ls = new let_spec(let_loc, name);
+  if (p.consumeIf(LPAREN)) {
+    // let F(X,Y) = #1`foo.cl`bar<...>(X,Y)
+    if (!p.lookingAt(RPAREN)) {
+      do {
+        ls->params.push_back(p.consumeIdent());
+      } while(p.consumeIf(COMMA));
+      p.consume(RPAREN);
+      p.fatal("let arguments not supported yet");
+    }
+  }
+  p.consume(EQ); // =
+
+  spec *val = nullptr;
+  if (lookingAtImmediateDispatchStatement(p)) {
+    program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
+    val = ps;
+    if (p.consumeIf(BACKTICK)) {
+      kernel_spec *ks = parseDispatchStatementKernelPart(ps, p, s);
+      val = ks->program = ps;
+    }
+  } else {
+    val = parseInit(p);
+  }
+  ls->value = val;
+  s.let_bindings[name] = ls;
+  s.statements.push_back(ls);
+  s.statements.back()->defined_at.extend_to(p.nextLoc());
+}
+
+static void parseStatementLine(parser &p, script &s)
+{
+  if (p.lookingAtIdentEq("let") && p.lookingAt(IDENT,1)) {
     // let X = ...
-    parseLetStatement(p, s);
+    // let F(X,Y) = ... (TODO: implement: means let parsing needs to honor bindings)
+    parseLetStatement(p,s);
   } else if (parseBuiltIn(p,s)) {
     ;
   } else {
     // #1`foo/bar.cl
-    parseDispatchStatement(p, s);
-  } // TODO: other statements
+    parseDispatchStatement(p,s);
+  }
 }
 
-cls::script cls::ParseScript(
+script cls::parse_script(
   const Opts &os,
   const std::string &input,
   const std::string &filename)
 {
-  cls::script s;
+  script s;
   s.source = &input;
 
   parser p(input);

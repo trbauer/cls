@@ -1,9 +1,21 @@
 #include "cls_ir.hpp"
 #include "../system.hpp"
 
+using namespace cls;
+
+void spec::str(std::ostream &os) const {
+  switch (kind) {
+  case spec::INIT_SPEC: ((const init_spec*)this)->str(os); break;
+  case spec::STATEMENT_SPEC: ((const init_spec*)this)->str(os); break;
+  //
+  case spec::DEVICE_SPEC: ((const device_spec*)this)->str(os); break;
+  case spec::PROGRAM_SPEC: ((const program_spec*)this)->str(os); break;
+  case spec::KERNEL_SPEC: ((const kernel_spec*)this)->str(os); break;
+  }
+}
 
 
-void cls::statement_spec::str(std::ostream &os) const {
+void statement_spec::str(std::ostream &os) const {
   switch (kind) {
   case DISPATCH: ((const dispatch_spec*)this)->str(os); break;
   case LET:      ((const let_spec*)this)->str(os);      break;
@@ -11,12 +23,37 @@ void cls::statement_spec::str(std::ostream &os) const {
   case SAVE:
   case PRINT:
   default:
-    os << "cls::statement_spec???";
+    os << "statement_spec???";
     break;
   }
 }
 
-void cls::init_spec_memory::str(std::ostream &os) const {
+void device_spec::setSource(std::string name) {
+  by_name_value = name;
+  kind = kind::BY_NAME;
+}
+void device_spec::setSource(int index) {
+  by_index_value = index;
+  kind = kind::BY_INDEX;
+}
+void device_spec::str(std::ostream &os) const {
+  switch (kind) {
+  case device_spec::BY_DEFAULT: return;
+  case device_spec::BY_INDEX: os << "#" << by_index_value; return;
+  case device_spec::BY_NAME: os << "#" << by_name_value; return;
+  default: os << "device_spec??"; break;
+  }
+}
+void program_spec::str(std::ostream &os) const {
+  device.str(os);
+  os << "`";
+  os << path;
+  if (!build_options.empty())
+    os << "[" << build_options << "]";
+}
+
+
+void init_spec_memory::str(std::ostream &os) const {
   if (root)
     root->str(os);
   else
@@ -25,42 +62,43 @@ void cls::init_spec_memory::str(std::ostream &os) const {
   if (dimension) {
     os << "["; dimension->str(os); os << "]";
   }
-  if (access_properties & cls::init_spec_memory::INIT_SPEC_MEM_READ)
+  if (access_properties & init_spec_memory::INIT_SPEC_MEM_READ)
     os << 'r';
-  if (access_properties & cls::init_spec_memory::INIT_SPEC_MEM_WRITE)
+  if (access_properties & init_spec_memory::INIT_SPEC_MEM_WRITE)
     os << 'w';
-//  if (access_properties & cls::init_spec_memory::INIT_SPEC_MEM_DIRECT)
+//  if (access_properties & init_spec_memory::INIT_SPEC_MEM_DIRECT)
 //    os << 'd'; // direct access (SVM)
-  if (transfer_properties == cls::init_spec_memory::TX_MAP)
+  // SPECIFY: do we allow for a default
+  if (transfer_properties == init_spec_memory::TX_MAP)
     os << 'm';
-  if (transfer_properties == cls::init_spec_memory::TX_COPY)
+  if (transfer_properties == init_spec_memory::TX_COPY)
     os << 'c';
-  if (transfer_properties == cls::init_spec_memory::TX_SVM_COARSE)
+  if (transfer_properties == init_spec_memory::TX_SVM_COARSE)
     os << 's';
-  if (transfer_properties == cls::init_spec_memory::TX_SVM_FINE)
+  if (transfer_properties == init_spec_memory::TX_SVM_FINE)
     os << 's' << 'f';
 
 }
 
 
-void cls::init_spec::str(std::ostream &os) const
+void init_spec::str(std::ostream &os) const
 {
   switch (kind) {
-  case IS_SYM: ((const cls::init_spec_symbol *)this)->str(os); break;
-  case IS_INT:((const cls::init_spec_int *)this)->str(os); break;
-  case IS_FLT: ((const cls::init_spec_float *)this)->str(os); break;
-  case IS_REC: ((const cls::init_spec_record *)this)->str(os); break;
-  case IS_BEX: ((const cls::init_spec_bin_expr *)this)->str(os); break;
-  case IS_UEX: ((const cls::init_spec_unr_expr *)this)->str(os); break;
-  case IS_FILE: ((const cls::init_spec_file *)this)->str(os); break;
-  case IS_RND: ((const cls::init_spec_rng_generator *)this)->str(os); break;
-  case IS_SEQ: ((const cls::init_spec_seq_generator *)this)->str(os); break;
-  case IS_MEM: ((const cls::init_spec_memory *)this)->str(os); break;
-  default: os << "cls::init_spec?"; break;
+  case IS_SYM: ((const init_spec_symbol *)this)->str(os); break;
+  case IS_INT:((const init_spec_int *)this)->str(os); break;
+  case IS_FLT: ((const init_spec_float *)this)->str(os); break;
+  case IS_REC: ((const init_spec_record *)this)->str(os); break;
+  case IS_BEX: ((const init_spec_bin_expr *)this)->str(os); break;
+  case IS_UEX: ((const init_spec_unr_expr *)this)->str(os); break;
+  case IS_FILE: ((const init_spec_file *)this)->str(os); break;
+  case IS_RND: ((const init_spec_rng_generator *)this)->str(os); break;
+  case IS_SEQ: ((const init_spec_seq_generator *)this)->str(os); break;
+  case IS_MEM: ((const init_spec_memory *)this)->str(os); break;
+  default: os << "init_spec?"; break;
   }
 }
 
-static void emitExpr(std::ostream &os, cls::init_spec_atom *e) {
+static void emitExpr(std::ostream &os, init_spec_atom *e) {
   if (e) {
     e->str(os);
   } else {
@@ -68,7 +106,7 @@ static void emitExpr(std::ostream &os, cls::init_spec_atom *e) {
   }
 };
 
-void cls::init_spec_bin_expr::str(std::ostream &os) const
+void init_spec_bin_expr::str(std::ostream &os) const
 {
   switch (e_kind) {
   case init_spec_bin_expr::E_POW:
@@ -100,7 +138,7 @@ void cls::init_spec_bin_expr::str(std::ostream &os) const
   }
 }
 
-void cls::init_spec_unr_expr::str(std::ostream &os) const
+void init_spec_unr_expr::str(std::ostream &os) const
 {
   switch (e_kind) {
   case init_spec_unr_expr::E_NEG: os << "-"; emitExpr(os, e); break;
@@ -110,12 +148,16 @@ void cls::init_spec_unr_expr::str(std::ostream &os) const
   case init_spec_unr_expr::E_SIN: os << "sin("; emitExpr(os, e); os << ")"; break;
   case init_spec_unr_expr::E_COS: os << "cos("; emitExpr(os, e); os << ")"; break;
   case init_spec_unr_expr::E_TAN: os << "tan("; emitExpr(os, e); os << ")"; break;
-  default:
-    os << "?"; emitExpr(os, e); break;
+  default: os << "?"; emitExpr(os, e); break;
   }
 }
 
-void cls::dim_spec::str(std::ostream &os) const {
+void kernel_spec::str(std::ostream &os) const {
+  program.str(os);
+  os << "`" <<  name;
+}
+
+void dispatch_spec::dim::str(std::ostream &os) const {
   bool first = true;
   for (size_t d : dims) {
     if (first) first = false; else os << "x";
@@ -123,11 +165,7 @@ void cls::dim_spec::str(std::ostream &os) const {
   }
 }
 
-void cls::dispatch_spec::str(std::ostream &os) const {
-  device.str(os);
-  os << '`';
-  program.str(os);
-  os << '`';
+void dispatch_spec::str(std::ostream &os) const {
   kernel.str(os);
   os << "<";
   global_size.str(os);
@@ -140,7 +178,16 @@ void cls::dispatch_spec::str(std::ostream &os) const {
   for (size_t i = 0; i < arguments.size(); i++) {
     if (i > 0)
       os << ", ";
-    arguments[i]->str(os);
+    arguments[i].str(os);
   }
   os << ")";
+  if (!where_bindings.empty()) {
+    os << " where ";
+    for (size_t i = 0; i < where_bindings.size(); i++) {
+      if (i > 0)
+        os << ", ";
+      os << std::get<0>(where_bindings[i]) << " = ";
+      std::get<1>(where_bindings[i])->str(os);
+    }
+  }
 }

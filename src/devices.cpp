@@ -167,6 +167,6 @@ cl_int makeCommandQueue(
     props |= CL_QUEUE_PROFILING_ENABLE;
   }
   cl_int err;
-  cl_command_queue q = clCreateCommandQueue(ctx, dev_id, props, &err);
+  queue = clCreateCommandQueue(ctx, dev_id, props, &err);
   return err;
 }

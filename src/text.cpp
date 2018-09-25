@@ -102,7 +102,7 @@ std::vector<std::string> text::to_words(const std::string &str)
     size_t start = off;
     while (off < str.size() && !isspace(str[off]))
       off++;
-    ws.push_back(str.substr(off,off - start));
+    ws.push_back(str.substr(start,off - start));
   }
   return ws;
 }

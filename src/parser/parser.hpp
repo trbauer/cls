@@ -38,7 +38,7 @@ namespace cls {
     size_t              m_offset;
     token               m_eof;
   public:
-    parser(const std::string &input)
+    parser(const std::string &input, bool omit_newlines = false)
       : fatal_handler(input)
       , m_offset(0)
       , m_eof(lexemes::END_OF_FILE, 0, 0, 0, 0)
@@ -88,10 +88,12 @@ namespace cls {
           m_tokens.push_back(m_eof);
           break;
         }
-        m_tokens.emplace_back(lxm, lno, col, off, len);
+
+        if (lxm != lexeme::NEWLINE || !omit_newlines)
+          m_tokens.emplace_back(lxm, lno, col, off, len);
         if (lxm != STRLIT)
           inpOff += len;
-      }
+      } // while
 
       yylex_destroy(yy);
     } // Parser::Parser
@@ -103,10 +105,18 @@ namespace cls {
     void fatal(Ts... ts) const {
       fatalAt(nextLoc(),ts...);
     }
+    template <typename...Ts>
+    void warning(Ts... ts) const {
+      warningAt(nextLoc(),ts...);
+    }
 
     bool endOfFile() const {
       return m_tokens[m_offset].lexeme == END_OF_FILE;
     }
+    size_t tokensLeft() const {
+      return m_tokens.size() - m_offset;
+    }
+
     std::string tokenString() const {
       auto loc = nextLoc();
       return input().substr(loc.offset, loc.extent);
@@ -162,10 +172,13 @@ namespace cls {
     bool lookingAt(lexeme lx, int i = 0) const {
       return next(i).lexeme == lx;
     }
+    bool lookingAtSymbol(const char *sym) const {
+      return tokenString() == sym;
+    }
     bool lookingAtIdent(int i = 0) const {
       return next(i).lexeme == IDENT;
     }
-    bool lookingAtIdent(const char *v, int i = 0) {
+    bool lookingAtIdentEq(const char *v, int i = 0) {
       if (!lookingAt(IDENT)) {
         return false;
       }
@@ -179,8 +192,8 @@ namespace cls {
       }
       return true;
     }
-    bool lookingAtIdent(const char *v1, const char *v2, int i = 0) {
-      return lookingAtIdent(v1, i) || lookingAtIdent(v2, i);
+    bool lookingAtIdentEq(const char *v1, const char *v2, int i = 0) {
+      return lookingAtIdentEq(v1, i) || lookingAtIdentEq(v2, i);
     }
     bool lookingAtInt() const {
       return lookingAt(INTLIT02) || lookingAt(INTLIT10) || lookingAt(INTLIT16);
@@ -203,31 +216,7 @@ namespace cls {
       }
       return false;
     }
-    void consumeOneOf(const char *expected, lexeme lx1, lexeme lx2) {
-      consumeOneOf(expected, lx1, lx2, lx2);
-    }
-    void consumeOneOf(
-      const char *expected,
-      lexeme lx1,
-      lexeme lx2,
-      lexeme lx3)
-    {
-      if (lookingAt(lx1) || lookingAt(lx2) || lookingAt(lx3)) {
-        (void)skip();
-      } else {
-        std::string str;
-        if (expected == nullptr) {
-          std::stringstream ss;
-          ss << "expected " << to_syntax(lx1) << ", " <<
-            to_syntax(lx2) << " or " << to_syntax(lx3);
-          str = ss.str();
-        } else {
-          str = expected;
-        }
-        fatal(str.c_str());
-      }
-    }
-    std::string consumeIdentStringAs(const char *group = "identifier") {
+    std::string consumeIdent(const char *group = "identifier") {
       if (!lookingAt(IDENT)) {
         fatal("expected ", group);
       }
@@ -235,7 +224,7 @@ namespace cls {
       skip();
       return s;
     }
-    void consumeIdentAs(const char *kw, const char *group = "identifier") {
+    void consumeIdentEq(const char *kw, const char *group = "identifier") {
       if (!lookingAt(IDENT)) {
         fatal("expected \"", group, "\"");
       }
@@ -246,15 +235,16 @@ namespace cls {
       }
       skip();
     }
-    bool consumeIfIdent(const char *ident) {
-      if(lookingAtIdent(ident)) {
+
+    bool consumeIfIdentEq(const char *ident) {
+      if(lookingAtIdentEq(ident)) {
         skip();
         return true;
       }
       return false;
     }
-    bool consumeIfIdent(const char *ident1, const char *ident2) {
-      if(lookingAtIdent(ident1,ident2)) {
+    bool consumeIfIdentEq(const char *ident1, const char *ident2) {
+      if(lookingAtIdentEq(ident1) || lookingAtIdentEq(ident2)) {
         skip();
         return true;
       }

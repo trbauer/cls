@@ -5,7 +5,16 @@
 #define CAT(X,Y) CAT2(X,Y)
 #define TYPED(SYM) CAT(TYPE, _ ## SYM)
 
-kernel void TYPED(add)(
+kernel void TYPED(adds)(
+  global TYPE *dst,
+  global TYPE *src0,
+         TYPE  src1)
+{
+  int id = get_global_id(0);
+  dst[id] = src0[id] + src1;
+}
+
+kernel void TYPED(addv)(
   global TYPE *dst,
   global TYPE *src0,
   global TYPE *src1)

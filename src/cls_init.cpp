@@ -1,4 +1,4 @@
-#include "cls.hpp"
+#include "cl_headers.hpp"
 #include "system.hpp"
 #include "text.hpp"
 
@@ -13,11 +13,6 @@
 
 #include <sstream>
 #include <iostream>
-// #include <filesystem>
-// using namespace std::tr2::sys;
-// namespace fs = std::experimental::filesystem;
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
 
 using namespace cls;
 

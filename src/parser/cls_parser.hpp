@@ -11,7 +11,7 @@
 
 namespace cls
 {
-  cls::script ParseScript(
+  cls::script parse_script(
     const Opts &os,
     const std::string &input,
     const std::string &filename);

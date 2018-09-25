@@ -84,6 +84,11 @@ int main(int argc, const char **argv)
     }
   });
   cmdspec.defineFlag(
+    "E","save-preprocessed","saves the pre-processed source","",opts::NONE,
+    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+      opts.save_preprocessed = true;
+    });
+  cmdspec.defineFlag(
     "B","save-binaries","saves the binaries","",opts::NONE,
     [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
       opts.save_binaries = true;
@@ -161,7 +166,7 @@ static void runFile(
   cls::script s;
   try {
     os.verbose() << "parsing script\n";
-    s = cls::ParseScript(os, file_contents, file_name);
+    s = cls::parse_script(os, file_contents, file_name);
     s.str(std::cout);
     std::cout << "\n";
   } catch (cls::diagnostic &d) {

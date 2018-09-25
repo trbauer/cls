@@ -19,10 +19,7 @@ namespace cls
     loc defined_at;
 
     ir() { }
-    ir(loc _loc)
-      : defined_at(_loc)
-    {
-    }
+    ir(loc _loc) : defined_at(_loc) { }
     ir(const ir &ir) = delete;
     // ir &operator=(const ir &ir) = delete;
   };
@@ -39,11 +36,15 @@ namespace cls
     enum spec_kind {
       INVALID_SPEC = 0
     , INIT_SPEC
-    , STATEMENT_SPEC
-    , DISPATCH_PART_SPEC // e.g. device_spec, prog_spec, kernel_spec, dim_spec
+    , STATEMENT_SPEC // e.g. dispatch_spec or let_spec
+    // dispatch parts (but can appear in a LET)
+    , DEVICE_SPEC
+    , PROGRAM_SPEC
+    , KERNEL_SPEC
     } kind;
     loc defined_at;
     spec(loc _loc, enum spec_kind _kind) : defined_at(_loc), kind(_kind) { }
+    void str(std::ostream &os) const;
   };
 
   // buffer/image/scalar initializer
@@ -215,11 +216,12 @@ namespace cls
 
     enum transfer {
       TX_INVALID = 0,
+      TX_DEFAULT, // probably mapped or copied, but up to the implementation
       TX_MAP,  // :m -> mirror memory/ALLOC_HOST_POINTER clEnqueueMapBuffer
       TX_COPY, // :c -> mirror memory and clEnqueue{Write,Read}Buffer
       TX_SVM_COARSE, // :sc -> clSVMAlloc (or :sf for fine grained)
       TX_SVM_FINE,  // :sf -> clSVMAlloc
-    } transfer_properties = TX_INVALID;
+    } transfer_properties = TX_DEFAULT;
 
     bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
     bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
@@ -257,78 +259,92 @@ namespace cls
     int           by_index_value = -1;
     std::string   by_name_value;
 
-    device_spec(loc loc) : spec(loc,spec::DISPATCH_PART_SPEC) { }
+    device_spec(loc loc) : spec(loc,spec::DEVICE_SPEC) { }
+    void setSource(std::string name);
+    void setSource(int index);
 
-    void setSource(std::string nm) {
-      by_name_value = nm;
-      kind = kind::BY_NAME;
-    }
-    void setSource(int index) {
-      by_index_value = index;
-      kind = kind::BY_INDEX;
-    }
-    void str(std::ostream &os) const {
-      switch (kind) {
-      case device_spec::BY_DEFAULT: return;
-      case device_spec::BY_INDEX: os << "#" << by_index_value; return;
-      case device_spec::BY_NAME: os << "#" << by_name_value; return;
-      default: os << "device_spec??"; break;
-      }
-    }
+    void str(std::ostream &os) const;
   };
 
-  struct program_spec : spec {
-    std::string program_path;
-    std::string build_opts;
-//    cl::Program *program = nullptr;
-    program_spec(loc loc) : spec(loc,spec::DISPATCH_PART_SPEC) { }
+  // fills in for anything that can be referenced or defined immediately
+  template <typename T>
+  struct refable {
+    loc              defined_at;
+    std::string      identifier;
+    T                value = nullptr;
+
+    refable() : defined_at(0,0,0,0) { }
+    refable(loc l, std::string ident, T _value = nullptr) // symbolic ref
+      : defined_at(l), identifier(ident), value(_value) { }
+    refable(T _value) // immediate ref
+      : defined_at(0,0,0,0), value(_value) { }
+    bool is_resolved() const {return value != nullptr;}
+          T &operator->()       {return *value;}
+    const T &operator->() const {return *value;}
+             operator T()       {return value;}
+             operator T() const {return value;}
     void str(std::ostream &os) const {
-      os << program_path;
-      if (!build_opts.empty()) {
-        os << "[" << build_opts << "]";
-      }
+      if (identifier.empty())
+        if (value != nullptr)
+          value->str(os);
+        else
+          os << "<nullptr>";
+      else os << identifier;
     }
+  };
+  struct program_spec : spec {
+    device_spec     device;
+    std::string     path;
+    std::string     build_options;
+
+    program_spec(loc loc) : spec(loc,spec::PROGRAM_SPEC), device(loc) { }
+    void str(std::ostream &os) const;
   };
   struct kernel_spec : spec {
-    std::string kernel_name;
-    kernel_spec(loc loc) : spec(loc,spec::DISPATCH_PART_SPEC) { }
-    void str(std::ostream &os) const {
-      os << kernel_name;
-    }
-  };
-  struct dim_spec : spec {
-    std::vector<size_t> dims; // 0,0,0 means use nullptr or required WG size
-    dim_spec(loc loc) : spec(loc,spec::DISPATCH_PART_SPEC) {}
-    dim_spec() : dim_spec(loc(0,0,0,0)) {}
+    refable<program_spec*>    program;
+    std::string               name;
+
+    kernel_spec(program_spec *ps)
+      : spec(ps->defined_at,spec::KERNEL_SPEC), program(ps) { }
     void str(std::ostream &os) const;
   };
   struct dispatch_spec : statement_spec {
-    device_spec               device;
-    program_spec              program;
-    kernel_spec               kernel;
-    dim_spec                  global_size;
-    dim_spec                  local_size;
-    std::vector<init_spec*>   arguments;
+    struct dim {
+      loc                       defined_at;
+      std::vector<size_t>       dims; // empty means use nullptr or reqd wg sz
 
-    dispatch_spec(loc loc)
-      : statement_spec(loc, statement_spec::DISPATCH)
-      , device(loc)
-      , program(loc)
-      , kernel(loc) { }
+      void str(std::ostream &os) const;
+    };
+    refable<kernel_spec*>                               kernel;
+    dim                                                 global_size;
+    dim                                                 local_size;
+    std::vector<refable<init_spec*>>                    arguments;
+    std::vector<std::tuple<std::string,init_spec*>>     where_bindings;
+
+    dispatch_spec(loc loc) : statement_spec(loc, statement_spec::DISPATCH) { }
     void str(std::ostream &os) const;
   };
 
+  // let X = ...
   struct let_spec : statement_spec {
-    std::string     identifier;
-    init_spec      *definition = nullptr;
+    std::string               identifier;
+    spec                     *value;
+    std::vector<std::string>  params;
 
-    let_spec(loc loc,std::string ident, init_spec *defn)
+    let_spec(loc loc,std::string ident, init_spec *defn = nullptr)
       : statement_spec(loc, statement_spec::LET)
       , identifier(ident)
-      , definition(defn) { }
+      , value(defn) { }
     void str(std::ostream &os) const {
-      os << "let " << identifier << " = ";
-      definition->str(os);
+      os << "let " << identifier;
+      if (!params.empty()) {
+        os << "(" << params[0];
+        for (size_t i = 1; i < params.size(); i++)
+          os << "," << params[i];
+        os << ")";
+      }
+      os << " = ";
+      value->str(os);
     }
   };
   // barrier
@@ -372,7 +388,7 @@ namespace cls
     const std::string                 *source = nullptr;
 
     std::vector<statement_spec*>       statements;
-    std::map<std::string,init_spec*>   let_bindings;
+    std::map<std::string,let_spec*>    let_bindings;
 
     // script() { }
     // script(const script &) = delete;

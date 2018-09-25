@@ -186,7 +186,7 @@ namespace text {
       int lpad = 0,
       int rpad = 0)
     {
-      cols.push_back(col(label, numeric, lpad, rpad));
+      cols.emplace_back(label, numeric, lpad, rpad);
       return cols.back();
     }
     void define_spacer(
