@@ -8,7 +8,7 @@
 
 
 bool getDeviceByName(
-  const cls::Opts &opts,
+  const cls::opts &opts,
   std::string substr,
   cl::Device &dev,
   std::string &err_msg)
@@ -42,7 +42,7 @@ bool getDeviceByName(
 }
 
 cl::Device getDeviceByName(
-  const cls::Opts &os,
+  const cls::opts &os,
   std::string substr)
 {
   cl::Device dev;
@@ -53,7 +53,7 @@ cl::Device getDeviceByName(
   return dev;
 }
 
-bool getDeviceByIndex(const cls::Opts &os, int dev_ix, cl::Device &dev)
+bool getDeviceByIndex(const cls::opts &os, int dev_ix, cl::Device &dev)
 {
   int curr_ix = 0;
   std::vector<cl::Platform> ps;
@@ -71,7 +71,7 @@ bool getDeviceByIndex(const cls::Opts &os, int dev_ix, cl::Device &dev)
   }
   return false;
 }
-cl::Device getDeviceByIndex(const cls::Opts &os, int dev_ix)
+cl::Device getDeviceByIndex(const cls::opts &os, int dev_ix)
 {
   cl::Device dev;
   if (!getDeviceByIndex(os, dev_ix, dev)) {
@@ -80,7 +80,7 @@ cl::Device getDeviceByIndex(const cls::Opts &os, int dev_ix)
   return dev;
 }
 
-cl::Device getDeviceDefault(const cls::Opts &)
+cl::Device getDeviceDefault(const cls::opts &)
 {
     std::vector<cl::Device> ds;
     cl::Platform::getDefault().getDevices(CL_DEVICE_TYPE_DEFAULT, &ds);
@@ -92,9 +92,9 @@ cl::Device getDeviceDefault(const cls::Opts &)
 
 
 // list_device.cpp
-void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx);
+void listDeviceInfoForDevice(const cls::opts &os, const cl::Device &d, int devIx);
 
-void listDeviceInfo(const cls::Opts &os)
+void listDeviceInfo(const cls::opts &os)
 {
   if (!os.list_devices_specific.empty()) {
     for (auto &d : os.list_devices_specific) {

@@ -11,10 +11,12 @@
 
 namespace cls
 {
-  cls::script parse_script(
-    const Opts &os,
+  void parse_script(
+    const opts &os,
     const std::string &input,
-    const std::string &filename);
+    const std::string &filename,
+    cls::script &s,
+    warning_list &wl);
 }
 
 #endif

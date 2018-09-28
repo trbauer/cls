@@ -32,7 +32,7 @@ struct filtered_stream {
   }
 };
 
-struct Opts {
+struct opts {
   int                         verbosity = 0;
   std::vector<std::string>    input_files; // regular arg
   std::string                 input_expr; // -e
@@ -40,13 +40,14 @@ struct Opts {
   std::vector<cl::Device>     list_devices_specific;
   int                         iterations = 1;
   bool                        wall_time = false;
+  bool                        parse_only = false;
   bool                        prof_time = false;
   bool                        save_preprocessed = false;
   bool                        save_binaries = false;
   bool                        use_kernel_arg_info; // OpenCL 1.2+
 
   filtered_stream warning() const{
-    std::cout << ANSI_YELLOW << "WARNING:" << ANSI_RESET << " ";
+    std::cout << text::ANSI_YELLOW << "WARNING:" << text::ANSI_RESET << " ";
     return filtered_stream(true);
   }
   filtered_stream always() const{return filtered_stream(true);}

@@ -11,15 +11,19 @@ namespace fs = std::experimental::filesystem;
 #else
 #error "#include <filesystem> not found"
 #endif
+#include <limits>
+#include <type_traits>
+
+using namespace cls::k;
 
 struct script_compiler : public fatal_handler {
   const script &s;
-  const Opts &os;
+  const opts &os;
   compiled_script_impl *csi = nullptr;
 
   script_compiler(
-    const Opts &_os, const script &_s, compiled_script_impl *_csi)
-    : fatal_handler(*_s.source)
+    const opts &_os, const script &_s, compiled_script_impl *_csi)
+    : fatal_handler(_s.source)
     , os(_os)
     , s(_s)
     , csi(_csi)
@@ -27,16 +31,40 @@ struct script_compiler : public fatal_handler {
   }
   void compile();
 private:
+  void compileDispatch(const dispatch_spec *ds);
   kernel_object &compileKernel(const kernel_spec *ks);
   program_object &compileProgram(const program_spec *ps);
-  device_object &allocateDeviceObject(const device_spec *ds);
+  device_object &createDeviceObject(const device_spec *ds);
+
+  void createKernelArgument(
+    cl_uint arg_index,
+    const init_spec *is,
+    const type &t,
+    uint8_t *&ptr);
+  void createKernelArgumentNum(
+    cl_uint arg_index,
+    const init_spec *is,
+    const type_num &t,
+    uint8_t *&ptr);
+  template<typename T>
+  void createKernelArgumentIntegral(
+    loc arg_loc,
+    cl_uint arg_index,
+    int64_t val,
+    uint8_t *&ptr);
+  void createKernelArgumentStruct(
+    cl_uint arg_index,
+    const init_spec *is,
+    const type_struct &ts,
+    uint8_t *&ptr);
+  // other argument setters
 };
 
 
 kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
 {
   auto itr = csi->kernels.find(ks);
-  if (itr == csi->kernels.end()) {
+  if (itr != csi->kernels.find_end()) {
     return *itr->second;
   }
   if (os.verbosity >= 2) {
@@ -91,14 +119,14 @@ static std::string getLabeledBuildLog(loc at, cl::Program &prog) {
 program_object &script_compiler::compileProgram(const program_spec *ps)
 {
   auto itr = csi->programs.find(ps);
-  if (itr == csi->programs.end()) {
+  if (itr == csi->programs.find_end()) {
     return *itr->second;
   }
   if (os.verbosity >= 2) {
     formatMessageWithContext(
       std::cout, ps->defined_at, input(), "building program");
   }
-  device_object *dobj = &allocateDeviceObject(&ps->device);
+  device_object *dobj = &createDeviceObject(&ps->device);
   program_object &po = csi->programs.emplace_back(ps,ps,dobj);
   // program_object &po = program_object(ps,dobj);
   // program_object &po = csi->programs[ps] = program_object(ps,dobj);
@@ -238,10 +266,10 @@ static void CL_CALLBACK dispatchContextNotify(
   dobj->contextNotify(errinfo, private_info, cb, user_data);
 }
 
-device_object &script_compiler::allocateDeviceObject(const device_spec *ds)
+device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
   auto itr = csi->devices.find(ds);
-  if (itr == csi->devices.end()) {
+  if (itr == csi->devices.find_end()) {
     return *itr->second;
   }
 
@@ -266,7 +294,6 @@ device_object &script_compiler::allocateDeviceObject(const device_spec *ds)
     break;
   }
 
-  // device_object &dobj = csi->devices[ds] = device_object(ds,dev);
   // device_object &dobj = csi->devices[ds] = device_object(ds,dev);
   // auto eitr = csi->devices.emplace(ds,ds,dev);
   // auto eitr = csi->devices.emplace(std::make_pair(ds,device_object(ds,dev)));
@@ -303,23 +330,292 @@ device_object &script_compiler::allocateDeviceObject(const device_spec *ds)
   return dobj;
 }
 
+void script_compiler::compileDispatch(const dispatch_spec *ds)
+{
+  kernel_object &ko = compileKernel(ds->kernel);
+  dispatch_command &dc = csi->dispatches.emplace_back(ds,ds,&ko);
+
+  const auto &gsz = ds->global_size.dims;
+  switch (gsz.size()) {
+  case 1: dc.global_size = cl::NDRange(gsz[0]);               break;
+  case 2: dc.global_size = cl::NDRange(gsz[0],gsz[1]);        break;
+  case 3: dc.global_size = cl::NDRange(gsz[0],gsz[1],gsz[2]); break;
+  default:
+    fatalAt(
+      ds->global_size.defined_at,
+      "global rank (dimension) too large (must be <=3)");
+  }
+
+  auto fmtNDR =
+    [] (const cl::NDRange &ndr) {
+      if (ndr == cl::NullRange) {
+        return std::string("NULL");
+      }
+      std::stringstream ss;
+      for (size_t i = 0; i < ndr.dimensions(); i++) {
+        if (i != 0) ss << 'x';
+        ss << ndr.get()[i];
+      }
+      return ss.str();
+    };
+
+  const auto &lsz = ds->local_size.dims;
+  if (lsz.size() > 0 && gsz.size() != lsz.size()) {
+    fatalAt(ds->local_size.defined_at,
+      "local rank doesn't match global rank (dimensions)");
+  }
+  switch (lsz.size()) {
+  case 0: { // auto size
+    // bug in Intel CPU driver means we have to use the C API
+    // __attribute__((reqd_work_group_size(X, Y, Z)))
+    size_t rqsz[3]{0,0,0};
+    auto err = clGetKernelWorkGroupInfo(
+      (*ko.kernel)(),
+      dc.ko->program->device->device(),
+      CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
+      sizeof(rqsz),
+      &rqsz,
+      nullptr);
+    if (err != CL_SUCCESS) {
+      fatalAt(ds->local_size.defined_at,
+        "clGetKernelWorkGroupInfo<CL_KERNEL_COMPILE_WORK_GROUP_SIZE> "
+        "returned ", status_to_symbol(err));
+    }
+    if (rqsz[0] == 0 && rqsz[1] == 0 && rqsz[2] == 0) {
+      dc.local_size = cl::NullRange;
+    } else {
+      switch (gsz.size()) {
+      case 1: dc.local_size = cl::NDRange(rqsz[0]);                 break;
+      case 2: dc.local_size = cl::NDRange(rqsz[0],rqsz[1]);         break;
+      case 3: dc.local_size = cl::NDRange(rqsz[0],rqsz[1],rqsz[2]); break;
+      }
+    }
+    break;
+  }
+  case 1: dc.local_size = cl::NDRange(lsz[0]);               break;
+  case 2: dc.local_size = cl::NDRange(lsz[0],lsz[1]);        break;
+  case 3: dc.local_size = cl::NDRange(lsz[0],lsz[1],lsz[2]); break;
+  default:
+    fatalAt(ds->local_size.defined_at, "local rank too large (must be <=3)");
+  } // local size
+
+  os.verbose() <<
+    "using global size: " << fmtNDR(dc.global_size) << "\n" <<
+    "using local size:  " << fmtNDR(dc.local_size)  << "\n";
+}
+
 void script_compiler::compile()
 {
   // Contruct contexts, command queuues, programs, kernels, and whatnot
   // Construct contexts and command queues (device_state) for all
   // device_spec's that appear in the script and compile programs.
-  for (const statement_spec *st : s.statements) {
+  for (const statement_spec *st : s.statement_list.statements) {
+    if (st->kind == statement_spec::DISPATCH) {
+      compileDispatch((const dispatch_spec *)st);
+    }
+  }
+
+  // Loop through all let's and dispatch arguments
+  // Set scalar arguments
+  for (const statement_spec *st : s.statement_list.statements) {
     if (st->kind == statement_spec::DISPATCH) {
       const dispatch_spec *ds = (const dispatch_spec *)st;
-      kernel_object &ko = compileKernel(ds->kernel);
-      csi->dispatches.emplace_back(ds,&ko);
+      dispatch_command &dc = csi->dispatches.get(ds);
+      const auto &ais = dc.ko->kernel_info->args;
+      if (ais.size() != ds->arguments.size()) {
+        fatalAt(ds->defined_at,"wrong number of arguments to kernel");
+      }
+      size_t ptr_size =
+        dc.ko->program->device->device.getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
+      for (cl_uint i = 0; i < (cl_uint)ds->arguments.size(); i++) {
+        const init_spec *is = ds->arguments[i];
+        const arg_info &ai = ais[i];
+        std::vector<uint8_t> arg_buffer;
+        arg_buffer.resize(ai.type->size(ptr_size));
+        uint8_t *buffer = arg_buffer.data();
+        createKernelArgument(i, is, *ai.type, buffer);
+      }
 
-      // TODO: parse arguments for the dispatch
+    } else if (st->kind == statement_spec::LET) {
+      const let_spec *ls = (const let_spec *)st;
+      fatalAt(ls->defined_at,"NOT IMPLEMENTED");
     }
   }
 }
 
-compiled_script cls::compile(const Opts &os, const script &s)
+
+// we match formal type over actual type
+void script_compiler::createKernelArgument(
+  cl_uint arg_index,
+  const init_spec *is,
+  const type &t,
+  uint8_t *&buffer)
+{
+  if (std::holds_alternative<type_num>(t.var)) {
+    createKernelArgumentNum(arg_index, is, std::get<type_num>(t.var), buffer);
+  } else if (std::holds_alternative<type_struct>(t.var)) {
+    createKernelArgumentStruct(
+      arg_index, is, std::get<type_struct>(t.var), buffer);
+  // else if (enum) {
+  // else if (built-in) {
+  } else {
+    fatalAt(is->defined_at," unsupported kernel argument type");
+  }
+}
+
+void script_compiler::createKernelArgumentNum(
+  cl_uint arg_index,
+  const init_spec *is,
+  const type_num &tn,
+  uint8_t *&buffer)
+{
+  switch (tn.kind) {
+  case type_num::UNSIGNED:
+  case type_num::SIGNED:
+    if (is->kind != init_spec::IS_INT) {
+      fatalAt(is->defined_at,"kernel argument requires integer parameter");
+    } else {
+      int64_t val = ((const init_spec_int *)is)->value;
+      if (tn.kind == type_num::UNSIGNED) {
+        switch (tn.size_in_bytes) {
+        case 1:
+          createKernelArgumentIntegral<uint8_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 2:
+          createKernelArgumentIntegral<uint16_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 4:
+          createKernelArgumentIntegral<uint32_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 8:
+          createKernelArgumentIntegral<uint64_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        default:
+          fatalAt(is->defined_at,"INTERNAL ERROR: unexpected primitive size");
+        }
+      } else { // signed
+        switch (tn.size_in_bytes) {
+        case 1:
+          createKernelArgumentIntegral<int8_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 2:
+          createKernelArgumentIntegral<int16_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 4:
+          createKernelArgumentIntegral<int32_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        case 8:
+          createKernelArgumentIntegral<int64_t>(is->defined_at,arg_index,val,buffer);
+          break;
+        default:
+          fatalAt(is->defined_at,"INTERNAL ERROR: unexpected primitive size");
+        }
+      }
+    }
+    break;
+  case type_num::FLOATING: {
+    double f64 = 0.0;
+    if (is->kind != init_spec::IS_FLT) {
+      f64 = ((const init_spec_float *)is)->value;
+    } else if (is->kind != init_spec::IS_INT) {
+      f64 = (double)((const init_spec_int *)is)->value;
+    } else {
+      fatalAt(is->defined_at,"kernel argument requires floating-point parameter");
+    }
+    switch (tn.size_in_bytes) {
+    case 2: {
+      if (f64 > 65504.0)
+        fatalAt(is->defined_at,"kernel argument too large for half type");
+      else if (f64 < -65504.0)
+        fatalAt(is->defined_at,"kernel argument too low for half type");
+      else if (std::abs(f64) < 5.96046e-8)
+        fatalAt(is->defined_at,"kernel argument too small for half type");
+      uint16_t f16 = float_to_half((float)f64);
+      memcpy(buffer, &f16, sizeof(f16));
+      buffer += 2;
+    }
+    case 4: {
+      // if (f64 != (float)f64) { FAILS on repeated values
+      //  fatalAt(is->defined_at,"precision loss in parameter");
+      // }
+      if (f64 > std::numeric_limits<float>::max())
+        fatalAt(is->defined_at,"kernel argument too large for half type");
+      else if (f64 < std::numeric_limits<float>::lowest())
+        fatalAt(is->defined_at,"kernel argument too low for half type");
+      else if (std::abs(f64) < std::numeric_limits<float>::min())
+        fatalAt(is->defined_at,"kernel argument too small for half type");
+      float f32 = (float)f64;
+      memcpy(buffer, &f32, sizeof(f32));
+      buffer += 4;
+      break;
+    }
+    case 8:
+      memcpy(buffer, &f64, sizeof(f64));
+      buffer += 8;
+      break;
+    default:
+      fatalAt(is->defined_at,"INTERNAL ERROR: unexpected primitive size");
+    }
+  } // case type_num::FLOATING
+  default:
+    fatalAt(is->defined_at,"INTERNAL ERROR: unexpected primitive kind");
+  } // switch
+}
+
+void script_compiler::createKernelArgumentStruct(
+  cl_uint arg_index,
+  const init_spec *is,
+  const type_struct &ts,
+  uint8_t *&buffer)
+{
+  if (is->kind == init_spec::IS_REC) {
+    const init_spec_record *isr = (const init_spec_record *)is;
+    if (isr->children.size() != ts.elements_length) {
+      fatalAt(is->defined_at,
+        "structure initializer has wrong number of elements");
+    }
+    for (size_t i = 0; i < ts.elements_length; i++) {
+      createKernelArgument(
+        arg_index,
+        isr->children[i],
+        *ts.elements[i],
+        buffer);
+    }
+  } else {
+    fatalAt(is->defined_at,
+      "structure argument requires structure initializer");
+  }
+}
+
+
+template<typename T>
+void script_compiler::createKernelArgumentIntegral(
+  loc arg_loc,
+  cl_uint arg_index,
+  int64_t val64,
+  uint8_t *&buffer)
+{
+  if (std::is_unsigned<T>()) {
+    if ((uint64_t)val64 > (uint64_t)std::numeric_limits<T>::max()) {
+      fatalAt(arg_loc,"kernel argument ", arg_index,
+        " is too large (overflows) for formal type");
+    }
+  } else if (std::is_signed<T>()) {
+    if (val64 > (int64_t)std::numeric_limits<T>::max()) {
+      fatalAt(arg_loc,"kernel argument ", arg_index,
+        " is too large (overflows) for formal type");
+    }
+    if (val64 < (int64_t)std::numeric_limits<T>::lowest()) {
+      fatalAt(arg_loc,"kernel argument ", arg_index,
+        " is too large (overflows) for formal type");
+    }
+  }
+  T val = (T)val64;
+  memcpy(buffer, &val, sizeof(T));
+  buffer += sizeof(T);
+}
+
+compiled_script cls::compile(const opts &os, const script &s)
 {
   compiled_script cs;
   auto *csi = new compiled_script_impl(s);

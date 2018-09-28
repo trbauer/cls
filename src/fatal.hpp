@@ -42,7 +42,7 @@ namespace cls
   {
     std::stringstream ss;
     text::format_to(ss, ts...);
-    cls::formatMessageWithContextImpl(os, at, input, ss.str());
+    formatMessageWithContextImpl(os, at, input, ss.str());
   }
 
   struct diagnostic : std::exception {

@@ -85,13 +85,13 @@ void sys::message_for_level(int this_level, const char *patt, ...)
 
   if (is_tty(std::cerr)) {
     if (this_level >= 2)
-      std::cerr << ANSI_RED;
+      std::cerr << text::ANSI_RED;
     else if (this_level == 1)
-      std::cerr << ANSI_YELLOW;
+      std::cerr << text::ANSI_YELLOW;
     else if (this_level < 0)
       std::cerr << text::ansi_literal("\033[38;2;64;64;64m");
     std::cerr << ebuf;
-    std::cerr << ANSI_RESET;
+    std::cerr << text::ANSI_RESET;
   } else {
     std::cerr << ebuf;
   }

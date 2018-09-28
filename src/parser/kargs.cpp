@@ -233,7 +233,7 @@ struct karg_parser : cls::parser
 };
 
 static cls::k::program_info parseProgramInfoText(
-  const cls::Opts &os,
+  const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
   const cls::program_source &src)
 {
@@ -295,7 +295,7 @@ static cls::k::program_info parseProgramInfoText(
 }
 
 static cls::k::program_info parseProgramInfoBinary(
-  const cls::Opts &os,
+  const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
   const std::string &path)
 {
@@ -306,7 +306,7 @@ static cls::k::program_info parseProgramInfoBinary(
 }
 
 cls::k::program_info cls::k::parseProgramInfo(
-  const cls::Opts &os,
+  const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
   const cls::program_source &src)
 {

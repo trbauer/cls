@@ -15,7 +15,7 @@
 #define DEVICE_INFO_VALUE_COLOR   ANSI_YELLOW
 #define DEVICE_INFO_COLS          24
 
-
+using namespace text;
 
 ///////////////////////////////////////////////////////////////////////////////
 // specific value type formatters
@@ -286,7 +286,7 @@ static void emitParamName(const char *prop)
 }
 
 
-void listDeviceInfoForDevice(const cls::Opts &os, const cl::Device &d, int devIx)
+void listDeviceInfoForDevice(const cls::opts &os, const cl::Device &d, int devIx)
 {
 #define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,...) \
   { \

@@ -5,7 +5,7 @@
 #include "../cls_opts.hpp"
 #include "../fatal.hpp"
 
-#include <array>
+#include <algorithm>
 #include <initializer_list>
 #include <ostream>
 #include <string>
@@ -47,15 +47,22 @@ namespace cls
       } kind;
       int size_in_bytes;
       const char *name;
-
       constexpr type_num(
         const char *_name, enum kind _kind, int _size_in_bytes)
         : name(_name), kind(_kind), size_in_bytes(_size_in_bytes) { }
+      constexpr size_t size(size_t) const {return size_in_bytes;}
+      std::string syntax() const {return name;}
     };
     ///////////////////////////////////////////////////////////////////////////
     // enum foo{BAR,BAZ,QUX}
     struct type_enum {
       std::vector<std::tuple<std::string,int>> symbols;
+
+      const char *name;
+      type_enum(const char *_name) : name(_name) { }
+
+      constexpr size_t size(size_t) const {return 4;}
+      std::string syntax() const {return name;}
     };
     ///////////////////////////////////////////////////////////////////////////
     // other built-in types
@@ -64,15 +71,15 @@ namespace cls
       // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/otherDataTypes.html
       enum kind {
         IMAGE1D,        // image1d_t
-        IMAGE1D_BUFFER, // image1d_buffer_t
         IMAGE1D_ARRAY,  // image1d_array_t
+        IMAGE1D_BUFFER, // image1d_buffer_t
         IMAGE2D,        // image2d_t
         IMAGE2D_ARRAY,  // image2d_array_t
         IMAGE2D_DEPTH,  // image2d_depth_t
         IMAGE2D_ARRAY_DEPTH, // image2d_array_depth_t
         IMAGE2D_MSAA,    // image2d_msaa_t
         IMAGE2D_ARRAY_MSAA, // image2d_array_msaa_t
-        IMAGE2D_DEPTH_MSAA, // image2d_msaa_depth_t
+        IMAGE2D_MSAA_DEPTH, // image2d_msaa_depth_t
         IMAGE2D_ARRAY_MSAA_DEPTH, // image2d_array_msaa_depth_t
         IMAGE3D,        // image3d_t
         SAMPLER,        // sampler_t
@@ -84,6 +91,31 @@ namespace cls
         CL_MEM_FENCE_FLAGS, // cl_mem_fence_flags
       } kind;
       constexpr type_builtin(enum kind _kind) : kind(_kind) { }
+      size_t size(size_t ptr_size) const {return ptr_size;}
+      std::string syntax() const {
+        switch (kind) {
+        case IMAGE1D: return "image1d_t";
+        case IMAGE1D_ARRAY: return "image1d_array_t";
+        case IMAGE1D_BUFFER: return "image1d_buffer_t";
+        case IMAGE2D: return "image2d_t";
+        case IMAGE2D_ARRAY: return "image2d_array_t";
+        case IMAGE2D_DEPTH: return "image2d_depth_t";
+        case IMAGE2D_ARRAY_DEPTH: return "image2d_array_depth_t";
+        case IMAGE2D_MSAA: return "image2d_msaa_t";
+        case IMAGE2D_ARRAY_MSAA: return "image2d_array_msaa_t";
+        case IMAGE2D_MSAA_DEPTH: return "image2d_msaa_depth_t";
+        case IMAGE2D_ARRAY_MSAA_DEPTH: return "image2d_array_msaa_depth_t";
+        case IMAGE3D: return "image3d_t";
+        case SAMPLER: return "sampler_t";
+        case QUEUE: return "queue_t";
+        case NDRANGE: return "ndrange_t";
+        case CLK_EVENT: return "clk_event_t";
+        case RESERVE_ID: return "reserve_id_t";
+        case EVENT: return "event_t";
+        case CL_MEM_FENCE_FLAGS: return "cl_mem_fence_flags";
+        default: return "???";
+        }
+      }
     };
     ///////////////////////////////////////////////////////////////////////////
     // struct foo {int x,float y,struct{int z,short w}bar};
@@ -114,20 +146,23 @@ namespace cls
         const char *_name,
         size_t elem_size, // element size
         const type *type, // underlying type
-        int len) // vector length
+        size_t len) // vector length
         : name(_name)
         , packed(true)
         , alignment(elem_size*(size_t)len)
         , elements_memory{0}
         , elements_length(len)
       {
-        for (int i = 0; i < elements_length; i++)
+        for (size_t i = 0; i < elements_length; i++)
           elements[i] = type;
       }
-
       type_struct() : elements_memory{0} { }
+
+      size_t size(size_t ptr_size) const;
+      std::string syntax() const {return name;}
     };
     struct type_union {
+      const char                 *name;
       const type                 *elements_memory[2];
 
       int                         aligned = 0; // __attribute__ ((aligned (8))); (technically this can work on other types too, but we don't support it)
@@ -135,8 +170,9 @@ namespace cls
       const type                **elements = elements_memory;
       size_t                      elements_length = 0;
 
-      constexpr type_union(std::initializer_list<const type *> ts)
-        : elements_memory{0}
+      constexpr type_union(
+        const char *_name, std::initializer_list<const type *> ts)
+        : name(_name), elements_memory{0}
       {
         if (ts.size() > sizeof(elements_memory)/sizeof(elements_memory[0]))
           throw "too many elements for constexpr";
@@ -145,6 +181,8 @@ namespace cls
           elements[elements_length++] = t;
       }
       type_union() : elements_memory{0} { }
+      std::string syntax() const {return name;}
+      size_t size(size_t ptr_size) const;
     };
 
     struct type_ptr {
@@ -156,22 +194,76 @@ namespace cls
       } attrs = EMPTY_ATTRS;
       const type *element_type;
       constexpr type_ptr(const type *t) : element_type(t) { }
+      constexpr size_t size(size_t ptr_size) const {return ptr_size;}
+      std::string syntax() const;
     };
 
     struct type {
-//      std::variant<type_num,type_builtin,type_struct,type_enum,type_ptr> var;
-      std::variant<type_num,type_builtin,type_struct>   var;
-//      const char *                                               name;
+      // std::variant<type_num,type_builtin,type_struct,type_enum,type_ptr> var;
+      std::variant<type_num,type_builtin,type_struct,type_ptr>   var;
+      // const char *                                               name;
       // std::string                                                name;
 
       constexpr type(const type_num &t) : var(t) { }
       constexpr type(const type_struct &t) : var(t) { }
+      constexpr type(const type_ptr &t) : var(t) { }
+
+      // template <typename F,typename R,typename Ts...>
+      // R apply(Ts...ts) {
+      //   if (std::holds_alternative<type_num>(var)) {
+      //    return std::get<type_num>(var).F(ptr_size);
+      //   }
+      // }
+      // size_t size(ptr_size) {return apply<size,size_t>(ptr_size);}
 
       // template <typename T>
       // type(std::string _name, T t) : name(_name) {var = t;}
-//      constexpr type(const char *_name, type_num t) : name(_name), var(t) { }
-//      constexpr type(std::string _name, type_num t) : name(_name), var(t) { }
+      // constexpr type(const char *_name, type_num t) : name(_name), var(t) {}
+      // constexpr type(std::string _name, type_num t) : name(_name), var(t) {}
+      constexpr size_t size(size_t ptr_size) const {
+        if (std::holds_alternative<type_num>(var)) {
+          return std::get<type_num>(var).size(ptr_size);
+        } else if (std::holds_alternative<type_builtin>(var)) {
+          return std::get<type_builtin>(var).size(ptr_size);
+        } else if (std::holds_alternative<type_struct>(var)) {
+          return std::get<type_struct>(var).size(ptr_size);
+        } else {
+          throw "unreachable";
+        }
+      }
+      std::string syntax() const {
+        if (std::holds_alternative<type_num>(var)) {
+          return std::get<type_num>(var).syntax();
+        } else if (std::holds_alternative<type_builtin>(var)) {
+          return std::get<type_builtin>(var).syntax();
+        } else if (std::holds_alternative<type_struct>(var)) {
+          return std::get<type_struct>(var).syntax();
+        } else {
+          throw "unreachable";
+        }
+      }
     };
+
+    inline size_t type_struct::size(size_t ptr_size) const {
+      size_t sum = 0;
+      for (size_t i = 0; i < elements_length; i++)
+        sum += elements[i]->size(ptr_size);
+      return sum;
+      // TODO: align up, obey packing and etc...
+    }
+    inline size_t type_union::size(size_t ptr_size) const {
+      size_t max = 0;
+      for (size_t i = 0; i < elements_length; i++)
+        max = std::max<size_t>(max,elements[i]->size(ptr_size));
+      // TODO: align up
+      return max;
+    }
+    inline std::string type_ptr::syntax() const {
+      std::stringstream ss;
+      ss << element_type->syntax();
+      ss << " *";
+    }
+
 
     // global int *foo, ...
     struct arg_info {
@@ -213,7 +305,7 @@ namespace cls
     // API
 
     cls::k::program_info parseProgramInfo(
-      const cls::Opts &os,
+      const cls::opts &os,
       const cls::fatal_handler *fh, cls::loc at,
       const cls::program_source &src);
 

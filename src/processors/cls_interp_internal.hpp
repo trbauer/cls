@@ -69,6 +69,10 @@ struct kernel_object {
     : spec(_spec), program(_program) { }
 };
 
+struct surface_object {
+  const init_spec       *spec;
+};
+
 
 // Interpreter dispatch object
 //
@@ -91,12 +95,18 @@ struct dispatch_command {
 template <typename K,typename V>
 struct mapped_objects {
   using map_iterator = typename std::map<K,V*>::iterator;
+  using list_iterator = typename std::vector<V>::iterator;
+  using list_const_iterator = typename std::vector<V>::const_iterator;
 
   std::vector<V> list;
   std::map<K,V*> map;
 
   map_iterator find(K k) {return map.find(k);}
-  map_iterator end() {return map.end();}
+  map_iterator find_end() {return map.end();}
+  list_iterator begin() {return list.begin();}
+  list_iterator end() {return list.end();}
+  list_const_iterator begin() const {return list.begin();}
+  list_const_iterator end() const {return list.end();}
 
   template <typename...As>
   V& emplace_back(K k, As...as) {
@@ -113,15 +123,17 @@ struct mapped_objects {
 
 
 struct compiled_script_impl {
-  const script                                         &s;
+  const script                                          &s;
 
   // list_map<const device_spec*,device_object>      devices2;
 
-  std::vector<dispatch_command>                         dispatches;
+  mapped_objects<const dispatch_spec*,dispatch_command>  dispatches;
 
-  mapped_objects<const device_spec*,device_object>      devices;
-  mapped_objects<const program_spec*,program_object>    programs;
-  mapped_objects<const kernel_spec*,kernel_object>      kernels;
+  mapped_objects<const init_spec*,surface_object>        surfaces;
+
+  mapped_objects<const device_spec*,device_object>       devices;
+  mapped_objects<const program_spec*,program_object>     programs;
+  mapped_objects<const kernel_spec*,kernel_object>       kernels;
 
   // std::map<const device_spec*,device_object*>      devices;
   // std::vector<device_object>                      device_object_list;

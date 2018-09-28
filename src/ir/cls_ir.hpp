@@ -14,37 +14,45 @@
 
 namespace cls
 {
-  // common super class of all IR types
-  struct ir {
-    loc defined_at;
+  struct format_opts {
+    using color_span = typename text::spans::ansi_span<std::string>;
 
-    ir() { }
-    ir(loc _loc) : defined_at(_loc) { }
-    ir(const ir &ir) = delete;
-    // ir &operator=(const ir &ir) = delete;
+    enum {
+      NONE = 0,
+      USE_COLOR = (1 << 0), // syntax highlighting
+      NO_SEMI_STATEMENT_LISTS = (1 << 1), // never use S1; S2; S3 short hand
+    } opts = NONE;
+
+    format_opts() { }
+
+    // coloring primitives (automatically checks if USE_COLOR is enabled)
+    color_span error(std::string s) const;
+    color_span keyword(std::string s) const;
+    color_span let_var(std::string s) const;
+    color_span str_lit(std::string s) const;
   };
-
-  struct ir_union : ir {
-    enum class kind{INVALID = 0, NDR, LET, SEQ, PROG};
-    kind kind = kind::INVALID;
-  };
-
 
   /////////////////////////////////////////////////////////////////////////////
   // specification of some syntactic form
   struct spec {
     enum spec_kind {
       INVALID_SPEC = 0
-    , INIT_SPEC
+    , STATEMENT_LIST_SPEC
+    // statement forms
     , STATEMENT_SPEC // e.g. dispatch_spec or let_spec
-    // dispatch parts (but can appear in a LET)
+    // partial forms
+    , INIT_SPEC
     , DEVICE_SPEC
     , PROGRAM_SPEC
     , KERNEL_SPEC
     } kind;
     loc defined_at;
-    spec(loc _loc, enum spec_kind _kind) : defined_at(_loc), kind(_kind) { }
-    void str(std::ostream &os) const;
+    spec(loc _loc, spec_kind _kind) : defined_at(_loc), kind(_kind) { }
+    void            str(std::ostream &os, format_opts fopts) const;
+    std::string     str() const;
+
+    // a friendly name for debugging
+    std::string     name() const;
   };
 
   // buffer/image/scalar initializer
@@ -75,7 +83,7 @@ namespace cls
     } kind = IS_INVALID;
     init_spec(loc loc, init_spec::init_spec_kind k)
       : spec(loc, INIT_SPEC), kind(k) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   /////////////////////////////////////////////////////////////////////////////
@@ -89,26 +97,26 @@ namespace cls
     std::string identifier;
     init_spec_symbol(loc loc, std::string _identifier) :
       init_spec_atom(loc, IS_SYM), identifier(_identifier) { }
-    void str(std::ostream &os) const {os << identifier;}
+    void str(std::ostream &os, format_opts fopts) const {fopts.let_var(identifier);}
   };
   // e.g. "0x114", "-124", or "3.141"
   struct init_spec_int : init_spec_atom {
     int64_t value;
     init_spec_int(loc loc, int64_t _value = 0)
       : init_spec_atom(loc, IS_INT), value(_value) { }
-    void str(std::ostream &os) const {os << value;}
+    void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
   struct init_spec_float : init_spec_atom {
     double value = 0.0;
     init_spec_float(loc loc, double _value)
       : init_spec_atom(loc, IS_FLT), value(_value) { }
-    void str(std::ostream &os) const {os << value;}
+    void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
   // e.g. {1,2,4,8}
   struct init_spec_record : init_spec_atom {
     std::vector<init_spec_atom *> children;
     init_spec_record(loc loc) : init_spec_atom(loc, IS_REC) { }
-    void str(std::ostream &os) const {
+    void str(std::ostream &os, format_opts fopts) const {
       os << "{";
       bool first = true;
       for (const auto *c : children) {
@@ -116,7 +124,7 @@ namespace cls
           first = false;
         else
           os << ", ";
-        c->str(os);
+        c->str(os,fopts);
       }
       os << "}";
     }
@@ -134,7 +142,7 @@ namespace cls
     init_spec_bin_expr(loc loc) : init_spec_atom(loc, IS_BEX) { }
     init_spec_bin_expr(loc loc, bin_op k, init_spec_atom *l, init_spec_atom *r)
       : init_spec_atom(loc, IS_BEX), el(l), er(r), e_kind(k) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
   struct init_spec_unr_expr : init_spec_atom {
     init_spec_atom *e = nullptr;
@@ -148,7 +156,7 @@ namespace cls
     init_spec_unr_expr(loc loc) : init_spec_atom(loc, IS_UEX) { }
     init_spec_unr_expr(loc loc, unr_op k, init_spec_atom *_e)
       : init_spec_atom(loc, IS_UEX), e(_e), e_kind(k) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   // 'foo.bmp'
@@ -156,8 +164,8 @@ namespace cls
     std::string path;
     init_spec_file(loc loc, std::string _path)
       : init_spec_atom(loc, IS_FILE), path(_path) { }
-    void str(std::ostream &os) const {
-      os << "'" << path << "'";
+    void str(std::ostream &os, format_opts fopts) const {
+      os << fopts.str_lit("'" + path + "'");
     }
   };
   // struct init_spec_atom_function : init_spec_atom {
@@ -176,25 +184,11 @@ namespace cls
 
     init_spec_rng_generator(loc loc, int64_t _seed = 0)
       : init_spec_atom(loc, IS_RND), seed(_seed) { }
-    void str(std::ostream &os) const {
-      os << "random";
-      if (seed != 0) {
-        os << "<" << seed << ">";
-      }
-      if (e_lo) {
-        os << "[";
-        e_lo->str(os);
-        if (e_hi) {
-          os << ", ";
-          e_hi->str(os);
-        }
-        os << "]";
-      }
-    }
+    void str(std::ostream &os, format_opts fopts) const;
   };
   struct init_spec_seq_generator : init_spec_atom {
     init_spec_seq_generator(loc loc) : init_spec_atom(loc, IS_SEQ) { }
-    void str(std::ostream &os) const {
+    void str(std::ostream &os, format_opts fopts) const {
       os << "seq(TODO)";
     }
   };
@@ -226,10 +220,9 @@ namespace cls
     bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
     bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
 
-
     init_spec_memory(loc loc) : init_spec(loc,IS_MEM) { }
 
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   struct statement_spec : spec {
@@ -245,7 +238,15 @@ namespace cls
 
     statement_spec(loc loc, enum statement_type k)
       : spec(loc,spec::STATEMENT_SPEC), kind(k) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
+  // S1; S2; S3
+  struct statement_list_spec : spec {
+    int                                 indent = 0;
+    std::vector<statement_spec *>       statements;
+    statement_list_spec(loc loc) : spec(loc,spec::STATEMENT_LIST_SPEC) { }
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   // #1 or #GTX
@@ -260,10 +261,11 @@ namespace cls
     std::string   by_name_value;
 
     device_spec(loc loc) : spec(loc,spec::DEVICE_SPEC) { }
+
     void setSource(std::string name);
     void setSource(int index);
 
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   // fills in for anything that can be referenced or defined immediately
@@ -283,13 +285,14 @@ namespace cls
     const T &operator->() const {return *value;}
              operator T()       {return value;}
              operator T() const {return value;}
-    void str(std::ostream &os) const {
+    void str(std::ostream &os, format_opts fopts) const {
       if (identifier.empty())
         if (value != nullptr)
-          value->str(os);
+          value->str(os,fopts);
         else
-          os << "<nullptr>";
-      else os << identifier;
+          os << fopts.error("<nullptr>");
+      else
+        os << fopts.let_var(identifier);
     }
   };
   struct program_spec : spec {
@@ -298,7 +301,7 @@ namespace cls
     std::string     build_options;
 
     program_spec(loc loc) : spec(loc,spec::PROGRAM_SPEC), device(loc) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
   };
   struct kernel_spec : spec {
     refable<program_spec*>    program;
@@ -306,15 +309,18 @@ namespace cls
 
     kernel_spec(program_spec *ps)
       : spec(ps->defined_at,spec::KERNEL_SPEC), program(ps) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+  struct dim {
+    loc                       defined_at;
+    std::vector<size_t>       dims; // empty means use nullptr or reqd wg sz
+
+    size_t total_size() const {
+      size_t p = 1; for (size_t d : dims) {p *= d;}; return p;
+    }
+    void str(std::ostream &os, format_opts fopts) const;
   };
   struct dispatch_spec : statement_spec {
-    struct dim {
-      loc                       defined_at;
-      std::vector<size_t>       dims; // empty means use nullptr or reqd wg sz
-
-      void str(std::ostream &os) const;
-    };
     refable<kernel_spec*>                               kernel;
     dim                                                 global_size;
     dim                                                 local_size;
@@ -322,35 +328,33 @@ namespace cls
     std::vector<std::tuple<std::string,init_spec*>>     where_bindings;
 
     dispatch_spec(loc loc) : statement_spec(loc, statement_spec::DISPATCH) { }
-    void str(std::ostream &os) const;
+    void str(std::ostream &os,format_opts fopts) const;
   };
 
   // let X = ...
   struct let_spec : statement_spec {
-    std::string               identifier;
-    spec                     *value;
-    std::vector<std::string>  params;
+    using param_refs = std::vector<refable<init_spec*>*>;
+    using param_map = std::map<std::string,param_refs>;
 
-    let_spec(loc loc,std::string ident, init_spec *defn = nullptr)
+    std::string                                         identifier;
+    // can be an:
+    //  - partial object: init_spec, kernel_spec, program_spec, ...
+    //  - statement form: dispatch_spec, statement_list_spec, barrier_spec, ....
+    spec                                               *value;
+    std::vector<std::string>                            params;
+
+    param_map                                           param_uses;
+
+    let_spec(loc loc,std::string ident, spec *_value = nullptr)
       : statement_spec(loc, statement_spec::LET)
       , identifier(ident)
-      , value(defn) { }
-    void str(std::ostream &os) const {
-      os << "let " << identifier;
-      if (!params.empty()) {
-        os << "(" << params[0];
-        for (size_t i = 1; i < params.size(); i++)
-          os << "," << params[i];
-        os << ")";
-      }
-      os << " = ";
-      value->str(os);
-    }
+      , value(value) { }
+    void str(std::ostream &os, format_opts fopts) const;
   };
   // barrier
   struct barrier_spec : statement_spec {
     barrier_spec(loc loc) : statement_spec(loc, statement_spec::BARRIER) { }
-    void str(std::ostream &os) const {os << "barrier";}
+    void str(std::ostream &os,format_opts fopts) const {os << "barrier";}
   };
   // diff(REF,SUT)
   struct diff_spec : statement_spec {
@@ -358,8 +362,10 @@ namespace cls
     init_spec_symbol *sut;
     diff_spec(loc loc, init_spec *_ref, init_spec_symbol *_sut)
       : statement_spec(loc, statement_spec::DIFF), ref(_ref), sut(_sut) { }
-    void str(std::ostream &os) const {
-      os << "diff("; ref->str(os); os << ","; sut->str(os); os << ")";
+    void str(std::ostream &os,format_opts fopts) const {
+      os << "diff(";
+      ref->str(os,fopts); os << ","; sut->str(os,fopts);
+      os << ")";
     }
   };
   // print(X)
@@ -367,8 +373,8 @@ namespace cls
     init_spec_symbol *arg;
     print_spec(loc loc, init_spec_symbol *a)
       : statement_spec(loc, statement_spec::PRINT), arg(a) { }
-    void str(std::ostream &os) const {
-      os << "print("; arg->str(os); os << ")";
+    void str(std::ostream &os,format_opts fopts) const {
+      os << "print("; arg->str(os,fopts); os << ")";
     }
   };
   // save('foo.bmp',X)
@@ -378,27 +384,29 @@ namespace cls
     init_spec_symbol *arg; // X
     save_spec(loc loc, std::string _file, init_spec_symbol *_arg)
       : statement_spec(loc, statement_spec::SAVE), file(_file), arg(_arg) { }
-    void str(std::ostream &os) const {
-      os << "save(" << file << ", "; arg->str(os); os << ")";
+    void str(std::ostream &os,format_opts fopts) const {
+      os << "save(" <<
+        fopts.str_lit("'" + file + "'") << ", ";
+        arg->str(os,fopts); os << ")";
     }
   };
 
 
   struct script {
-    const std::string                 *source = nullptr;
+    const std::string                 &source;
 
-    std::vector<statement_spec*>       statements;
     std::map<std::string,let_spec*>    let_bindings;
+    statement_list_spec                statement_list;
+
+    script(const std::string &_source)
+      : source(_source), statement_list(loc(1,1,0,0)) { }
 
     // script() { }
     // script(const script &) = delete;
     // script& operator=(const script &) = delete;
 
-    void str(std::ostream &os) const {
-      for (auto &s : statements) {
-        s->str(os);
-        os << "\n";
-      }
+    void str(std::ostream &os,format_opts fopts) const {
+      statement_list.str(os,fopts);
     }
   };
 

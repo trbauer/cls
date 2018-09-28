@@ -37,6 +37,19 @@ namespace cls {
     std::vector<token>  m_tokens;
     size_t              m_offset;
     token               m_eof;
+  private:
+    template <typename...Ts>
+    bool lookingAtSeqHelper(int ix) const {
+      return true;
+    }
+    template <typename...Ts>
+    bool lookingAtSeqHelper(int ix, lexeme lxm, Ts...ts) const {
+      return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+    }
+     template <typename...Ts>
+    bool lookingAtSeqHelper(int ix, const char *lxm, Ts...ts) const {
+      return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+    }
   public:
     parser(const std::string &input, bool omit_newlines = false)
       : fatal_handler(input)
@@ -53,7 +66,7 @@ namespace cls {
       unsigned inpOff = 0, bolOff = 0;
       unsigned strLitOff;
 
-      lexemes::lexeme lxm;
+      lexeme lxm;
       while (true) {
         lxm = yylex(yy, inpOff, strLitOff);
         uint32_t lno = (uint32_t)yyget_lineno(yy);
@@ -171,6 +184,10 @@ namespace cls {
     }
     bool lookingAt(lexeme lx, int i = 0) const {
       return next(i).lexeme == lx;
+    }
+    template <typename...Ts>
+    bool lookingAtSeq(Ts...ts) const {
+      return lookingAtSeqHelper(0,ts...);
     }
     bool lookingAtSymbol(const char *sym) const {
       return tokenString() == sym;

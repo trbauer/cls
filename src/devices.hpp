@@ -3,12 +3,12 @@
 
 #include <string>
 
-bool              getDeviceByName(const cls::Opts &opts, std::string substr, cl::Device &out_dev, std::string &err_msg);
-cl::Device        getDeviceByName(const cls::Opts &opts, std::string substr);
-bool              getDeviceByIndex(const cls::Opts &opts, int dev_ix, cl::Device &out_dev);
-cl::Device        getDeviceByIndex(const cls::Opts &opts, int dev_ix);
-cl::Device        getDeviceDefault(const cls::Opts &opts);
-void              listDeviceInfo(const cls::Opts &opts);
+bool              getDeviceByName(const cls::opts &opts, std::string substr, cl::Device &out_dev, std::string &err_msg);
+cl::Device        getDeviceByName(const cls::opts &opts, std::string substr);
+bool              getDeviceByIndex(const cls::opts &opts, int dev_ix, cl::Device &out_dev);
+cl::Device        getDeviceByIndex(const cls::opts &opts, int dev_ix);
+cl::Device        getDeviceDefault(const cls::opts &opts);
+void              listDeviceInfo(const cls::opts &opts);
 
 
 enum class cl_spec {

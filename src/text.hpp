@@ -25,48 +25,94 @@ namespace text {
   //             text::ansi_literal("\033[2;34m") << "dark blue" <<
   //             ANSI_RESET << " text.";
   //
-  #define ANSI_RESET          text::ansi_literal("\033[0m")
-
-  // foreground colors
-  //
-  // The "default" color
-  #define ANSI_DEFAULT        text::ansi_literal("\033[1;39m")
-  // #define ANSI_BLACK          "\033[1;30m"
-  #define ANSI_RED            text::ansi_literal("\033[1;31m")
-  #define ANSI_DRED           text::ansi_literal("\033[2;31m")
-  #define ANSI_GREEN          text::ansi_literal("\033[1;32m")
-  #define ANSI_DGREEN         text::ansi_literal("\033[2;32m")
-  #define ANSI_YELLOW         text::ansi_literal("\033[1;33m")
-  #define ANSI_DYELLOW        text::ansi_literal("\033[2;33m")
-  #define ANSI_BLUE           text::ansi_literal("\033[1;34m")
-  #define ANSI_DBLUE          text::ansi_literal("\033[2;34m")
-  #define ANSI_MAGENTA        text::ansi_literal("\033[1;35m")
-  #define ANSI_DMAGENTA       text::ansi_literal("\033[2;35m")
-  #define ANSI_CYAN           text::ansi_literal("\033[1;36m")
-  #define ANSI_DCYAN          text::ansi_literal("\033[2;36m")
-  #define ANSI_WHITE          text::ansi_literal("\033[1;37m")
-  #define ANSI_DWHITE         text::ansi_literal("\033[2;37m")
-
-  // #define ANSI_INTEL_BLUE     "\033[38;2;0;113;197m"
-  // better on black background
-  #define ANSI_COLOR_INTEL_BLUE     text::ansi("\033[38;2;10;153;245m")
-  // #define ANSI_COLOR_INTEL_BLUE_ON_WHITE     "\033[38;2;0;113;197m\033[47m"
-
-  // #define ANSI_COLOR_NVIDIA_GREEN   "\033[38;2;118;185;0m"
-  // better on black background
-  #define ANSI_COLOR_NVIDIA_GREEN   text::ansi("\033[38;2;94;182;0m")
-
-  // my crappy approximation (I couldn't find one to reference)
-  #define ANSI_COLOR_AMD_ORANGE     text::ansi("\033[38;2;236;66;57m")
-
-  struct ansi {
-    std::string esc;
-    ansi(std::string _esc) : esc(_esc) { }
-  };
+  // The normal case
   struct ansi_literal {
     const char *esc;
     constexpr ansi_literal(const char *_esc) : esc(_esc) { }
   };
+  // uses a backing string so it can be constructed via variable (rarely needed)
+  struct ansi {
+    std::string esc;
+    ansi(std::string _esc) : esc(_esc) { }
+  };
+  constexpr ansi_literal ANSI_NOP(nullptr);
+  constexpr ansi_literal ANSI_RESET("\033[0m");
+
+  // foreground colors
+  //
+  // The "default" color
+  constexpr ansi_literal ANSI_DEFAULT("\033[1;39m");
+  constexpr ansi_literal ANSI_BLACK("\033[1;30m");
+  constexpr ansi_literal ANSI_RED("\033[1;31m");
+  constexpr ansi_literal ANSI_DRED("\033[2;31m");
+  constexpr ansi_literal ANSI_GREEN("\033[1;32m");
+  constexpr ansi_literal ANSI_DGREEN("\033[2;32m");
+  constexpr ansi_literal ANSI_YELLOW("\033[1;33m");
+  constexpr ansi_literal ANSI_DYELLOW("\033[2;33m");
+  constexpr ansi_literal ANSI_BLUE("\033[1;34m");
+  constexpr ansi_literal ANSI_DBLUE("\033[2;34m");
+  constexpr ansi_literal ANSI_MAGENTA("\033[1;35m");
+  constexpr ansi_literal ANSI_DMAGENTA("\033[2;35m");
+  constexpr ansi_literal ANSI_CYAN("\033[1;36m");
+  constexpr ansi_literal ANSI_DCYAN("\033[2;36m");
+  constexpr ansi_literal ANSI_WHITE("\033[1;37m");
+  constexpr ansi_literal ANSI_DWHITE("\033[2;37m");
+
+  // #define ANSI_INTEL_BLUE     "\033[38;2;0;113;197m"
+  // better on black background
+  constexpr ansi_literal ANSI_COLOR_INTEL_BLUE("\033[38;2;10;153;245m");
+  // #define ANSI_COLOR_INTEL_BLUE_ON_WHITE     "\033[38;2;0;113;197m\033[47m"
+
+  // #define ANSI_COLOR_NVIDIA_GREEN   "\033[38;2;118;185;0m"
+  // better on black background
+  constexpr ansi_literal ANSI_COLOR_NVIDIA_GREEN("\033[38;2;94;182;0m");
+
+  // my crappy approximation (I couldn't find one to reference)
+  constexpr ansi_literal ANSI_COLOR_AMD_ORANGE("\033[38;2;236;66;57m");
+
+  // redirects to sys::is_tty, but we don't want to expose the header here
+  bool is_tty(std::ostream &os);
+
+  namespace spans {
+    // this enables us to avoid an explicit reset
+    //   os << ansi_span(...,"foo") << ...
+    // or more reasonably
+    //   os << RED("foo") << " = " << GREEN(44) << "\n";
+    template<typename T>
+    struct ansi_span {
+      const char   *esc;
+      T             element;
+      ansi_span(
+        const char *_esc,
+        const T & _element)
+        : esc(_esc) , element(_element) { }
+    };
+
+    template<typename T>
+    ansi_span<T> RED(T t) {return ansi_span<T>(ANSI_RED.esc,t);}
+    template<typename T>
+    ansi_span<T> GREEN(T t) {return ansi_span<T>(ANSI_GREEN.esc,t);}
+    template<typename T>
+    ansi_span<T> BLUE(T t) {return ansi_span<T>(ANSI_RED.esc,t);}
+    template<typename T>
+    ansi_span<T> YELLOW(T t) {return ansi_span<T>(ANSI_YELLOW.esc,t);}
+    template<typename T>
+    ansi_span<T> CYAN(T t) {return ansi_span<T>(ANSI_CYAN.esc,t);}
+    template<typename T>
+    ansi_span<T> MAGENTA(T t) {return ansi_span<T>(ANSI_MAGENTA.esc,t);}
+
+    template<typename T>
+    std::ostream &operator <<(std::ostream &os, const ansi_span<T> &e) {
+      if (e.esc && text::is_tty(os)) {
+        os << e.esc;
+        os << e.element;
+        os << ANSI_RESET.esc;
+      } else {
+        os << e.element;
+      }
+      return os;
+    }
+  } // namespace text::spans
 
   /////////////////////////////////////////////////////////////////////////////
   // TEXT MANIPULATION
@@ -87,18 +133,14 @@ namespace text {
 
   template <typename...Ts>
   std::string   format(Ts...ts) {
-    std::stringstream ss;
-    format_to(ss, ts...);
-    return ss.str();
+    std::stringstream ss; format_to(ss, ts...); return ss.str();
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // runs the C preprocessor
-  template <typename F>
-  std::string  str_extract(F f) {
-    std::stringstream ss;
-    f.str(ss);
-    return ss.str();
+  // calls the str() function on a type T and returns the result as a string
+  template <typename T>
+  std::string  str_extract(T t) {
+    std::stringstream ss; t.str(ss); return ss.str();
   }
 
 

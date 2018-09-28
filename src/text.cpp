@@ -13,6 +13,11 @@
 #include <iomanip>
 #include <sstream>
 
+bool text::is_tty(std::ostream &os)
+{
+  return sys::is_tty(os);
+}
+
 std::ostream &operator <<(std::ostream &os, text::ansi e)
 {
   if (sys::is_tty(os))
@@ -21,7 +26,7 @@ std::ostream &operator <<(std::ostream &os, text::ansi e)
 }
 std::ostream &operator <<(std::ostream &os, text::ansi_literal e)
 {
-  if (sys::is_tty(os))
+  if (e.esc && sys::is_tty(os))
     os << e.esc;
   return os;
 }

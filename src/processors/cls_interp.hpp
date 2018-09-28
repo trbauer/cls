@@ -18,16 +18,16 @@ namespace cls
     void *impl;
 
     // intializer buffer values from whatever backing stores exist
-    void setup(const cls::Opts &os, int iteration);
+    void setup(const cls::opts &os, int iteration);
 
     // intializer buffer values from whatever backing store
-    void execute(const cls::Opts &os, int iteration);
+    void execute(const cls::opts &os, int iteration);
 
     times get_times() const;
   };
 
   // compiles programs
-  compiled_script compile(const cls::Opts &os, const cls::script &s);
+  compiled_script compile(const cls::opts &os, const cls::script &s);
 } // namespace cls
 
 #endif

@@ -1268,7 +1268,7 @@ static init_spec *parseInit(parser &p)
 
 
 template <typename T>
-static refable<T*> consumeLetReference(
+static refable<T*> dereferenceLet(
   parser &p,
   script &s,
   enum spec::spec_kind kind,
@@ -1280,7 +1280,8 @@ static refable<T*> consumeLetReference(
   if (itr == s.let_bindings.end()) {
     p.fatalAt(loc,what," not defined");
   }
-  spec *rs = itr->second;
+  let_spec *ls = itr->second;
+  spec *rs = ls->value;
   if (rs->kind != kind) {
     std::stringstream ss;
     ss << "identifier does not reference a " << what;
@@ -1307,7 +1308,7 @@ static void parseDispatchStatementDimensions(
   //                      ^^^^^^^^^^^^^^^^^
   if (p.consumeIf(LANGLE)) {
     auto parseDim = [&] (bool allow_null) {
-      dispatch_spec::dim d;
+      dim d;
       d.defined_at = p.nextLoc();
       if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL")) {
         if (!allow_null)
@@ -1331,8 +1332,7 @@ static void parseDispatchStatementDimensions(
           }
           size_t val = 0;
           while (s_off < s.size() && isdigit(s[s_off])) {
-            s_off++;
-            val = 10*val + s[s_off] - '0';
+            val = 10*val + s[s_off++] - '0';
           }
           return val;
         };
@@ -1355,6 +1355,121 @@ static void parseDispatchStatementDimensions(
   } // end dimension part <...>
 }
 
+// #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+//                                 ^^^^^^^^^^^^^
+static void parseDispatchStatementArguments(
+  parser &p,
+  script &s,
+  dispatch_spec &ds)
+{
+  p.consume(LPAREN);
+  while (!p.lookingAt(RPAREN)) {
+    init_spec *is = parseInit(p);
+    if (is->kind == init_spec::IS_SYM) {
+      // make a reference argument
+      ds.arguments.emplace_back(
+        is->defined_at,
+        ((const init_spec_symbol *)is)->identifier,
+        nullptr);
+      delete is; // delete the old object
+    } else {
+      // immediate value
+      ds.arguments.push_back(is);
+    }
+    if (!p.consumeIf(COMMA))
+      break;
+  }
+  p.consume(RPAREN);
+  ds.defined_at.extend_to(p.nextLoc());
+}
+
+// #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+//                                               ^^^^^^^^^^^^^^^^^^^^^^
+static void parseDispatchStatementWhereClause(
+  parser &p,
+  script &s,
+  dispatch_spec &ds,
+  let_spec *enclosing_let)
+{
+  auto hasParam =
+    [&] (std::string nm) {
+      if (enclosing_let)
+        for (const std::string &arg : enclosing_let->params)
+          if (arg == nm)
+            return true;
+      return false;
+    };
+
+  // resolve references after the where clause
+  if (p.consumeIfIdentEq("where")) {
+    while (p.lookingAt(IDENT)) {
+      auto loc = p.nextLoc();
+      auto name = p.consumeIdent("variable name");
+
+      if (hasParam(name)) {
+        p.fatalAt(loc,"where binding shadows let parameter");
+      }
+      auto itr = s.let_bindings.find(name);
+      if (itr != s.let_bindings.end()) {
+        p.warningAt(loc,
+          "where binding shadows let binding (from line ",
+          itr->second->defined_at.line, ")");
+      }
+      for (auto w : ds.where_bindings)
+        if (std::get<0>(w) == name)
+          p.fatalAt(loc,"repeated where binding name");
+      p.consume(EQ);
+      init_spec *i = parseInit(p);
+      i->defined_at.extend_to(p.nextLoc());
+      ds.where_bindings.emplace_back(name,i);
+      bool where_used_at_least_once = false;
+      for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
+        if (ds.arguments[ai].value == nullptr &&
+          ds.arguments[ai].identifier == name)
+        {
+          ds.arguments[ai].value = i;
+          where_used_at_least_once = true;
+        }
+      }
+      if (!where_used_at_least_once) {
+        p.warningAt(loc, "where binding never used");
+      }
+      if (p.lookingAtSeq(COMMA,IDENT)) {
+        p.skip();
+      } else {
+        break;
+      }
+    }
+  }
+
+  // fail if anything is not defined
+  for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
+    if (ds.arguments[ai].value == nullptr) {
+      const auto &id = ds.arguments[ai].identifier;
+      if (hasParam(id)) {
+        // parameter passed to this let
+        // e.g. let F(X) = ....<...>(...,X,...);
+        auto &prs = enclosing_let->param_uses[id];
+        prs.push_back(&ds.arguments[ai]);
+      } else {
+        // capture from the let binding above this statement
+        auto itr = s.let_bindings.find(id);
+        if (itr == s.let_bindings.end()) {
+          p.fatalAt(ds.arguments[ai].defined_at,"undefined symbol");
+        }
+        let_spec *ls = itr->second;
+        if (ls->value->kind != spec::INIT_SPEC) {
+          p.fatalAt(ds.arguments[ai].defined_at,
+            "symbol does not refer to a kernel argument (see line ",
+            ls->defined_at.line,
+            ")");
+        }
+        // otherwise make the replacement
+        ds.arguments[ai].value = (init_spec *)ls->value; // replace with value
+      }
+    }
+  }
+}
 
 // #1`path/foo.cl
 static program_spec *parseDispatchStatementDeviceProgramPart(
@@ -1400,7 +1515,6 @@ static program_spec *parseDispatchStatementDeviceProgramPart(
     p.consume(RBRACK);
   }
   ps->defined_at.extend_to(p.nextLoc());
-  p.consume(BACKTICK);
 
   return ps;
 }
@@ -1427,12 +1541,10 @@ static kernel_spec *parseDispatchStatementKernelPart(
 static bool lookingAtImmediateDispatchStatement(parser &p) {
     if (p.lookingAt(HASH))
       return true;
-    // let foo = ...;
     if (p.lookingAtIdentEq("let"))
-      return false;
-    // barrier(...)
-    if (p.lookingAtIdent() && p.lookingAt(LPAREN,1))
-      return false;
+      return false; // let foo = ...;
+    if (p.lookingAtSeq(IDENT, LPAREN))
+      return false; // e.g. seq(...); print(...)
     int i = 1;
     while (i < (int)p.tokensLeft()) {
       if (p.lookingAt(BACKTICK,i) || // correct dispatch
@@ -1455,6 +1567,22 @@ static dispatch_spec *parseDispatchStatement(parser &p, script &s)
   auto loc = p.nextLoc();
   dispatch_spec *ds = new dispatch_spec(loc);
   if (lookingAtImmediateDispatchStatement(p)) {
+    if (p.lookingAtSeq(IDENT,RANGLE)) {
+      // named kernel invocation
+      // KERNEL<...>(...)
+      ds->kernel =
+        dereferenceLet<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
+    } else if (p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
+      // PROG`kernel<...>(...)
+      // 000012222223...
+      refable<program_spec *> ps =
+        dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"program");
+      p.consume(BACKTICK);
+      std::string kernel_name = p.consumeIdent("kernel name");
+      ds->kernel = refable<kernel_spec*>(new kernel_spec(ps));
+    } else {
+      // FULLY immediate dispatch
+      //
       // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
       // ^^^^^^^^^^^^^^^^^^^^^^^
       program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
@@ -1464,20 +1592,7 @@ static dispatch_spec *parseDispatchStatement(parser &p, script &s)
       // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
       //                ^^^^^^
       ds->kernel = parseDispatchStatementKernelPart(ps, p, s);
-  } else if (p.lookingAt(IDENT) && p.lookingAt(LANGLE,1)) {
-    // KERNEL<...>(...)
-    ds->kernel =
-      consumeLetReference<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
-  } else if (p.lookingAt(IDENT) && p.lookingAt(BACKTICK,1) &&
-    p.lookingAt(IDENT,2) && p.lookingAt(LANGLE,3))
-  {
-    // PROG`kernel<...>(...)
-    // 000012222223...
-    refable<program_spec *> ps =
-      consumeLetReference<program_spec>(p,s,spec::PROGRAM_SPEC,"program");
-    p.consume(BACKTICK);
-    std::string kernel_name = p.consumeIdent("kernel name");
-    ds->kernel = refable<kernel_spec*>(new kernel_spec(ps));
+    }
   } else {
     p.fatal("expected statement");
   }
@@ -1486,68 +1601,12 @@ static dispatch_spec *parseDispatchStatement(parser &p, script &s)
   //                      ^^^^^^^^^^^^^^^^^
   parseDispatchStatementDimensions(p,s,*ds);
 
-  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33)
-  //                                 ^^^^^^^^^^^^^
-  p.consume(LPAREN);
-  while (!p.lookingAt(RPAREN)) {
-    ds->arguments.push_back(parseInit(p));
-    if (!p.consumeIf(COMMA))
-      break;
-  }
-  p.consume(RPAREN);
-  ds->defined_at.extend_to(p.nextLoc());
-
-  // resolve references after the where clause
-  if (p.consumeIfIdentEq("where")) {
-    auto loc = p.nextLoc();
-    auto name = p.consumeIdent("variable name");
-
-    auto itr = s.let_bindings.find(name);
-    if (itr != s.let_bindings.end()) {
-      p.warningAt(loc,
-        "where binding shadows let binding (from line ",
-        itr->second->defined_at.line, ")");
-    }
-    for (auto w : ds->where_bindings)
-      if (std::get<0>(w) == name)
-        p.fatalAt(loc,"repeated where binding name");
-    p.consume(EQ);
-    init_spec *i = parseInit(p);
-    ds->where_bindings.emplace_back(name,i);
-    bool where_used_at_least_once = false;
-    for (int ai = 0; ai < ds->arguments.size(); ai++) {
-      init_spec *is = ds->arguments[ai];
-      if (is->kind == init_spec::IS_SYM &&
-        ((init_spec_symbol *)is)->identifier == name)
-      {
-        ds->arguments[ai] = refable<init_spec*>(i);
-        where_used_at_least_once = true;
-      }
-    }
-    if (!where_used_at_least_once) {
-      p.warningAt(loc, "where binding never used");
-    }
-  }
-
-  // resolve anything that's not
-  for (int ai = 0; ai < ds->arguments.size(); ai++) {
-    init_spec *is = ds->arguments[ai];
-    if (is->kind == init_spec::IS_SYM) {
-      auto itr = s.let_bindings.find(((init_spec_symbol *)is)->identifier);
-      if (itr == s.let_bindings.end()) {
-        p.fatalAt(is->defined_at,"undefined symbol");
-      }
-      spec *s = itr->second;
-      if (s->kind != s->INIT_SPEC) {
-        p.fatalAt(is->defined_at,
-          "symbol does not refer to a kernel argument (see line ",
-          s->defined_at.line,
-          ")");
-      }
-      // otherwise make the replacement
-      ds->arguments[ai] = refable<init_spec*>((init_spec*)s);
-    }
-  }
+  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where ...
+  //                                 ^^^^^^^^^^^^^^^^^^^^^^^
+  parseDispatchStatementArguments(p,s,*ds);
+  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+  //                                               ^^^^^^^^^^^^^^^^^^^^^^
+  parseDispatchStatementWhereClause(p,s,*ds,nullptr);
 
   return ds;
 }
@@ -1574,7 +1633,7 @@ static bool parseBuiltIn(parser &p, script &s)
 {
   auto loc = p.nextLoc();
   if (p.lookingAtIdentEq("barrier")) {
-      s.statements.push_back(new barrier_spec(loc));
+      s.statement_list.statements.push_back(new barrier_spec(loc));
       p.skip();
       if (p.consumeIf(LPAREN)) // optional ()
         p.consume(RPAREN);
@@ -1585,14 +1644,14 @@ static bool parseBuiltIn(parser &p, script &s)
     auto *ref = parseInit(p);
     p.consume(COMMA);
     init_spec_symbol *sut = parseSymbol(p);
-    s.statements.push_back(new diff_spec(loc, ref, sut));
+    s.statement_list.statements.push_back(new diff_spec(loc, ref, sut));
     p.consume(RPAREN);
     return true;
   } else if (p.lookingAtIdentEq("print")) {
     p.skip();
     p.consume(LPAREN);
     init_spec_symbol *val = parseSymbol(p);
-    s.statements.push_back(new print_spec(loc, val));
+    s.statement_list.statements.push_back(new print_spec(loc, val));
     p.consume(RPAREN);
     return true;
   } else if (p.lookingAtIdentEq("save")) {
@@ -1602,7 +1661,7 @@ static bool parseBuiltIn(parser &p, script &s)
       p.fatal("expected file name (string literal)");
     std::string file = p.tokenStringLiteral();
     init_spec_symbol *val = parseSymbol(p);
-    s.statements.push_back(new save_spec(loc, file, val));
+    s.statement_list.statements.push_back(new save_spec(loc, file, val));
     p.consume(RPAREN);
     return true;
   } else {
@@ -1633,45 +1692,89 @@ static void parseLetStatement(parser &p, script &s)
   }
   p.consume(EQ); // =
 
-  spec *val = nullptr;
-  if (lookingAtImmediateDispatchStatement(p)) {
+  spec *value = nullptr;
+  loc value_loc = p.nextLoc();
+  if (p.lookingAtSeq(IDENT,LANGLE)) {
+    // let D = K<1024>(....) where ...
+    dispatch_spec *ds = new dispatch_spec(value_loc);
+    ds->kernel = dereferenceLet<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
+    parseDispatchStatementDimensions(p,s,*ds);
+    parseDispatchStatementArguments(p,s,*ds);
+    parseDispatchStatementWhereClause(p,s,*ds,ls);
+    ds->defined_at.extend_to(p.nextLoc());
+    value = ds;
+  } else if (p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
+    // let D = P`kernel<...>(...) where ...
+    dispatch_spec *ds = new dispatch_spec(value_loc);
+    refable<program_spec *> rps =
+      dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"programs");
+    p.consume(BACKTICK);
+    ds->kernel = new kernel_spec(rps.value);
+    parseDispatchStatementDimensions(p,s,*ds);
+    parseDispatchStatementArguments(p,s,*ds);
+    parseDispatchStatementWhereClause(p,s,*ds,ls);
+    ds->defined_at.extend_to(p.nextLoc());
+    value = ds;
+  } else if (lookingAtImmediateDispatchStatement(p)) {
+    // let P = #1`foo/bar.cl
+    // let K = foo/bar.cl`kernel
+    // let D = foo/bar.cl`kernel<...>(...) where ...
     program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
-    val = ps;
     if (p.consumeIf(BACKTICK)) {
+      // includes the kernel
       kernel_spec *ks = parseDispatchStatementKernelPart(ps, p, s);
-      val = ks->program = ps;
+      ks->program = ps;
+      if (p.lookingAt(LANGLE)) {
+        // let D = ...<...>(...) where ...
+        dispatch_spec *ds = new dispatch_spec(value_loc);
+        ds->kernel = ks;
+        parseDispatchStatementDimensions(p,s,*ds);
+        parseDispatchStatementArguments(p,s,*ds);
+        parseDispatchStatementWhereClause(p,s,*ds,ls);
+        ds->defined_at.extend_to(p.nextLoc());
+        value = ds;
+      } else {
+        // let P = #1`prog.cl`kernel
+        value = ks;
+      }
+    } else {
+      // let P = #1`prog.cl`kernel
+      value = ps;
     }
   } else {
-    val = parseInit(p);
+    // a regular initializer
+    // let M = 0:w
+    value = parseInit(p);
   }
-  ls->value = val;
+  ls->value = value;
   s.let_bindings[name] = ls;
-  s.statements.push_back(ls);
-  s.statements.back()->defined_at.extend_to(p.nextLoc());
+  s.statement_list.statements.push_back(ls);
+  s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
 }
 
 static void parseStatementLine(parser &p, script &s)
 {
   if (p.lookingAtIdentEq("let") && p.lookingAt(IDENT,1)) {
     // let X = ...
-    // let F(X,Y) = ... (TODO: implement: means let parsing needs to honor bindings)
+    // let F(X,Y) = ...
     parseLetStatement(p,s);
   } else if (parseBuiltIn(p,s)) {
+    // barrier
+    // save('foo.bin',A);
     ;
   } else {
     // #1`foo/bar.cl
-    parseDispatchStatement(p,s);
+    s.statement_list.statements.emplace_back(parseDispatchStatement(p,s));
   }
 }
 
-script cls::parse_script(
-  const Opts &os,
+void cls::parse_script(
+  const opts &os,
   const std::string &input,
-  const std::string &filename)
+  const std::string &filename,
+  script &s,
+  warning_list &wl)
 {
-  script s;
-  s.source = &input;
-
   parser p(input);
   while (p.consumeIf(NEWLINE))
     ;
@@ -1685,6 +1788,5 @@ script cls::parse_script(
        ;
     }
   }
-
-  return s;
+  wl = p.warnings();
 }

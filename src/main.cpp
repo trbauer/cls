@@ -2,17 +2,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <fstream>
-#include <streambuf>
-#include <string>
 #include <sstream>
+#include <string>
+#include <tuple>
 
 #include "cls.hpp"
+#include "devices.hpp"
 #include "ir/cls_ir.hpp"
+#include "opts.hpp"
 #include "parser/cls_parser.hpp"
 #include "processors/cls_interp.hpp"
-#include "devices.hpp"
-#include "opts.hpp"
 #include "stats.hpp"
 #include "system.hpp"
 #include "text.hpp"
@@ -32,143 +31,139 @@ enum class units
   UNITS_S,
 };
 static void runOnDevice(
-  struct cls::Opts &opts,
+  struct cls::opts &opts,
   const cl::Device &dev,
   sampler &wall_time,
   sampler &prof_time);
 
 static void runFile(
-  struct cls::Opts &opts,
+  struct cls::opts &opts,
   std::string file_name,
   std::string file_contents);
 
 
-static bool readDecInt(const char *str, int &val)
-{
-  char *end = nullptr;
-  val = (int)strtol(str, &end, 10);
-  if (end != str + strlen(str)) {
-    return false;
-  }
-  return true;
-};
-
 int main(int argc, const char **argv)
 {
-  cls::Opts opts;
-  opts::CmdlineSpec<cls::Opts> cmdspec(
+  cls::opts os;
+  opts::CmdlineSpec<cls::opts> cmdspec(
     "CL Script",
     EXE_NAME,
-    EXE_NAME " matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\n"
+    "  % " EXE_NAME " -e \"matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\"\n"
+    "  % " EXE_NAME " script.cls\n"
   );
   cmdspec.defineArg(
     "EXPR","a cls expression", "", opts::NONE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-      opts.input_files.push_back(value);
-    });
-//  cmdspec.defineOpt(
-//    "f","file","FILE","pass a script as a file","",opts::NONE,
-//    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-//      opts.input = sys::read_file_text(value);
-//    });
+    os.input_files);
   cmdspec.defineOpt(
     "e","expression","EXPR","pass an expression as an argument","",opts::NONE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-      opts.input_expr = value;
-    });
+    os.input_expr);
   cmdspec.defineOpt(
     "i","iterations","INT","number of samples to execute","",opts::NONE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-    if (!readDecInt(value, opts.iterations)) {
-      eh("malformed iterations");
-    }
-  });
+    os.iterations);
   cmdspec.defineFlag(
     "E","save-preprocessed","saves the pre-processed source","",opts::NONE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-      opts.save_preprocessed = true;
-    });
+    os.save_preprocessed);
   cmdspec.defineFlag(
-    "B","save-binaries","saves the binaries","",opts::NONE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-      opts.save_binaries = true;
-    });
+    "B","save-binaries","saves all program binaries","",opts::NONE,
+    os.save_binaries);
+  cmdspec.defineFlag(
+    "P","parse-only","parses the script only and pretty prints it","",opts::NONE,
+    os.parse_only);
   cmdspec.defineOpt(
-    "l","list-devices","list the devices by index or name","DEVICE",
+    "l","list-devices","DEV?","list the devices by index or name",
     "Lists devices by index or name.\n"
     "EXAMPLES:\n"
     " -l         lists all devices on the sytstem\n"
     " -l=0       lists device 0\n"
-    " -l=GTX     lists the device with \"GTX\" as a substring of its CL_DEVICE_NAME\n"
+    " -l=GTX     lists the device with \"GTX\" as a substring of "
+    "its CL_DEVICE_NAME\n"
     "",
     opts::ALLOW_MULTI|opts::FLAG_VALUE,
-    [] (const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-      opts.list_devices = true;
+    [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
+      os.list_devices = true;
       if (*value == 0)
         return;
       int dev_ix = 0;
-      if (readDecInt(value, dev_ix)) {
-        opts.list_devices_specific.push_back(getDeviceByIndex(opts, dev_ix));
+      if (opts::readDecInt(value, dev_ix)) {
+        os.list_devices_specific.push_back(getDeviceByIndex(os, dev_ix));
       } else {
-        opts.list_devices_specific.push_back(getDeviceByName(opts, value));
+        os.list_devices_specific.push_back(getDeviceByName(os, value));
       }
   });
   auto &g = cmdspec.defineGroup("t", "profiling options");
   g.defineFlag("W",nullptr,"profiles with wall timers", "", opts::NONE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-    opts.wall_time = true;
-  });
+    os.wall_time);
   g.defineFlag("CL",nullptr,"profiles with OCL prof timers", "", opts::NONE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
-    opts.prof_time = true;
-  });
+    os.prof_time);
+  cmdspec.defineFlag(
+    nullptr,"use-kernel-arg-info",
+    "uses OpenCL 1.2+ kernel arg info in argument inference.",
+    "This can fail if there are typedefs or custom types.  "
+    "By default we attempt to parse the source."
+    "",
+    opts::NONE,
+    os.use_kernel_arg_info);
+
   cmdspec.defineOpt(
     "v","verbosity","INT","sets the output level","",opts::FLAG_VALUE,
-    [](const char *value, const opts::ErrorHandler &eh, cls::Opts &opts) {
+    [] (const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
       if (*value == 0) { // -v
         opts.verbosity = 1;
-      } else if (!readDecInt(value, opts.verbosity)) {
+      } else if (!opts::readDecInt(value, opts.verbosity)) {
         eh("malformed verbosity value");
       }
       sys::desired_message_verbosity = opts.verbosity;
     });
 
-  if (!cmdspec.parse(argc, argv, opts)) {
+  if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);
   }
 
-  if (opts.list_devices) {
-    listDeviceInfo(opts);
+  if (os.list_devices) {
+    listDeviceInfo(os);
     return EXIT_SUCCESS;
   }
-  if (opts.input_expr.size() == 0 && opts.input_files.empty()) {
+  if (os.input_expr.size() == 0 && os.input_files.empty()) {
     std::cerr << "expected input -e or file arguments\n";
     return EXIT_FAILURE;
   }
-  if (opts.input_expr.size() > 0) {
-    runFile(opts,"<interactive>",opts.input_expr);
+  if (os.input_expr.size() > 0) {
+    runFile(os,"<interactive>",os.input_expr);
   }
-  for (std::string file : opts.input_files) {
+  for (std::string file : os.input_files) {
     if (!sys::file_exists(file)) {
       std::cerr << file << ": file not found\n";
       return EXIT_FAILURE;
     }
     auto file_text = sys::read_file_text(file);
-    runFile(opts,file,file_text);
+    runFile(os,file,file_text);
   }
 }
 
 static void runFile(
-  struct cls::Opts &os,
+  struct cls::opts &os,
   std::string file_name,
   std::string file_contents)
 {
-  cls::script s;
+  cls::script s(file_contents);
   try {
     os.verbose() << "parsing script\n";
-    s = cls::parse_script(os, file_contents, file_name);
-    s.str(std::cout);
-    std::cout << "\n";
+
+    cls::warning_list wl;
+    cls::parse_script(os, file_contents, file_name, s, wl);
+    for (auto &wp : wl) {
+      formatMessageWithContext(
+        std::cout,
+        std::get<0>(wp),
+        file_contents,
+        std::get<1>(wp));
+    }
+    if (os.parse_only) {
+      cls::format_opts fopts;
+      fopts.opts = cls::format_opts::USE_COLOR;
+      s.str(std::cout,fopts);
+      exit(EXIT_SUCCESS);
+    }
   } catch (cls::diagnostic &d) {
     d.str(std::cerr);
     exit(EXIT_FAILURE);
@@ -230,7 +225,7 @@ static void runFile(
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);
-    std::string str = text::str_extract(ds); // call ds.str(ss); return ss.str();
+    std::string str = ds.spec::str();
     emitStats(str,ts);
   }
 }
@@ -292,7 +287,7 @@ void CL_CALLBACK ContextErrorCallback(
 }
 
 static cl_command_queue createCommandQueue(
-  struct cls::Opts &opts,
+  struct cls::opts &opts,
   cl_context ctx,
   const cl::Device &dev)
 {
@@ -330,7 +325,7 @@ static cl_command_queue createCommandQueue(
 
 static void enqueueKernel(
   cls::ndr &call,
-  struct cls::Opts &opts,
+  struct cls::opts &opts,
   cl::CommandQueue &cq,
   cl::Event &evt)
 {
@@ -349,7 +344,7 @@ static void enqueueKernel(
 
 
 static void runOnDevice(
-  struct cls::Opts &opts,
+  struct cls::opts &opts,
   const cl::Device &dev,
   sampler &wall_time,
   sampler &prof_time)
