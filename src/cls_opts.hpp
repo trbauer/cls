@@ -44,7 +44,7 @@ struct opts {
   bool                        prof_time = false;
   bool                        save_preprocessed = false;
   bool                        save_binaries = false;
-  bool                        use_kernel_arg_info; // OpenCL 1.2+
+  bool                        use_kernel_arg_info = false; // OpenCL 1.2+
 
   filtered_stream warning() const{
     std::cout << text::ANSI_YELLOW << "WARNING:" << text::ANSI_RESET << " ";

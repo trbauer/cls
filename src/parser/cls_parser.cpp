@@ -1,10 +1,12 @@
+#define _USE_MATH_DEFINES
 #include "cls_parser.hpp"
 #include "parser.hpp"
 #include "../cls.hpp"
 #include "../system.hpp"
 
-#include <sstream>
+#include <cmath>
 #include <iostream>
+#include <sstream>
 
 using namespace cls;
 
@@ -1028,10 +1030,11 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
   } else if (p.lookingAtInt()) {
     return new init_spec_int(loc, p.consumeInt());
   } else if (p.lookingAtIdent()) {
-    // e.g. "X" or "g.x"
+    // e.g. "X" or "g.x" or "pow(...)"
     auto s = p.tokenString();
     p.skip();
     if (p.lookingAt(DOT)) {
+      // e.g. "g.x"
       while (p.consumeIf(DOT)) {
         s += '.';
         if (p.lookingAt(IDENT)) {
@@ -1039,8 +1042,24 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         }
         s += p.tokenString();
       }
+      for (int biv = init_spec_builtin::BIV_FIRST;
+        biv <= init_spec_builtin::BIV_LAST;
+        biv++)
+      {
+        if (s == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
+          return new init_spec_builtin(loc, (init_spec_builtin::biv_kind)biv);
+        }
+      }
+      loc.extend_to(p.nextLoc());
       return new init_spec_symbol(loc, s);
-    } else if (p.lookingAt(LPAREN) || p.consumeIf(LANGLE)) {
+    } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE)) {
+      // foo<...  (e.g. random<12007>(...))
+      // or
+      // foo(...
+      //
+      // TODO: generalize function parsing to
+      //    F<...>(....)
+      // then match by template arguments
       if (s == "random") {
         int64_t seed = 0;
         if (p.consumeIf(LANGLE)) {
@@ -1054,20 +1073,87 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
             func->e_hi = parseInitAtom(p);
           p.consume(RBRACK);
         }
+        func->defined_at.extend_to(p.nextLoc());
         return func;
-      } else if (s == "seq") {
-        p.fatal("parseInitAtomPrim: finish adding functions");
       } else {
+        std::vector<init_spec_atom *> args;
+        p.consume(LPAREN);
+        while (!p.lookingAt(RPAREN)) {
+          args.push_back(parseInitAtom(p));
+          if (!p.consumeIf(COMMA))
+            break;
+        }
+        p.consume(RPAREN);
+
+        auto makeBinary = [&](init_spec_bin_expr::bin_op op) {
+          if (args.size() != 2) {
+            p.fatalAt(loc, "binary function requires two arguments");
+          }
+          return new init_spec_bin_expr(loc,op,args[0],args[1]);
+        };
+        auto makeUnary = [&](init_spec_unr_expr::unr_op op) {
+          if (args.size() != 1) {
+            p.fatalAt(loc, "unary function requires one argument");
+          }
+          return new init_spec_unr_expr(loc,op,args[0]);
+        };
+        // binary functions
+        if (s == "min")
+          return makeBinary(init_spec_bin_expr::E_MIN);
+        else if (s == "max")
+          return makeBinary(init_spec_bin_expr::E_MAX);
+        else if (s == "pow")
+          return makeBinary(init_spec_bin_expr::E_POW);
+        else if (s == "lcm")
+          return makeBinary(init_spec_bin_expr::E_LCM);
+        else if (s == "gcd")
+          return makeBinary(init_spec_bin_expr::E_GCD);
+        // unary functions
+        else if (s == "abs")
+          return makeUnary(init_spec_unr_expr::E_ABS);
+        else if (s == "fabs")
+          p.fatalAt(loc,"use \"abs\" for the absolute value");
+        else if (s == "sqrt")
+          p.fatalAt(loc,"use \"sqt\" for the square root");
+        else if (s == "sqt")
+          return makeUnary(init_spec_unr_expr::E_SQT);
+        else if (s == "exp")
+          return makeUnary(init_spec_unr_expr::E_EXP);
+        else if (s == "log")
+          return makeUnary(init_spec_unr_expr::E_LOG);
+        else if (s == "log2")
+          return makeUnary(init_spec_unr_expr::E_LOG2);
+        else if (s == "log10")
+          return makeUnary(init_spec_unr_expr::E_LOG10);
+        else if (s == "sin")
+          return makeUnary(init_spec_unr_expr::E_SIN);
+        else if (s == "cos")
+          return makeUnary(init_spec_unr_expr::E_COS);
+        else if (s == "tan")
+          return makeUnary(init_spec_unr_expr::E_TAN);
+        else if (s == "atan")
+          return makeUnary(init_spec_unr_expr::E_ATAN);
+        ///////////////////////////////////////////////////
+        // other expressions (pseudo functions)
+        if (s == "seq") {
+          p.fatal("parseInitAtomPrim: implement SEQ");
+        }
+        // fallback
         p.fatal("undefined function");
-      }
-      return nullptr; // unreachable
+        return nullptr; // unreachable
+      } // end else not random
     } else {
+      if (s == "E")
+        return new init_spec_float(loc, M_E);
+      else if (s == "PI")
+        return new init_spec_float(loc, M_PI);
       // regular symbol
       //
       // TODO: support E and PI
       return new init_spec_symbol(loc, s);
     }
   } else if (p.consumeIf(LBRACK)) {
+    // {...,...,...,...}
     auto re = new init_spec_record(loc);
     if (!p.lookingAt(RPAREN))
       re->children.push_back(parseInitAtom(p));

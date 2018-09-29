@@ -4,6 +4,7 @@
 #include "../cl_headers.hpp"
 #include "../cls_opts.hpp"
 #include "../fatal.hpp"
+#include "../text.hpp"
 
 #include <algorithm>
 #include <initializer_list>
@@ -38,6 +39,15 @@ namespace cls
   namespace k
   {
     ///////////////////////////////////////////////////////////////////////////
+    // The void type
+    struct type_void {
+      constexpr size_t size(size_t) const {return 0;}
+      std::string syntax() const {return "void";}
+      bool operator==(const type_void &) const {return true;}
+    };
+    constexpr type_void VOID;
+
+    ///////////////////////////////////////////////////////////////////////////
     // float, int, or unsigned
     struct type_num {
       enum kind {
@@ -52,6 +62,8 @@ namespace cls
         : name(_name), kind(_kind), size_in_bytes(_size_in_bytes) { }
       constexpr size_t size(size_t) const {return size_in_bytes;}
       std::string syntax() const {return name;}
+      bool operator==(const type_num &t) const {return text::streq(name,t.name);}
+      bool operator!=(const type_num &t) const {return !(*this == t);}
     };
     ///////////////////////////////////////////////////////////////////////////
     // enum foo{BAR,BAZ,QUX}
@@ -63,6 +75,8 @@ namespace cls
 
       constexpr size_t size(size_t) const {return 4;}
       std::string syntax() const {return name;}
+      bool operator==(const type_enum &t) const {return text::streq(name,t.name);}
+      bool operator!=(const type_enum &t) const {return !(*this == t);}
     };
     ///////////////////////////////////////////////////////////////////////////
     // other built-in types
@@ -116,6 +130,8 @@ namespace cls
         default: return "???";
         }
       }
+      bool operator==(const type_builtin &t) const {return kind == t.kind;}
+      bool operator!=(const type_builtin &t) const {return !(*this == t);}
     };
     ///////////////////////////////////////////////////////////////////////////
     // struct foo {int x,float y,struct{int z,short w}bar};
@@ -160,6 +176,9 @@ namespace cls
 
       size_t size(size_t ptr_size) const;
       std::string syntax() const {return name;}
+
+      bool operator==(const type_struct &t) const {return text::streq(name,t.name);}
+      bool operator!=(const type_struct &t) const {return !(*this == t);}
     };
     struct type_union {
       const char                 *name;
@@ -183,6 +202,8 @@ namespace cls
       type_union() : elements_memory{0} { }
       std::string syntax() const {return name;}
       size_t size(size_t ptr_size) const;
+      bool operator==(const type_union &t) const {return text::streq(name,t.name);}
+      bool operator!=(const type_union &t) const {return !(*this == t);}
     };
 
     struct type_ptr {
@@ -196,14 +217,22 @@ namespace cls
       constexpr type_ptr(const type *t) : element_type(t) { }
       constexpr size_t size(size_t ptr_size) const {return ptr_size;}
       std::string syntax() const;
+      bool operator==(const type_ptr &t) const;
+      bool operator!=(const type_ptr &t) const {return !(*this == t);}
     };
 
     struct type {
       // std::variant<type_num,type_builtin,type_struct,type_enum,type_ptr> var;
-      std::variant<type_num,type_builtin,type_struct,type_ptr>   var;
+      std::variant<
+          type_void
+        , type_num
+        , type_builtin
+        , type_struct
+        , type_ptr>   var;
       // const char *                                               name;
       // std::string                                                name;
 
+      constexpr type() : var(VOID) { }
       constexpr type(const type_num &t) : var(t) { }
       constexpr type(const type_struct &t) : var(t) { }
       constexpr type(const type_ptr &t) : var(t) { }
@@ -221,29 +250,45 @@ namespace cls
       // constexpr type(const char *_name, type_num t) : name(_name), var(t) {}
       // constexpr type(std::string _name, type_num t) : name(_name), var(t) {}
       constexpr size_t size(size_t ptr_size) const {
-        if (std::holds_alternative<type_num>(var)) {
+        if (std::holds_alternative<type_void>(var)) {
+          return std::get<type_void>(var).size(ptr_size);
+        } else if (std::holds_alternative<type_num>(var)) {
           return std::get<type_num>(var).size(ptr_size);
         } else if (std::holds_alternative<type_builtin>(var)) {
           return std::get<type_builtin>(var).size(ptr_size);
         } else if (std::holds_alternative<type_struct>(var)) {
           return std::get<type_struct>(var).size(ptr_size);
+        } else if (std::holds_alternative<type_ptr>(var)) {
+          return ptr_size;
         } else {
           throw "unreachable";
         }
       }
       std::string syntax() const {
-        if (std::holds_alternative<type_num>(var)) {
+        if (std::holds_alternative<type_void>(var)) {
+          return std::get<type_void>(var).syntax();
+        } else if (std::holds_alternative<type_num>(var)) {
           return std::get<type_num>(var).syntax();
         } else if (std::holds_alternative<type_builtin>(var)) {
           return std::get<type_builtin>(var).syntax();
         } else if (std::holds_alternative<type_struct>(var)) {
           return std::get<type_struct>(var).syntax();
+        } else if (std::holds_alternative<type_ptr>(var)) {
+          return std::get<type_ptr>(var).syntax();
         } else {
           throw "unreachable";
         }
       }
     };
-
+    static inline bool operator==(const type &t1,const type &t2) {
+      return t1.var == t2.var;
+    }
+    static inline bool operator!=(const type &t1,const type &t2) {
+      return !(t1 == t2);
+    }
+    inline bool type_ptr::operator==(const type_ptr &t) const {
+      return *element_type == *t.element_type;
+    }
     inline size_t type_struct::size(size_t ptr_size) const {
       size_t sum = 0;
       for (size_t i = 0; i < elements_length; i++)
@@ -264,6 +309,9 @@ namespace cls
       ss << " *";
     }
 
+    ///////////////////////////////////////////////////////////////////////////
+    // Program, Kernels, and Argument Info Structures
+    ///////////////////////////////////////////////////////////////////////////
 
     // global int *foo, ...
     struct arg_info {
@@ -272,8 +320,9 @@ namespace cls
       bool                             is_restrict = false;
       cl_kernel_arg_address_qualifier  addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
       cl_kernel_arg_access_qualifier   accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
+      cl_kernel_arg_type_qualifier     type_qual = CL_KERNEL_ARG_TYPE_NONE;
       std::string                      name;
-      const type                      *type = nullptr;
+      type                             type;
     };
 
     // a kernel definition from the source
@@ -285,7 +334,7 @@ namespace cls
       // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
       // e.g. __attribute__((reqd_work_group_size(X, Y, Z)))
       // std::vector<std::string> attrs; // reqd_work_group_size(X,Y,Z)  [remove spaces]
-      size_t                 req_word_group_size[3];
+      size_t                 reqd_word_group_size[3];
 
       // kernel void foo(...)
       //                 ^^^
@@ -299,6 +348,8 @@ namespace cls
     struct program_info {
       std::vector<kernel_info>    kernels;
       std::vector<type>           types;
+      // memory allocation
+      std::vector<type_ptr>       pointer_types;
     };
 
     /////////////////////////////////////////////////////////////////////////////
@@ -307,7 +358,8 @@ namespace cls
     cls::k::program_info parseProgramInfo(
       const cls::opts &os,
       const cls::fatal_handler *fh, cls::loc at,
-      const cls::program_source &src);
+      const cls::program_source &src,
+      size_t bytes_per_addr);
 
     // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
     // __attribute__((vec_type_hint(<type>)))

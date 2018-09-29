@@ -27,10 +27,8 @@ namespace cls {
     token() : lexeme(lexeme::LEXICAL_ERROR) { }
     token(
       lexemes::lexeme lxm,
-      uint32_t ln,
-      uint32_t cl,
-      uint32_t off,
-      uint32_t len) : lexeme(lxm), loc(ln, cl, off, len) { }
+      uint32_t ln, uint32_t cl, uint32_t off, uint32_t len)
+      : lexeme(lxm), loc(ln, cl, off, len) { }
   };
 
   class parser : public cls::fatal_handler {
@@ -38,18 +36,9 @@ namespace cls {
     size_t              m_offset;
     token               m_eof;
   private:
-    template <typename...Ts>
-    bool lookingAtSeqHelper(int ix) const {
-      return true;
-    }
-    template <typename...Ts>
-    bool lookingAtSeqHelper(int ix, lexeme lxm, Ts...ts) const {
-      return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
-    }
-     template <typename...Ts>
-    bool lookingAtSeqHelper(int ix, const char *lxm, Ts...ts) const {
-      return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
-    }
+    template <typename...Ts> bool lookingAtSeqHelper(int ix) const {return true;}
+    template <typename...Ts> bool lookingAtSeqHelper(int ix, lexeme lxm, Ts...ts) const {return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
+    template <typename...Ts> bool lookingAtSeqHelper(int ix, const char *lxm, Ts...ts) const {return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
   public:
     parser(const std::string &input, bool omit_newlines = false)
       : fatal_handler(input)

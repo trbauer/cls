@@ -2,7 +2,7 @@
 #define _TEXT_HPP
 
 #include <algorithm>
-#include <cstdarg>
+#include <cstring>
 #include <iomanip>
 #include <ostream>
 #include <sstream>
@@ -16,6 +16,13 @@
 
 
 namespace text {
+  static bool streq(const char *str1, const char *str2) {
+    return str1 == str2 || (str1 && str2 && strcmp(str1, str2) == 0);
+  }
+  static bool strpfx(const char *pfx, const char *str) {
+    return strncmp(str, pfx, strlen(pfx)) == 0;
+  }
+
   /////////////////////////////////////////////////////////////////////////////
   // COLORED TEXT
   //

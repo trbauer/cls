@@ -24,6 +24,7 @@ struct device_object {
   const device_spec *spec; // first definition of this device; SPECIFY: others?
   cl::Device         device;
   std::string        callback_prefix; // e.g. "[1.2: Intel HD]: "
+  size_t             pointer_size; // in bytes
 
   device_object(const device_spec *_spec, cl::Device dev)
     : spec(_spec), device(dev)
@@ -32,6 +33,7 @@ struct device_object {
     ss << "[" << spec->defined_at.line << "." <<
       spec->defined_at.column << "]: ";
     callback_prefix = ss.str();
+    pointer_size = dev.getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
   }
   // device_object(const device_object &) = delete;
   // device_object &operator=(const device_object &) = delete;
@@ -70,7 +72,24 @@ struct kernel_object {
 };
 
 struct surface_object {
-  const init_spec       *spec;
+  enum kind {
+    SO_INVALID = 0,
+    SO_BUFFER,
+    SO_IMAGE
+  } kind;
+
+  const init_spec_memory   *spec;
+  size_t                    size_in_bytes;
+  cl_mem                    memobj = nullptr;
+
+  const void               *initializer = nullptr;
+
+  surface_object(
+    const init_spec_memory *_spec,
+    enum surface_object::kind _kind,
+    size_t _size_in_bytes,
+    cl_mem _mem)
+    : kind(_kind), spec(_spec), size_in_bytes(_size_in_bytes), memobj(_mem) { }
 };
 
 
@@ -80,16 +99,38 @@ struct surface_object {
 // I.e. each one maps onto an NDRange enqueue
 struct dispatch_command {
   const dispatch_spec *ds;
-  kernel_object *ko;
+  kernel_object *kernel;
 
-  dispatch_command(const dispatch_spec *_ds, kernel_object *_ko)
-    : ds(_ds), ko(_ko) { }
+  dispatch_command(const dispatch_spec *_ds, kernel_object *_kernel)
+    : ds(_ds), kernel(_kernel) { }
+  size_t pointer_size() const {
+    return kernel->program->device->pointer_size;
+  }
 
   sampler times;
 
   // this is unique to the dispatch
   cl::NDRange local_size = cl::NullRange;
   cl::NDRange global_size;
+
+
+
+  size_t global_items() const {
+    size_t prod = 1;
+    for (size_t i = 0; i < global_size.dimensions(); i++) {
+      prod *= global_size.get()[i];
+    }
+    return prod;
+  }
+  size_t local_items() const {
+    if (local_size.dimensions() == 0)
+      return 0;
+    size_t prod = 1;
+    for (size_t i = 0; i < local_size.dimensions(); i++) {
+      prod *= local_size.get()[i];
+    }
+    return prod;
+  }
 };
 
 template <typename K,typename V>
@@ -123,17 +164,14 @@ struct mapped_objects {
 
 
 struct compiled_script_impl {
-  const script                                          &s;
+  const script                                           &s;
 
-  // list_map<const device_spec*,device_object>      devices2;
+  mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
+  mapped_objects<const device_spec*,device_object>        devices;
+  mapped_objects<const program_spec*,program_object>      programs;
+  mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
-  mapped_objects<const dispatch_spec*,dispatch_command>  dispatches;
-
-  mapped_objects<const init_spec*,surface_object>        surfaces;
-
-  mapped_objects<const device_spec*,device_object>       devices;
-  mapped_objects<const program_spec*,program_object>     programs;
-  mapped_objects<const kernel_spec*,kernel_object>       kernels;
+  mapped_objects<const init_spec_memory*,surface_object>  surfaces;
 
   // std::map<const device_spec*,device_object*>      devices;
   // std::vector<device_object>                      device_object_list;

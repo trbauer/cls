@@ -60,7 +60,18 @@ constexpr static type CHAR2{ST_CHAR2};
 DEFINE_PRIM_TYPE(INT,"int",SIGNED,4);
 */
 
-DEFINE_PRIM_TYPE(FLOAT,"float",FLOATING,4);
+DEFINE_PRIM_TYPE(HALF,   "half",   FLOATING, 2);
+DEFINE_PRIM_TYPE(FLOAT,  "float",  FLOATING, 4);
+DEFINE_PRIM_TYPE(DOUBLE, "double", FLOATING, 8);
+
+DEFINE_PRIM_TYPE(CHAR,   "char",   SIGNED,   1);
+DEFINE_PRIM_TYPE(UCHAR,  "uchar",  UNSIGNED, 1);
+DEFINE_PRIM_TYPE(SHORT,  "short",  SIGNED,   2);
+DEFINE_PRIM_TYPE(USHORT, "ushort", UNSIGNED, 2);
+DEFINE_PRIM_TYPE(INT,    "int",    SIGNED,   4);
+DEFINE_PRIM_TYPE(UINT,   "uint",   UNSIGNED, 4);
+DEFINE_PRIM_TYPE(LONG,   "long",   SIGNED,   8);
+DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
 
 // constexpr static type FLOAT{type_num{"float",type_num::FLOATING,4}};
 // constexpr static type_struct ST_FLOAT2{"float2",sizeof(float),&FLOAT,2};
@@ -74,24 +85,49 @@ DEFINE_PRIM_TYPE(FLOAT,"float",FLOATING,4);
 
 static const type *lookupPrimtiveType(std::string name)
 {
-  /*
-  if (name == "char" || name == "signed char") {
-    return &CHAR;
+  // normalize primitive names (e.g. unsigned int -> uint)
+  if (name == "signed") {
+    name = "int";
+  } else if (name == "unsigned") {
+    name = "uint";
+  } else {
+    auto pos = name.find(' ');
+    if (pos != std::string::npos) {
+      auto tk1 = name.substr(0,pos);
+      auto tk2 = name.substr(pos);
+      if (tk2 == "char" || tk2 == "short" || tk2 == "int" || tk2 == "long") {
+        if (tk1 == "signed") {
+          name = tk2;
+        } else if (tk1 == "unsigned") {
+          name = "u" + tk2; //
+        }
+      }
+    }
   }
-  if (name == "char2") {
-    return &CHAR2;
-  }
-  */
 
-  if (name == "float") {
-    return &FLOAT;
-  }
-  if (name == "float2") {
-    return &FLOAT2;
-  }
+#define MATCH_PRIM_TYPE(T_ID,T_STR) \
+  do { \
+    if (name == (T_STR)) return &(T_ID); \
+    if (name == (T_STR "2")) return &(CAT(T_ID,2)); \
+    if (name == (T_STR "3")) return &(CAT(T_ID,3)); \
+    if (name == (T_STR "4")) return &(CAT(T_ID,4)); \
+    if (name == (T_STR "8")) return &(CAT(T_ID,8)); \
+    if (name == (T_STR "16")) return &(CAT(T_ID,16)); \
+  } while (0)
 
-  // if (name == "uchar" || name == "unsigned char") {
-  // }
+  MATCH_PRIM_TYPE(HALF,"half");
+  MATCH_PRIM_TYPE(FLOAT,"float");
+  MATCH_PRIM_TYPE(DOUBLE,"double");
+
+  MATCH_PRIM_TYPE(INT,"char");
+  MATCH_PRIM_TYPE(UINT,"uchar");
+  MATCH_PRIM_TYPE(SHORT,"short");
+  MATCH_PRIM_TYPE(USHORT,"ushort");
+  MATCH_PRIM_TYPE(INT,"int");
+  MATCH_PRIM_TYPE(UINT,"uint");
+  MATCH_PRIM_TYPE(LONG,"long");
+  MATCH_PRIM_TYPE(ULONG,"ulong");
+
   return nullptr;
 }
 
@@ -99,10 +135,15 @@ static const type *lookupPrimtiveType(std::string name)
 struct karg_parser : cls::parser
 {
   program_info  &p;
+  size_t         bytes_per_addr;
 
-  karg_parser(const std::string &inp, program_info  &_p)
+  karg_parser(
+    const std::string &inp,
+    program_info  &_p,
+    size_t _bytes_per_addr)
     : cls::parser(inp,true)
     , p(_p)
+    , bytes_per_addr(_bytes_per_addr)
   {
   }
   // TODO: how do we chain this
@@ -132,7 +173,7 @@ struct karg_parser : cls::parser
     kernel_info &k = p.kernels.back();
 
     consumeIdentEq("void","void");
-    auto knm = consumeIdent("kernel name");
+    k.name = consumeIdent("kernel name");
     consume(LPAREN);
     while (!lookingAt(RPAREN)) {
       parseArg(k);
@@ -161,7 +202,7 @@ struct karg_parser : cls::parser
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
     }
 
-    a.is_const|= consumeIfIdentEq("const");
+    a.is_const |= consumeIfIdentEq("const");
 
     if (consumeIfIdentEq("read_only","__read_only")) {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_READ_ONLY;
@@ -176,66 +217,58 @@ struct karg_parser : cls::parser
     loc type_loc = nextLoc();
     bool explicit_signed_or_unsigned = false;
 
-    auto type = consumeIdent("qualifier or type");
-    if ((type == "unsigned" || type == "signed") && lookingAtIdent()) {
-      explicit_signed_or_unsigned = true;
-      type += ' ' + consumeIdent("type");
+    auto type_name = consumeIdent("qualifier or type");
+    if ((type_name == "unsigned" || type_name == "signed")) {
+      if (lookingAtIdentEq("char") || lookingAtIdentEq("short") ||
+        lookingAtIdentEq("int") || lookingAtIdentEq("long"))
+      {
+        type_name += ' ';
+        type_name += consumeIdent("type");
+      }
     }
-    a.type = lookupPrimtiveType(type);
-//    if (consumeIf(MUL))
-//      a.type = pointerTo(a.type);
-    if (a.type == nullptr) {
-      fatalAt(type_loc,"unrecognized type");
+    auto t = lookupPrimtiveType(type_name);
+    if (t == nullptr) {
+      if (type_name == "size_t" || type_name == "uintptr_t")
+        t = (bytes_per_addr == 4) ? &UINT : &ULONG;
+      else if (type_name == "intptr_t" || type_name == "ptrdiff_t")
+        t = (bytes_per_addr == 4) ? &INT : &LONG;
+      else
+        fatalAt(type_loc,"unrecognized type");
     }
-    /*
-    if (type == "char" ||
-    } else type == "uchar" ||
-      type == "unsigned char")
-    {
-      a.type =
-    } else if (ka.elem_name == "short" ||
-      ka.elem_name == "ushort" ||
-      ka.elem_name == "unsigned short")
-    {
-      ka.elem_class = INTEGRAL;
-      ka.elem_size = 2;
-      ka.elem_signed = ka.elem_name[0] != 'u';
-    } else if (ka.elem_name == "int" ||
-      ka.elem_name == "uint" ||
-      ka.elem_name == "unsigned int")
-    {
-      ka.elem_class = INTEGRAL;
-      ka.elem_size = 4;
-      ka.elem_signed = ka.elem_name[0] != 'u';
-    } else if (ka.elem_name == "long" ||
-      ka.elem_name == "ulong" ||
-      ka.elem_name == "unsigned long")
-    {
-      ka.elem_class = INTEGRAL;
-      ka.elem_size = 8;
-      ka.elem_signed = ka.elem_name[0] != 'u';
-    } else if (ka.elem_name == "float") {
-      ka.elem_class = FLOATING;
-      ka.elem_size = 4;
-    } else if (ka.elem_name == "double") {
-      ka.elem_class = FLOATING;
-      ka.elem_size = 8;
-    } else if (ka.elem_name == "half") {
-      ka.elem_class = FLOATING;
-      ka.elem_size = 2;
-    } else if (ka.elem_name == "size_t" ||
-      ka.elem_name == "ptrdiff_t" ||
-      ka.elem_name == "intptr_t" ||
-      ka.elem_name == "uintptr_t")
+    a.type = *t;
+    if (consumeIf(MUL)) {
+      p.pointer_types.emplace_back(t);
+      a.type = type(p.pointer_types.back());
     }
-    */
+    while (true) {
+      // int
+      if (consumeIfIdentEq("const")) {
+        a.addr_qual |= CL_KERNEL_ARG_TYPE_CONST;
+      } else if (consumeIfIdentEq("restrict")) {
+        a.addr_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
+      } else if (consumeIfIdentEq("volatile")) {
+        a.addr_qual |= CL_KERNEL_ARG_TYPE_VOLATILE;
+      } else if (consumeIfIdentEq("pipe")) {
+        a.addr_qual |= CL_KERNEL_ARG_TYPE_PIPE;
+      } else {
+        break;
+      }
+    }
+
+    if (lookingAtIdent()) {
+      a.name = consumeIdent();
+    }
+    if (!lookingAt(RPAREN) && !lookingAt(COMMA)) {
+      fatal("syntax in argument");
+    }
   }
 };
 
 static cls::k::program_info parseProgramInfoText(
   const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
-  const cls::program_source &src)
+  const cls::program_source &src,
+  size_t bytes_per_addr)
 {
   std::stringstream ss;
   size_t off = src.build_opts.find("-D",0);
@@ -278,7 +311,7 @@ static cls::k::program_info parseProgramInfoText(
   }
 
   program_info p;
-  karg_parser kp(cpp_inp, p);
+  karg_parser kp(cpp_inp, p, bytes_per_addr);
   try {
     kp.parse();
   } catch (const diagnostic &d) {
@@ -301,18 +334,21 @@ static cls::k::program_info parseProgramInfoBinary(
 {
   auto bits = sys::read_file_binary(path);
   // TODO: parse PTX or GEN binary
-  fh->fatalAt(at,"parseProgramInfoBinary: argument info from binaries not supported yet");
+  fh->fatalAt(at,
+    "parseProgramInfoBinary: "
+    "argument info from binaries not supported yet");
   return program_info();
 }
 
 cls::k::program_info cls::k::parseProgramInfo(
   const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
-  const cls::program_source &src)
+  const cls::program_source &src,
+  size_t bytes_per_addr)
 {
   if (src.is_binary) {
     return parseProgramInfoBinary(os, fh, at, src.path);
   } else {
-    return parseProgramInfoText(os, fh, at, src);
+    return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
   }
 }

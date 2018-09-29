@@ -36,10 +36,11 @@ std::string spec::name() const
     case init_spec::IS_INT: return "integral initializer";
     case init_spec::IS_FLT: return "floating-point initializer";
     case init_spec::IS_REC: return "record initializer";
+    case init_spec::IS_BIV: return "built-in variable initializer";
     case init_spec::IS_SYM: return "symbol initializer";
     case init_spec::IS_BEX: return "binary expression initializer";
     case init_spec::IS_UEX: return "unary expression initializer";
-    case init_spec::IS_FILE: return "file initializer";
+    case init_spec::IS_FIL: return "file initializer";
     case init_spec::IS_RND: return "random value initializer";
     case init_spec::IS_SEQ: return "sequence initializer";
     case init_spec::IS_MEM: return "memory initializer";
@@ -158,6 +159,7 @@ void device_spec::str(std::ostream &os, format_opts fopts) const {
   default: os << "device_spec??"; break;
   }
 }
+
 void program_spec::str(std::ostream &os, format_opts fopts) const {
   device.str(os, fopts);
   os << "`";
@@ -165,7 +167,6 @@ void program_spec::str(std::ostream &os, format_opts fopts) const {
   if (!build_options.empty())
     os << "[" << build_options << "]";
 }
-
 
 void init_spec_memory::str(std::ostream &os, format_opts fopts) const {
   fmt(os, fopts, root);
@@ -191,35 +192,73 @@ void init_spec_memory::str(std::ostream &os, format_opts fopts) const {
 
 }
 
-
 void init_spec::str(std::ostream &os, format_opts fopts) const
 {
   switch (kind) {
-  case IS_SYM: fmt(os, fopts, (const init_spec_symbol *)this); break;
-  case IS_INT: fmt(os, fopts, (const init_spec_int *)this); break;
-  case IS_FLT: fmt(os, fopts, (const init_spec_float *)this); break;
-  case IS_REC: fmt(os, fopts, (const init_spec_record *)this); break;
-  case IS_BEX: fmt(os, fopts, (const init_spec_bin_expr *)this); break;
-  case IS_UEX: fmt(os, fopts, (const init_spec_unr_expr *)this); break;
-  case IS_FILE: fmt(os, fopts, (const init_spec_file *)this); break;
+  case IS_SYM: fmt(os, fopts, (const init_spec_symbol        *)this); break;
+  case IS_INT: fmt(os, fopts, (const init_spec_int           *)this); break;
+  case IS_FLT: fmt(os, fopts, (const init_spec_float         *)this); break;
+  case IS_BIV: fmt(os, fopts, (const init_spec_builtin       *)this); break;
+  case IS_REC: fmt(os, fopts, (const init_spec_record        *)this); break;
+  case IS_BEX: fmt(os, fopts, (const init_spec_bin_expr      *)this); break;
+  case IS_UEX: fmt(os, fopts, (const init_spec_unr_expr      *)this); break;
+  case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng_generator *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq_generator *)this); break;
-  case IS_MEM: fmt(os, fopts, (const init_spec_memory *)this); break;
+  case IS_MEM: fmt(os, fopts, (const init_spec_memory        *)this); break;
   default: os << "init_spec?"; break;
   }
 }
 
+void init_spec_builtin::str(std::ostream &os, format_opts fopts) const {
+  os << syntax_for(kind);
+}
 
+const char *init_spec_builtin::syntax_for(biv_kind kind)
+{
+  switch (kind) {
+  case BIV_GX:   return "g.x";
+  case BIV_GY:   return "g.y";
+  case BIV_GZ:   return "g.z";
+  case BIV_GXY:  return "g.xy";
+  case BIV_GXYZ: return "g.xyz";
+  case BIV_LX:   return "l.x";
+  case BIV_LY:   return "l.y";
+  case BIV_LZ:   return "l.z";
+  case BIV_LXY:  return "l.xy";
+  case BIV_LXYZ: return "l.xyz";
+  default:       return "?biv?";
+  }
+}
+
+void init_spec_record::str(std::ostream &os, format_opts fopts) const {
+  os << "{";
+  bool first = true;
+  for (const auto *c : children) {
+    if (first)
+      first = false;
+    else
+      os << ", ";
+    c->str(os,fopts);
+  }
+  os << "}";
+}
 
 void init_spec_bin_expr::str(std::ostream &os, format_opts fopts) const
 {
-  switch (e_kind) {
-  case init_spec_bin_expr::E_POW:
-  // function syntax
-    os << "pow("; fmt(os, fopts, el); os <<
+  auto fmtFunc = [&] (const char *name) {
+    os << name << "("; fmt(os, fopts, el); os <<
       ", "; fmt(os, fopts, er); os << ")";
+  };
+  switch (e_kind) {
+  // function syntax
+  case init_spec_bin_expr::E_POW: fmtFunc("pow"); break;
+  case init_spec_bin_expr::E_MIN: fmtFunc("min"); break;
+  case init_spec_bin_expr::E_MAX: fmtFunc("max"); break;
+  case init_spec_bin_expr::E_GCD: fmtFunc("gcd"); break;
+  case init_spec_bin_expr::E_LCM: fmtFunc("lcm"); break;
   default:
-  // infix operators
+   // infix operators
     fmt(os, fopts, el);
     switch (e_kind) {
     case init_spec_bin_expr::E_OR:   os << "|"; break;
@@ -240,14 +279,26 @@ void init_spec_bin_expr::str(std::ostream &os, format_opts fopts) const
 
 void init_spec_unr_expr::str(std::ostream &os, format_opts fopts) const
 {
+  auto unaryFunction = [&] (const char *sym) {
+    os << sym << "("; fmt(os, fopts, e); os << ")";
+  };
   switch (e_kind) {
   case init_spec_unr_expr::E_NEG: os << "-"; fmt(os, fopts, e); break;
   case init_spec_unr_expr::E_COMPL: os << "~"; fmt(os, fopts, e); break;
-  case init_spec_unr_expr::E_ABS: os << "abs("; fmt(os, fopts, e); os << ")"; break;
-  case init_spec_unr_expr::E_SQT: os << "sqt("; fmt(os, fopts, e); os << ")"; break;
-  case init_spec_unr_expr::E_SIN: os << "sin("; fmt(os, fopts, e); os << ")"; break;
-  case init_spec_unr_expr::E_COS: os << "cos("; fmt(os, fopts, e); os << ")"; break;
-  case init_spec_unr_expr::E_TAN: os << "tan("; fmt(os, fopts, e); os << ")"; break;
+  case init_spec_unr_expr::E_ABS: unaryFunction("abs"); break;
+
+  case init_spec_unr_expr::E_SQT: unaryFunction("sqt"); break;
+
+  case init_spec_unr_expr::E_EXP: unaryFunction("exp"); break;
+  case init_spec_unr_expr::E_LOG: unaryFunction("log"); break;
+  case init_spec_unr_expr::E_LOG2: unaryFunction("log2"); break;
+  case init_spec_unr_expr::E_LOG10: unaryFunction("log10"); break;
+
+  case init_spec_unr_expr::E_SIN: unaryFunction("sin"); break;
+  case init_spec_unr_expr::E_COS: unaryFunction("cos"); break;
+  case init_spec_unr_expr::E_TAN: unaryFunction("tan"); break;
+  case init_spec_unr_expr::E_ATAN: unaryFunction("atan"); break;
+
   default: os << "?unop?"; fmt(os, fopts, e); break;
   }
 }

@@ -65,10 +65,11 @@ namespace cls
       IS_INT,  // "0", "0:w", "0x123:w", "-34:r"
       IS_FLT,  // "1.2", "1.2:rw"
       IS_REC,  // {c1, c2, ...} children hold c1, c2, ... (includes vectors)
-      IS_SYM,  // a symbol (like "^g.x" or a reference to a let binding)
+      IS_BIV,  // built-in variable
+      IS_SYM,  // a symbol (a reference to a let binding)
       IS_BEX, IS_UEX, // an expression (binary or unary)
       // initialize via a file
-      IS_FILE, // "image(foo.bmp):w"
+      IS_FIL, // a file "image(foo.bmp):w"
       // TODO: there should be a second argument to specify the image type
       // If specified as an input, this loads as a buffer or image of
       // RGB24 or an intensity image if the BMP is monochrome.
@@ -91,14 +92,6 @@ namespace cls
   struct init_spec_atom : init_spec {
     init_spec_atom(loc loc, init_spec_kind k) : init_spec(loc, k) { }
   };
-  // a variable reference (e.g. a buffer)
-  // or a built-in like ^g.x
-  struct init_spec_symbol : init_spec_atom {
-    std::string identifier;
-    init_spec_symbol(loc loc, std::string _identifier) :
-      init_spec_atom(loc, IS_SYM), identifier(_identifier) { }
-    void str(std::ostream &os, format_opts fopts) const {fopts.let_var(identifier);}
-  };
   // e.g. "0x114", "-124", or "3.141"
   struct init_spec_int : init_spec_atom {
     int64_t value;
@@ -112,28 +105,45 @@ namespace cls
       : init_spec_atom(loc, IS_FLT), value(_value) { }
     void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
+  // a variable reference (e.g. to a let)
+  struct init_spec_symbol : init_spec_atom {
+    std::string identifier;
+    init_spec_symbol(loc loc, std::string _identifier) :
+      init_spec_atom(loc, IS_SYM), identifier(_identifier) { }
+    void str(std::ostream &os, format_opts fopts) const {fopts.let_var(identifier);}
+  };
+  // a built-in variable (e.g. disapatch parameter)
+  struct init_spec_builtin : init_spec_atom {
+    enum biv_kind {
+      BIV_INVALID = 0, BIV_FIRST = 1,
+      BIV_GX = BIV_FIRST,
+      BIV_GY,
+      BIV_GZ,
+      BIV_GXY,
+      BIV_GXYZ,
+      BIV_LX,
+      BIV_LY,
+      BIV_LZ,
+      BIV_LXY,
+      BIV_LXYZ,
+      BIV_LAST = BIV_LXYZ
+    } kind = BIV_INVALID;
+    init_spec_builtin(loc loc, biv_kind _kind) :
+      init_spec_atom(loc, IS_BIV), kind(_kind) { }
+    void str(std::ostream &os, format_opts fopts) const;
+    static const char *syntax_for(biv_kind kind);
+  };
   // e.g. {1,2,4,8}
   struct init_spec_record : init_spec_atom {
     std::vector<init_spec_atom *> children;
     init_spec_record(loc loc) : init_spec_atom(loc, IS_REC) { }
-    void str(std::ostream &os, format_opts fopts) const {
-      os << "{";
-      bool first = true;
-      for (const auto *c : children) {
-        if (first)
-          first = false;
-        else
-          os << ", ";
-        c->str(os,fopts);
-      }
-      os << "}";
-    }
+    void str(std::ostream &os, format_opts fopts) const;
   };
   struct init_spec_bin_expr : init_spec_atom {
     init_spec_atom *el = nullptr, *er = nullptr;
     enum bin_op {
       EB_INVALID = 0
-    , E_POW
+    , E_POW, E_MIN, E_MAX, E_GCD, E_LCM
     , E_OR, E_XOR, E_AND
     , E_LSH, E_RSH
     , E_ADD, E_SUB
@@ -151,7 +161,11 @@ namespace cls
       // operators
     , E_NEG, E_COMPL
       // functions
-    , E_ABS, E_SQT, E_SIN, E_COS, E_TAN
+    , E_ABS
+    , E_SQT
+    , E_EXP, E_LOG, E_LOG2, E_LOG10
+    , E_SIN, E_COS, E_TAN, E_ATAN
+
     } e_kind;
     init_spec_unr_expr(loc loc) : init_spec_atom(loc, IS_UEX) { }
     init_spec_unr_expr(loc loc, unr_op k, init_spec_atom *_e)
@@ -163,7 +177,7 @@ namespace cls
   struct init_spec_file : init_spec_atom {
     std::string path;
     init_spec_file(loc loc, std::string _path)
-      : init_spec_atom(loc, IS_FILE), path(_path) { }
+      : init_spec_atom(loc, IS_FIL), path(_path) { }
     void str(std::ostream &os, format_opts fopts) const {
       os << fopts.str_lit("'" + path + "'");
     }
