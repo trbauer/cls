@@ -192,11 +192,11 @@ namespace cls
   // random<13>           seed 13 and full range for the type
   // random[0.0,1.0]      auto seed and from 0.0 to 1.0 (inclusive)
   // random<13>[0.0,1.0]  combination
-  struct init_spec_rng_generator : init_spec_atom {
+  struct init_spec_rng : init_spec_atom {
     int64_t seed = 0;
     init_spec_atom *e_lo = nullptr, *e_hi = nullptr;
 
-    init_spec_rng_generator(loc loc, int64_t _seed = 0)
+    init_spec_rng(loc loc, int64_t _seed = 0)
       : init_spec_atom(loc, IS_RND), seed(_seed) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
@@ -233,6 +233,8 @@ namespace cls
 
     bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
     bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
+
+    bool print_pre = false, print_post = false;
 
     init_spec_memory(loc loc) : init_spec(loc,IS_MEM) { }
 
@@ -295,10 +297,10 @@ namespace cls
     refable(T _value) // immediate ref
       : defined_at(0,0,0,0), value(_value) { }
     bool is_resolved() const {return value != nullptr;}
-          T &operator->()       {return *value;}
     const T &operator->() const {return *value;}
-             operator T()       {return value;}
+          T &operator->()       {return *value;}
              operator T() const {return value;}
+             operator T()       {return value;}
     void str(std::ostream &os, format_opts fopts) const {
       if (identifier.empty())
         if (value != nullptr)

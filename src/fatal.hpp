@@ -33,16 +33,21 @@ namespace cls
   void formatMessageWithContextImpl(
     std::ostream &os,
     loc at,
+    const text::ansi_literal *highlight,
     const std::string &input,
     const std::string &message);
 
   template <typename...Ts>
   void formatMessageWithContext(
-    std::ostream &os, loc at, const std::string &input, Ts... ts)
+    std::ostream &os,
+    loc at,
+    const text::ansi_literal *highlight,
+    const std::string &input,
+    Ts... ts)
   {
     std::stringstream ss;
     text::format_to(ss, ts...);
-    formatMessageWithContextImpl(os, at, input, ss.str());
+    formatMessageWithContextImpl(os, at, highlight, input, ss.str());
   }
 
   struct diagnostic : std::exception {
@@ -78,6 +83,10 @@ namespace cls
       std::stringstream ss;
       text::format_to(ss, ts...);
       m_warnings.emplace_back(loc,ss.str());
+    }
+    template <typename...Ts>
+    void debugAt(loc loc, Ts... ts) const {
+      formatMessageWithContext(std::cout, loc, input(), ts...);
     }
   }; // fatal_handler
 } // namespace cls

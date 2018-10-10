@@ -203,7 +203,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_BEX: fmt(os, fopts, (const init_spec_bin_expr      *)this); break;
   case IS_UEX: fmt(os, fopts, (const init_spec_unr_expr      *)this); break;
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
-  case IS_RND: fmt(os, fopts, (const init_spec_rng_generator *)this); break;
+  case IS_RND: fmt(os, fopts, (const init_spec_rng *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq_generator *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_memory        *)this); break;
   default: os << "init_spec?"; break;
@@ -303,7 +303,7 @@ void init_spec_unr_expr::str(std::ostream &os, format_opts fopts) const
   }
 }
 
-void init_spec_rng_generator::str(std::ostream &os, format_opts fopts) const
+void init_spec_rng::str(std::ostream &os, format_opts fopts) const
 {
   os << "random";
   if (seed != 0) {

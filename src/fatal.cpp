@@ -10,6 +10,7 @@ std::string cls::diagnostic::str() const
 void cls::formatMessageWithContextImpl(
   std::ostream &os,
   cls::loc location,
+  const text::ansi_literal *highlight,
   const std::string &input,
   const std::string &message)
 {
@@ -20,10 +21,10 @@ void cls::formatMessageWithContextImpl(
 
   size_t off = location.offset - (location.column - 1);
   while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
-    if (off == location.offset && location.extent > 0)
-      os << text::ANSI_RED;
+    if (highlight && off == location.offset && location.extent > 0)
+      os << *highlight;
     os << input[off++];
-    if (off == location.offset + location.extent)
+    if (highlight && off == location.offset + location.extent)
       os << text::ANSI_RESET;
   }
   os << "\n";
@@ -39,5 +40,10 @@ void cls::formatMessageWithContextImpl(
 }
 
 void cls::diagnostic::str(std::ostream &os) const {
-  cls::formatMessageWithContextImpl(os, location, input, message);
+  cls::formatMessageWithContextImpl(
+    os,
+    location,
+    &text::ANSI_RED,
+    input,
+    message);
 }

@@ -256,13 +256,44 @@ namespace cls {
       }
       return false;
     }
+
     int64_t consumeInt(const char *what = "int") {
       if (!lookingAtInt()) {
         fatal("expected ",what);
       }
-      std::stringstream ss(tokenString());
-      int64_t x;
-      ss >> x;
+      int64_t x = 0;
+      try {
+        int base =
+          lookingAt(INTLIT10) ? 10 :
+          lookingAt(INTLIT16) ? 16 :
+          lookingAt(INTLIT02) ? 2 :
+          0;
+        x = std::stoll(tokenString(),nullptr,base);
+      } catch (std::invalid_argument &) {
+        fatal("expected ",what);
+      } catch (std::out_of_range &) {
+        fatal("literal out of range");
+      }
+      skip();
+      return x;
+    }
+    uint64_t consumeUInt(const char *what = "int") {
+      if (!lookingAtInt()) {
+        fatal("expected ",what);
+      }
+      uint64_t x = 0;
+      try {
+        int base =
+          lookingAt(INTLIT10) ? 10 :
+          lookingAt(INTLIT16) ? 16 :
+          lookingAt(INTLIT02) ? 2 :
+          0;
+        x = std::stoull(tokenString(),nullptr,base);
+      } catch (std::invalid_argument &) {
+        fatal("expected ",what);
+      } catch (std::out_of_range &) {
+        fatal("literal out of range");
+      }
       skip();
       return x;
     }
@@ -270,9 +301,14 @@ namespace cls {
       if (!lookingAtFloat()) {
         fatal("expected ",what);
       }
-      std::stringstream ss(tokenString());
-      double x;
-      ss >> x;
+      double x = 0.0;
+      try {
+        x = std::stod(tokenString());
+      } catch (std::invalid_argument &) {
+        fatal("expected ",what);
+      } catch (std::out_of_range &) {
+        fatal("literal out of range");
+      }
       skip();
       return x;
     }

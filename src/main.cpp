@@ -155,6 +155,7 @@ static void runFile(
       formatMessageWithContext(
         std::cout,
         std::get<0>(wp),
+        &text::ANSI_YELLOW,
         file_contents,
         std::get<1>(wp));
     }
@@ -182,13 +183,18 @@ static void runFile(
   for (int i = 0; i < os.iterations; i++) {
     os.verbose() << "starting iteration " << i << "\n";
     auto start_setup = std::chrono::high_resolution_clock::now();
-    cs.setup(os,i);
+    cs.setup(i);
     auto duration_setup =
       std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::high_resolution_clock::now() - start_setup);
 
     auto start_execute = std::chrono::high_resolution_clock::now();
-    cs.execute(os,i);
+    try {
+      cs.execute(i);
+    } catch (cls::diagnostic &d) {
+      d.str(std::cerr);
+      exit(EXIT_FAILURE);
+    }
     auto duration_exec =
       std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::high_resolution_clock::now() - start_execute);
@@ -220,8 +226,13 @@ static void runFile(
     emitStats("Setup",setup_times);
   }
   emitStats("Execute",execute_times);
-  std::cout << "=================================================\n";
-  auto dispatch_times = cs.get_times();
+  if (os.prof_time) {
+    std::cout << "PROF=================================================\n";
+  } else {
+    std::cout << "WALL=================================================\n";
+  }
+  auto dispatch_times = os.prof_time ? cs.get_prof_times() :
+    cs.get_wall_times();
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);

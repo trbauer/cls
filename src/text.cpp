@@ -223,7 +223,7 @@ void text::format_buffer(
     elem_col_ix = 0;
     emit_off(); // [addr]: ...
   };
-  auto emit_velem = [&]() {
+  auto emit_velem = [&] {
     if (ptr >= (const unsigned char *)buf + buf_len)
       return;
     if (velem_w == 1) {
@@ -246,7 +246,7 @@ void text::format_buffer(
     col_ix += 2 * velem_w;
     ptr += velem_w;
   };
-  auto emit_work_item = [&]() {
+  auto emit_work_item = [&] {
     if (elem_vwidth <= 1) {
       if (using_cols && col_ix + 2*velem_w + 1 > max_cols
         || !using_cols && elem_col_ix == elems_per_row)

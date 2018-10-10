@@ -237,7 +237,7 @@ struct karg_parser : cls::parser
     }
     a.type = *t;
     if (consumeIf(MUL)) {
-      p.pointer_types.emplace_back(t);
+      p.pointer_types.emplace_back(t,bytes_per_addr);
       a.type = type(p.pointer_types.back());
     }
     while (true) {
@@ -350,5 +350,158 @@ cls::k::program_info cls::k::parseProgramInfo(
     return parseProgramInfoBinary(os, fh, at, src.path);
   } else {
     return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
+  }
+}
+
+template <typename T>
+static T read_unaligned(const void *buf)
+{
+  T val;
+  memcpy(&val,buf,sizeof(val));
+  return val;
+}
+
+void formatBufferElement(
+  std::ostream &os,
+  const type &t,
+  const void *ptr)
+{
+  if (std::holds_alternative<type_num>(t.var)) {
+    type_num tn = std::get<type_num>(t.var);
+    switch (tn.kind) {
+    case type_num::FLOATING:
+      switch (tn.size()) {
+      case 2:
+        os << std::setw(8) << std::fixed << std::setprecision(3) <<
+          half_to_float(read_unaligned<cl_half>(ptr));
+        break;
+      case 4:
+        os << std::setw(10) << std::fixed << std::setprecision(5) <<
+          read_unaligned<float>(ptr);
+        break;
+      case 8:
+        os << std::setw(12) << std::fixed << std::setprecision(8) <<
+          read_unaligned<double>(ptr);
+        break;
+      }
+      break;
+    case type_num::SIGNED:
+      switch (tn.size()) {
+      case 1:
+        os << std::setw(4) << read_unaligned<int8_t>(ptr);
+        break;
+      case 2:
+        os << std::setw(6) << read_unaligned<int16_t>(ptr);
+        break;
+      case 4:
+        os << std::setw(12) << read_unaligned<int32_t>(ptr);
+        break;
+      case 8:
+        os << std::setw(22) << read_unaligned<int64_t>(ptr);
+        break;
+      }
+      break;
+    case type_num::UNSIGNED:
+      switch (tn.size()) {
+      case 1:
+        os << "0x" << std::setw(2) << std::setfill('0') <<
+          read_unaligned<uint8_t>(ptr);
+        break;
+      case 2:
+        os << "0x" << std::setw(4) << std::setfill('0') <<
+          read_unaligned<uint16_t>(ptr);
+        break;
+      case 4:
+        os << "0x" << std::setw(8) << std::setfill('0') <<
+          read_unaligned<uint32_t>(ptr);
+        break;
+      case 8:
+        os << "0x" << std::setw(16) << std::setfill('0') <<
+          read_unaligned<uint64_t>(ptr);
+        break;
+      }
+      break;
+    }
+  // } else if (std::holds_alternative<type_enum>(t.var)) {
+    // type_enum te = std::get<type_enum>(t.var);
+    // ss << std::setw(12) << read_unaligned<int32_t>(ptr);
+  } else if (std::holds_alternative<type_builtin>(t.var)) {
+    const type_builtin &tbi = std::get<type_builtin>(t.var);
+    if (std::get<type_ptr>(t.var).size() == 4) {
+      os << "0x" << std::setw(8) << std::setfill('0') <<
+        read_unaligned<uint32_t>(ptr);
+    } else {
+      os << "0x" << std::setw(16) << std::setfill('0') <<
+        read_unaligned<uint64_t>(ptr);
+    }
+  } else if (std::holds_alternative<type_struct>(t.var)) {
+    const type_struct &ts = std::get<type_struct>(t.var);
+    os << "{";
+    const uint8_t *struct_ptr = (const uint8_t *)ptr;
+    for (size_t i = 0; i < ts.elements_length; i++) {
+      if (i > 0)
+        os << ",";
+      formatBufferElement(os, *ts.elements[i], struct_ptr);
+      struct_ptr += ts.elements[i]->size();
+    }
+    os << "}";
+  } else if (std::holds_alternative<type_union>(t.var)) {
+    const type_union &tu = std::get<type_union>(t.var);
+    os << "{";
+    for (size_t i = 0; i < tu.elements_length; i++) {
+      if (i > 0)
+        os << "|";
+      formatBufferElement(os, *tu.elements[i], ptr);
+    }
+    os << "}";
+  } else if (std::holds_alternative<type_ptr>(t.var)) {
+    if (std::get<type_ptr>(t.var).size() == 4) {
+      os << "0x" << std::setw(8) << std::setfill('0') <<
+        read_unaligned<uint32_t>(ptr);
+    } else {
+      os << "0x" << std::setw(16) << std::setfill('0') <<
+        read_unaligned<uint64_t>(ptr);
+    }
+  } else {
+    os << "formatBufferElement<" << t.syntax() << ">?";
+  }
+}
+
+void cls::k::formatBuffer(
+  std::ostream &os,
+  const void *buffer,
+  size_t buffer_length_in_bytes,
+  const type &buffer_type)
+{
+  const size_t max_cols = sys::get_terminal_width();
+  size_t curr_col = 1;
+  const uint8_t *base = (const uint8_t *)buffer;
+  const uint8_t *curr = base;
+
+  auto startNewLine = [&] {
+    os << std::setw(5) << std::setfill('0') << std::hex << (curr - base);
+    os << ": ";
+    curr_col = 7;
+  };
+  auto fmtElem = [&] (const type &t) {
+    std::stringstream ss;
+    formatBufferElement(ss, t, curr);
+    if (curr_col + ss.tellp() > max_cols) {
+      startNewLine();
+    }
+    os << ss.str();
+    curr += t.size();
+  };
+
+  if (std::holds_alternative<type_ptr>(buffer_type.var)) {
+    while (curr < base + buffer_length_in_bytes) {
+      if (curr_col > max_cols) {
+        os << "\n";
+        startNewLine();
+      }
+      fmtElem(*std::get<type_ptr>(buffer_type.var).element_type);
+    }
+  } else {
+    fmtElem(buffer_type);
   }
 }

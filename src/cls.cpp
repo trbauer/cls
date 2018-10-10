@@ -218,3 +218,15 @@ cl_half cls::float_to_half(float f)
 
   return h;
 }
+
+std::string cls::fmtNDRange(const cl::NDRange &ndr) {
+  if (ndr == cl::NullRange || ndr.dimensions() == 0) {
+    return std::string("NULL");
+  }
+  std::stringstream ss;
+  for (size_t i = 0; i < ndr.dimensions(); i++) {
+    if (i != 0) ss << 'x';
+    ss << ndr.get()[i];
+  }
+  return ss.str();
+}

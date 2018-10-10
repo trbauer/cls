@@ -15,7 +15,8 @@
 //
 
 
-namespace text {
+namespace text
+{
   static bool streq(const char *str1, const char *str2) {
     return str1 == str2 || (str1 && str2 && strcmp(str1, str2) == 0);
   }
@@ -172,7 +173,12 @@ namespace text {
     bool showChars = false);
 
   /////////////////////////////////////////////////////////////////////////////
-  // runs the C preprocessor
+  // Run the C preprocessor on an input file.
+  //
+  // This searches the system for a recognized tool and executes it.
+  // (including clang, cpp, or even cl.exe on Windows)
+  // If we can't find it or executing it fails, we just return the string
+  // we loaded (emitting a warning) and hope for the best.
   std::string   load_c_preprocessed(
     const std::string &inp,
     const std::string &args);
