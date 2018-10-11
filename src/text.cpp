@@ -512,4 +512,36 @@ std::string text::load_c_preprocessed(
   }
 }
 
+void text::table::col::emit(double f, int prec) {
+  std::stringstream ss;
+  if (numeric) {ss << std::left;} else {ss << std::right;}
+  for (int i = 0; i < lpad; i++)
+    ss << ' ';
+  ss << std::fixed << std::setprecision(prec) << f;
+  for (int i = 0; i < rpad; i++)
+    ss << ' ';
+  rows.push_back(ss.str());
+  max_width = std::max<size_t>(max_width, rows.back().size());
+}
+
+void text::table::str(std::ostream &os, const char *delim) const {
+  os << std::setfill(' ');
+  size_t max_rows = 0;
+  for (const auto *c : cols) {
+    max_rows = std::max<size_t>(max_rows, c->rows.size());
+  }
+  for (size_t i = 0; i < max_rows; i++) {
+    os << delim;
+    for (const auto *c : cols) {
+      auto align = c->numeric ? std::right : std::left;
+      if (i >= c->rows.size()) {
+        os << align << std::setw(c->max_width) << c->dft;
+      } else {
+        os << align << std::setw(c->max_width) << c->rows[i];
+      }
+      os << delim;
+    }
+    os << '\n';
+  }
+}
 

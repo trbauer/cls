@@ -1,8 +1,9 @@
 #include "cls_interp.hpp"
 #include "../cl_headers.hpp"
+#include "../half.hpp"
+// #include "../list_map.hpp"
 #include "../parser/kargs.hpp"
 #include "../stats.hpp"
-#include "../list_map.hpp"
 
 #if __has_include(<filesystem>)
 #include <filesystem>
@@ -81,7 +82,7 @@ struct kernel_object {
   kernel_object(const kernel_spec *_spec, program_object *_program)
     : spec(_spec), program(_program) { }
 };
-
+/*
 struct generator_state {
   std::uniform_int_distribution<int64_t>                s_dist;
   std::uniform_int_distribution<uint64_t>               u_dist;
@@ -96,7 +97,7 @@ struct generator_state {
   generator_state(std::string _file)
     : file(_file,std::ios_base::in|std::ios_base::binary) { }
 };
-
+*/
 struct surface_object {
   enum kind {
     SO_INVALID = 0,
@@ -178,10 +179,10 @@ struct dispatch_command {
 template <typename K,typename V>
 struct mapped_objects {
   using map_iterator = typename std::map<K,V*>::iterator;
-  using list_iterator = typename std::vector<V>::iterator;
-  using list_const_iterator = typename std::vector<V>::const_iterator;
+  using list_iterator = typename std::vector<V*>::iterator;
+  using list_const_iterator = typename std::vector<V*>::const_iterator;
 
-  std::vector<V> list;
+  std::vector<V*> list;
   std::map<K,V*> map;
 
   map_iterator find(K k) {return map.find(k);}
@@ -193,10 +194,10 @@ struct mapped_objects {
 
   template <typename...As>
   V& emplace_back(K k, As...as) {
-    list.emplace_back(as...);
-    V &obj = list.back();
-    map[k] = &obj;
-    return obj;
+    V *v = new V(as...);
+    list.push_back(v);
+    map[k] = v;
+    return *v;
   }
   V& get(K k) {
     // TODO: use find and blow up if object is missing
@@ -307,6 +308,10 @@ struct arg_buffer : fatal_handler {
     memcpy(curr, src, len);
     curr += len;
   }
+  void fill_with_zeros() {
+    memset(curr, 0, num_left());
+    curr += num_left();
+  }
 }; // arg_buffer
 
 
@@ -339,6 +344,7 @@ struct evaluator : cl_fatal_handler {
     val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
     val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
     val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
+    val &operator=(half     _val) {*this = (double)_val; return *this;}
     val &operator=(float    _val) {*this = (double)_val; return *this;}
     val &operator=(double   _val) {*this = val(_val); return *this;}
 
@@ -346,36 +352,54 @@ struct evaluator : cl_fatal_handler {
     bool is_int() const {return !is_f;}
     bool is_signed() const {return !is_f && !is_u;}
     bool is_unsigned() const {return is_u;}
+
+    template <typename T>
+    T as() const
+    {
+      if (std::is_unsigned<T>()) {
+        if (is_f)
+          return (T)f64;
+        return (T)u64;
+      } else if (std::is_signed<T>()) {
+        if (is_f)
+          return (T)f64;
+        return (T)s64;
+      } else {
+        if (is_signed())
+          return (T)s64;
+        if (is_unsigned())
+          return (T)u64;
+        return (T)f64;
+      }
+    }
+  }; // val
+
+  struct context {
+    const cl::NDRange &global_size;
+    const cl::NDRange &local_size;
+    context(const cl::NDRange &gs, const cl::NDRange &ls)
+      : global_size(gs), local_size(ls) { }
   };
 
   std::random_device                                          rd;
   std::mt19937                                                gen;
-  std::unordered_map<const init_spec_rng *,generator_state>   file_gens;
-  std::unordered_map<const init_spec_file *,generator_state>  rng_gens;
 
   const opts                                                 &os;
   compiled_script_impl                                       *csi;
 
-  loc eval_loc;
-
   evaluator(compiled_script_impl *_csi)
-    : cl_fatal_handler(csi->input()), os(csi->os), csi(_csi) { }
-
-  generator_state &get_state(
-    dispatch_command &dc,
-    const init_spec_rng *isr,
-    const type_num &tn);
-  generator_state &get_state(
-    dispatch_command &dc,
-    const init_spec_file *isf);
+    : cl_fatal_handler(_csi->input()), os(_csi->os), csi(_csi) { }
 
   /////////////////////////////////////////////////////////////////////////////
   // primitive value evaluation
-  val eval(dispatch_command &dc,const init_spec_atom *e);
-  val evalI(dispatch_command &dc,const init_spec_atom *e);
+  val eval(const context &ec, const init_spec_atom *e);
+  val evalI(const context &ec, const init_spec_atom *e);
+
   template <typename T>
-  val evalTo(dispatch_command &dc,const init_spec_atom *e) {
-    val v = evalI(dc, e);
+  val evalToI(const context &ec, const init_spec_atom *e) {
+    val v = eval(ec, e);
+    if (v.is_float())
+      fatalAt(e->defined_at,"cannot convert float to int");
     if (v.is_signed()) {
       if ((T)v.s64 < std::numeric_limits<T>::min() ||
         (T)v.s64 > std::numeric_limits<T>::max())
@@ -383,7 +407,7 @@ struct evaluator : cl_fatal_handler {
         fatalAt(e->defined_at,"value out of range");
       }
       v = (T)v.s64;
-    } else if (v.is_unsigned()) {
+    } else { // v.is_unsigned()
       if ((T)v.u64 > std::numeric_limits<T>::max()) {
         fatalAt(e->defined_at,"value out of range");
       }
@@ -391,8 +415,57 @@ struct evaluator : cl_fatal_handler {
     }
     return v;
   }
-  val evalF(dispatch_command &dc,const init_spec_atom *e);
-  val evalToF(dispatch_command &dc,const init_spec_atom *e);
+  template <typename T>
+  val evalToF(const context &ec, const init_spec_atom *e) {
+    val v = eval(ec, e);
+    //
+    // implicit conversion from int to float is allowed
+    if (v.is_signed())
+      v = (double)v.s64;
+    else if (v.is_unsigned())
+      v = (double)v.u64;
+    //
+    // we enforce bounds checking, but not precision
+    // SPECIFY: do we care about min? we could RTZ
+    auto checkBounds =
+      [&](double low, double hi, double min) {
+        if (std::isnan(v.f64) || std::isinf(v.f64))
+          return; // unordered values are fine
+        if (v.f64 < low || v.f64 > hi) {
+          fatalAt(e->defined_at,"value out of range");
+        } else if (std::abs(v.f64) < min) {
+          fatalAt(e->defined_at,"value out of range");
+        }
+      };
+    if (sizeof(T) == 8) {
+      checkBounds(
+        std::numeric_limits<double>::lowest(),
+        std::numeric_limits<double>::max(),
+        std::numeric_limits<double>::min());
+    } else if (sizeof(T) == 4) {
+      checkBounds(
+        std::numeric_limits<float>::lowest(),
+        std::numeric_limits<float>::max(),
+        std::numeric_limits<float>::min());
+    } else { // half
+      checkBounds(
+        SFLT_MIN,
+        SFLT_MAX,
+        -SFLT_MAX);
+    }
+    return v;
+  }
+
+  template <typename T>
+  val evalTo(const context &ec,const init_spec_atom *e) {
+    if (std::is_signed<T>() || std::is_unsigned<T>()) {
+      return evalToI<T>(ec,e);
+    } else {
+      return evalToF<T>(ec,e);
+    }
+  }
+  val evalF(const context &ec,const init_spec_atom *e);
+  val evalToF(const context &ec,const init_spec_atom *e);
 
   /////////////////////////////////////////////////////////////////////////////
   // value generators for init_spec*
@@ -407,25 +480,56 @@ struct evaluator : cl_fatal_handler {
     const loc &arg_loc,
     const  init_spec_memory *ism,
     const arg_info &ai);
+
+
+  void evalInto(
+    const context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab,
+    const type &t);
+  void evalInto(
+    const context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab,
+    const type_num &tn);
+  template <typename T>
+  void evalIntoT(
+    const context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab);
+  void evalInto(
+    const context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab,
+    const type_struct &ts);
+  void evalInto(
+    const context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab,
+    const type_ptr &tp); // for SVM?
+
+  /*
   void genArg(
     arg_buffer &ab,
-    generator_state *r,
     const init_spec *is,
     const type &t);
   void genArg(
     arg_buffer &ab,
-    generator_state *r,
     const init_spec *is,
     const type_num &tn);
   void genArg(
     arg_buffer &ab,
-    generator_state *r,
     const init_spec *is,
     const type_struct &ts);
   void genArg(
     arg_buffer &ab,
-    generator_state *r,
     const init_spec *is,
     const type_ptr &tp); // for SVM?
+    */
 };
 

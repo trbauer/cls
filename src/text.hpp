@@ -214,26 +214,17 @@ namespace text
         rows.push_back(ss.str());
         max_width = std::max<size_t>(max_width, rows.back().size());
       }
-      void emitFloating(double f, int prec) {
-        std::stringstream ss;
-        if (numeric) {ss << std::left;} else {ss << std::right;}
-        for (int i = 0; i < lpad; i++)
-          ss << ' ';
-        ss << std::fixed << std::setprecision(prec) << f;
-        for (int i = 0; i < rpad; i++)
-          ss << ' ';
-        rows.push_back(ss.str());
-        max_width = std::max<size_t>(max_width, rows.back().size());
-      }
+      void emit(double f, int prec);
+      void emit(float f, int prec) {emit((double)f, prec);}
       //  private:
       //    col(const col &) = delete;
       //    col &operator=(const col &t) = delete;
       // col() = default;
     }; // col
-    std::vector<col> cols;
+    std::vector<col*> cols; // has to be ptr because we return refs
 
     table() { }
-
+    ~table() {for (auto *c : cols) {delete c;}}
 
     col &define_col(
       const std::string &label,
@@ -241,8 +232,8 @@ namespace text
       int lpad = 0,
       int rpad = 0)
     {
-      cols.emplace_back(label, numeric, lpad, rpad);
-      return cols.back();
+      cols.push_back(new col(label, numeric, lpad, rpad));
+      return *cols.back();
     }
     void define_spacer(
       const std::string &label,
@@ -258,25 +249,7 @@ namespace text
       return ss.str();
     }
 
-    void str(std::ostream &os,const char *delim = "") const {
-      os << std::setfill(' ');
-      size_t max_rows = 0;
-      for (auto &c : cols) {
-        max_rows = std::max<size_t>(max_rows, c.rows.size());
-      }
-      for (size_t i = 0; i < max_rows; i++) {
-        os << delim;
-        for (auto &c : cols) {
-          if (i >= c.rows.size()) {
-            os << std::setw(c.max_width) << c.dft;
-          } else {
-            os << std::setw(c.max_width) << c.rows[i];
-          }
-          os << delim;
-        }
-        os << '\n';
-      }
-    }
+    void str(std::ostream &os,const char *delim = "") const;
   private:
     table(const table &) = delete;
     table &operator=(const table &t) = delete;

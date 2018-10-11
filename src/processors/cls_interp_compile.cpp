@@ -59,9 +59,8 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   }
   program_object *po = &compileProgram(ks->program);
   kernel_object &ko = csi->kernels.emplace_back(ks,ks,po);
-  if (os.verbosity >= 2) {
-    debug(ks->defined_at,"compiling kernel");
-  }
+
+  debug(ks->defined_at,"compiling kernel");
 
   //////////////////////////////////////////////
   // call createKernel on parent object
@@ -424,26 +423,66 @@ void script_compiler::compile()
       {
         const arg_info &ai = ais[arg_index];
         const refable<init_spec*> &ris = ds->arguments[arg_index];
-        arg_buffer ab(csi, ris.defined_at, ai.type.size());
-
-        csi->e->genArg(dc, ab, ris, ai);
-        if (ab.num_left() != 0) {
-          fatalAt(
-            ris.defined_at,
-            "INTERNAL ERROR: failed to set full argument");
-        }
-
-        CL_COMMAND(
-          ris.defined_at, // use the arg actual location, not the let
-          clSetKernelArg,
-            (*dc.kernel->kernel)(),
-            arg_index,
-            ab.size(),
-            (const void *)ab.ptr());
-
-        if (os.verbosity >= 2) {
-          debug(ris.defined_at, "setting immediate argument to");
-          formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
+        if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
+          // Special treatment of local * arguments
+          // e.g. kernel void foo(..., local int2 *buffer)
+          // the user must tell us how many bytes they neeed for buffer
+          //  foo<1024,16>(...,16*8); // 16*sizeof(int2)
+          //
+          //  SPECIFY: do we allow the alternative?
+          //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
+          const init_spec *is = ris;
+          if (!std::holds_alternative<type_ptr>(ai.type.var)) {
+            fatalAt(
+              ris.defined_at,
+              "kernel argument in local address space must be pointer type");
+          } else if (!is->is_atom()) {
+            fatalAt(
+              ris.defined_at,
+              "local pointer requires size in bytes");
+          } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
+          const type_ptr &tp = std::get<type_ptr>(ai.type.var);
+          evaluator::context ec(dc.global_size,dc.local_size);
+          auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
+          size_t local_bytes = (size_t)v.u64;
+          CL_COMMAND(
+            ris.defined_at, // use the arg actual location, not the let
+            clSetKernelArg,
+              (*dc.kernel->kernel)(),
+              arg_index,
+              local_bytes,
+              nullptr);
+        } else {
+          // Some other argument type, global buffer or
+          // scalar (immediate) argument.
+          arg_buffer ab(csi, ris.defined_at, ai.type.size());
+          csi->e->genArg(dc, ab, ris, ai);
+          if (ab.num_left() != 0) {
+            fatalAt(
+              ris.defined_at,
+              "INTERNAL ERROR: failed to set full argument");
+          }
+          CL_COMMAND(
+            ris.defined_at, // use the arg actual location, not the let
+            clSetKernelArg,
+              (*dc.kernel->kernel)(),
+              arg_index,
+              ab.size(),
+              (const void *)ab.ptr());
+          if (os.verbosity >= 2) {
+            debug(ris.defined_at, "setting immediate argument for ",
+              ai.type.syntax()," ",ai.name," to");
+            if (std::holds_alternative<type_ptr>(ai.type.var)) {
+              // fake a pointer to a pointer so the first dereference
+              // in formatBuffer is ignored
+              size_t ptr_size = std::get<type_ptr>(ai.type.var).size();
+              formatBuffer(std::cout,ab.base,ab.capacity,
+                type_ptr(&ai.type,ptr_size));
+            } else {
+              formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
+            }
+            std::cout << "\n";
+          }
         }
       }
     } else if (st->kind == statement_spec::LET) {

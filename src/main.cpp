@@ -179,7 +179,7 @@ static void runFile(
     exit(EXIT_FAILURE);
   }
 
-  sampler setup_times, execute_times;
+  sampler execute_times;
   for (int i = 0; i < os.iterations; i++) {
     os.verbose() << "starting iteration " << i << "\n";
     auto start_setup = std::chrono::high_resolution_clock::now();
@@ -216,15 +216,12 @@ static void runFile(
     const sampler &s)
   {
     ckl_col.emit(clk);
-    med_col.emitFloating(s.med(), 5);
-    avg_col.emitFloating(s.avg(), 5);
-    cfv_col.emitFloating(100*s.cfv(), 1);
-    min_col.emitFloating(s.min(), 5);
-    max_col.emitFloating(s.max(), 5);
+    med_col.emit(s.med(), 5);
+    avg_col.emit(s.avg(), 5);
+    cfv_col.emit(100*s.cfv(), 1);
+    min_col.emit(s.min(), 5);
+    max_col.emit(s.max(), 5);
   };
-  if (os.verbosity > 0) {
-    emitStats("Setup",setup_times);
-  }
   emitStats("Execute",execute_times);
   if (os.prof_time) {
     std::cout << "PROF=================================================\n";
@@ -239,6 +236,8 @@ static void runFile(
     std::string str = ds.spec::str();
     emitStats(str,ts);
   }
+
+  t.str(std::cout);
 }
 
 

@@ -73,6 +73,7 @@ namespace cls
     const warning_list &warnings() const {return m_warnings;}
 
     template <typename...Ts>
+    [[noreturn]]
     void fatalAt(loc loc, Ts... ts) const {
       std::stringstream ss;
       text::format_to(ss, ts...);

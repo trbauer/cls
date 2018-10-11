@@ -166,14 +166,15 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       // TODO: support E and PI
       return new init_spec_symbol(loc, s);
     }
-  } else if (p.consumeIf(LBRACK)) {
+  } else if (p.consumeIf(LBRACE)) {
     // {...,...,...,...}
     auto re = new init_spec_record(loc);
-    if (!p.lookingAt(RPAREN))
+    if (!p.lookingAt(RBRACE)) {
       re->children.push_back(parseInitAtom(p));
-    while (!p.lookingAt(COMMA))
-      re->children.push_back(parseInitAtom(p));
-    p.consume(RBRACK);
+      while (p.consumeIf(COMMA))
+        re->children.push_back(parseInitAtom(p));
+    }
+    p.consume(RBRACE);
     re->defined_at.extend_to(p.nextLoc());
     return re;
   } else if (p.lookingAt(LPAREN)) {

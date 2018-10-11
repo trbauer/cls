@@ -19,24 +19,26 @@ void cls::formatMessageWithContextImpl(
   }
   os << message << "\n";
 
-  size_t off = location.offset - (location.column - 1);
-  while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
-    if (highlight && off == location.offset && location.extent > 0)
-      os << *highlight;
-    os << input[off++];
-    if (highlight && off == location.offset + location.extent)
-      os << text::ANSI_RESET;
-  }
-  os << "\n";
-  if (location.column > 0) {
-    for (size_t i = 0; i < location.column - 1; i++) {
-      os << ' ';
+  if (location.line > 0 && location.column > 0) {
+    size_t off = location.offset - (location.column - 1);
+    while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
+      if (highlight && off == location.offset && location.extent > 0)
+        os << *highlight;
+      os << input[off++];
+      if (highlight && off == location.offset + location.extent)
+        os << text::ANSI_RESET;
     }
-  }
-  os << "^";
-  for (size_t ext = 1; ext < location.extent; ext++)
+    os << "\n";
+    if (location.column > 0) {
+      for (size_t i = 0; i < location.column - 1; i++) {
+        os << ' ';
+      }
+    }
     os << "^";
-  os << "\n";
+    for (size_t ext = 1; ext < location.extent; ext++)
+      os << "^";
+    os << "\n";
+  }
 }
 
 void cls::diagnostic::str(std::ostream &os) const {

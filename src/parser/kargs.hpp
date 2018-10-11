@@ -188,6 +188,17 @@ namespace cls
       size_t size() const;
       std::string syntax() const {return name;}
 
+      bool is_uniform() const {
+        if (elements_length == 0) {
+          return false;
+        }
+        const type *t0 = elements[0];
+        for (size_t i = 1; i < elements_length; i++)
+          if (elements[i] != t0)
+            return false;
+        return true;
+      }
+
       bool operator==(const type_struct &t) const {return text::streq(name,t.name);}
       bool operator!=(const type_struct &t) const {return !(*this == t);}
     };
@@ -255,7 +266,7 @@ namespace cls
       // template <typename F,typename R,typename Ts...>
       // R apply(Ts...ts) {
       //   if (std::holds_alternative<type_num>(var)) {
-      //    return std::get<type_num>(var).F(ptr_size);
+      //    return std::get<type_num>(var).F();
       //   }
       // }
       // size_t size(ptr_size) {return apply<size,size_t>(ptr_size);}

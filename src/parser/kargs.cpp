@@ -1,6 +1,7 @@
 #include "kargs.hpp"
 #include "parser.hpp"
 #include "../cl_headers.hpp"
+#include "../half.hpp"
 #include "../devices.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
@@ -64,13 +65,13 @@ DEFINE_PRIM_TYPE(HALF,   "half",   FLOATING, 2);
 DEFINE_PRIM_TYPE(FLOAT,  "float",  FLOATING, 4);
 DEFINE_PRIM_TYPE(DOUBLE, "double", FLOATING, 8);
 
-DEFINE_PRIM_TYPE(CHAR,   "char",   SIGNED,   1);
+DEFINE_PRIM_TYPE( CHAR,  "char",     SIGNED, 1);
 DEFINE_PRIM_TYPE(UCHAR,  "uchar",  UNSIGNED, 1);
-DEFINE_PRIM_TYPE(SHORT,  "short",  SIGNED,   2);
+DEFINE_PRIM_TYPE( SHORT, "short",    SIGNED, 2);
 DEFINE_PRIM_TYPE(USHORT, "ushort", UNSIGNED, 2);
-DEFINE_PRIM_TYPE(INT,    "int",    SIGNED,   4);
+DEFINE_PRIM_TYPE( INT,   "int",      SIGNED, 4);
 DEFINE_PRIM_TYPE(UINT,   "uint",   UNSIGNED, 4);
-DEFINE_PRIM_TYPE(LONG,   "long",   SIGNED,   8);
+DEFINE_PRIM_TYPE( LONG,  "long",     SIGNED, 8);
 DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
 
 // constexpr static type FLOAT{type_num{"float",type_num::FLOATING,4}};
@@ -373,9 +374,10 @@ void formatBufferElement(
       switch (tn.size()) {
       case 2:
         os << std::setw(8) << std::fixed << std::setprecision(3) <<
-          half_to_float(read_unaligned<cl_half>(ptr));
+          (float)(read_unaligned<half>(ptr));
         break;
       case 4:
+        // std::numeric_limits<float>::digits10()
         os << std::setw(10) << std::fixed << std::setprecision(5) <<
           read_unaligned<float>(ptr);
         break;

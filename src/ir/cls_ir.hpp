@@ -68,7 +68,8 @@ namespace cls
       IS_BIV,  // built-in variable
       IS_SYM,  // a symbol (a reference to a let binding)
       IS_BEX, IS_UEX, // an expression (binary or unary)
-      // initialize via a file
+      ////////////////////////////////////
+      // Non-atoms
       IS_FIL, // a file "image(foo.bmp):w"
       // TODO: there should be a second argument to specify the image type
       // If specified as an input, this loads as a buffer or image of
@@ -85,6 +86,19 @@ namespace cls
     init_spec(loc loc, init_spec::init_spec_kind k)
       : spec(loc, INIT_SPEC), kind(k) { }
     void str(std::ostream &os, format_opts fopts) const;
+
+    bool is_atom() const {
+      switch (kind) {
+      case IS_INT:
+      case IS_FLT:
+      case IS_REC:
+      case IS_BIV:
+      case IS_BEX:
+      case IS_UEX:
+        return true;
+      default: return false;
+      }
+    }
   };
 
   /////////////////////////////////////////////////////////////////////////////
@@ -92,13 +106,14 @@ namespace cls
   struct init_spec_atom : init_spec {
     init_spec_atom(loc loc, init_spec_kind k) : init_spec(loc, k) { }
   };
-  // e.g. "0x114", "-124", or "3.141"
+  // e.g. "0x114", "-124"
   struct init_spec_int : init_spec_atom {
     int64_t value;
     init_spec_int(loc loc, int64_t _value = 0)
       : init_spec_atom(loc, IS_INT), value(_value) { }
     void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
+  // e.g. "3.141"
   struct init_spec_float : init_spec_atom {
     double value = 0.0;
     init_spec_float(loc loc, double _value)
@@ -194,6 +209,7 @@ namespace cls
   // random<13>[0.0,1.0]  combination
   struct init_spec_rng : init_spec_atom {
     int64_t seed = 0;
+    bool has_seed = false;
     init_spec_atom *e_lo = nullptr, *e_hi = nullptr;
 
     init_spec_rng(loc loc, int64_t _seed = 0)
@@ -285,6 +301,7 @@ namespace cls
   };
 
   // fills in for anything that can be referenced or defined immediately
+  // the type T must be a (spec* type) with a spec::defined_at loc
   template <typename T>
   struct refable {
     loc              defined_at;
@@ -295,7 +312,7 @@ namespace cls
     refable(loc l, std::string ident, T _value = nullptr) // symbolic ref
       : defined_at(l), identifier(ident), value(_value) { }
     refable(T _value) // immediate ref
-      : defined_at(0,0,0,0), value(_value) { }
+      : defined_at(_value->defined_at), value(_value) { }
     bool is_resolved() const {return value != nullptr;}
     const T &operator->() const {return *value;}
           T &operator->()       {return *value;}
