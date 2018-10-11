@@ -1,7 +1,6 @@
 #define _USE_MATH_DEFINES
 #include "cls_parser.hpp"
 #include "parser.hpp"
-#include "../cls.hpp"
 #include "../system.hpp"
 
 #include <cmath>
@@ -103,7 +102,10 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
           if (args.size() != 2) {
             p.fatalAt(loc, "binary function requires two arguments");
           }
-          return new init_spec_bin_expr(loc,op,args[0],args[1]);
+          auto *isbe = new init_spec_bin_expr(op,args[0],args[1]);
+          isbe->defined_at = loc; // reset start loc to beg. of the primary
+          isbe->defined_at.extend_to(p.nextLoc());
+          return isbe;
         };
         auto makeUnary = [&](init_spec_unr_expr::unr_op op) {
           if (args.size() != 1) {
@@ -186,99 +188,83 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
     return nullptr;
   }
 }
+static init_spec_atom *parseInitAtomUnr(parser &p)
+{
+  if (p.lookingAt(SUB) || p.lookingAt(TILDE)) {
+    auto loc = p.nextLoc();
+    auto op =
+      p.lookingAt(SUB) ?
+        init_spec_unr_expr::E_NEG : init_spec_unr_expr::E_COMPL;
+    p.skip();
+    init_spec_atom *e = parseInitAtomUnr(p);
+    return new init_spec_unr_expr(loc, op, e);
+  } else {
+    return parseInitAtomPrim(p);
+  }
+}
 static init_spec_atom *parseInitAtomMul(parser &p)
 {
-  init_spec_atom *e = parseInitAtomPrim(p);
-  auto loc = p.nextLoc();
+  init_spec_atom *e = parseInitAtomUnr(p);
   while (p.lookingAt(MUL) || p.lookingAt(DIV)) {
     auto op = p.lookingAt(MUL) ?
       init_spec_bin_expr::bin_op::E_MUL :
       init_spec_bin_expr::bin_op::E_DIV;
     p.skip();
-    init_spec_atom *t = parseInitAtomPrim(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(loc, op, e, t);
-    loc = p.nextLoc();
+    init_spec_atom *t = parseInitAtomUnr(p);
+    e = new init_spec_bin_expr(op, e, t);
   }
   return e;
 }
 static init_spec_atom *parseInitAtomAdd(parser &p)
 {
   init_spec_atom *e = parseInitAtomMul(p);
-  auto loc = p.nextLoc();
   while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
     auto op = p.lookingAt(ADD) ?
       init_spec_bin_expr::bin_op::E_ADD :
       init_spec_bin_expr::bin_op::E_SUB;
     p.skip();
     init_spec_atom *t = parseInitAtomMul(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(loc, op, e, t);
-    loc = p.nextLoc();
+    e = new init_spec_bin_expr(op, e, t);
   }
   return e;
 }
 static init_spec_atom *parseInitAtomShift(parser &p)
 {
   init_spec_atom *e = parseInitAtomAdd(p);
-  auto loc = p.nextLoc();
   while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
     auto op = p.lookingAt(LSH) ?
       init_spec_bin_expr::bin_op::E_LSH :
       init_spec_bin_expr::bin_op::E_RSH;
     p.skip();
     init_spec_atom *t = parseInitAtomAdd(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(loc, op, e, t);
-    loc = p.nextLoc();
+    e = new init_spec_bin_expr(op, e, t);
   }
   return e;
 }
 static init_spec_atom *parseInitAtomBitwiseAND(parser &p)
 {
   init_spec_atom *e = parseInitAtomShift(p);
-  auto loc = p.nextLoc();
   while (p.consumeIf(AMP)) {
     init_spec_atom *t = parseInitAtomShift(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(
-      loc,
-      init_spec_bin_expr::bin_op::E_AND,
-      e,
-      t);
-    loc = p.nextLoc();
+    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_AND, e, t);
   }
   return e;
 }
 static init_spec_atom *parseInitAtomBitwiseXOR(parser &p)
 {
   init_spec_atom *e = parseInitAtomBitwiseAND(p);
-  auto loc = p.nextLoc();
   while (p.consumeIf(CIRC)) {
     init_spec_atom *t = parseInitAtomBitwiseAND(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(
-      loc,
-      init_spec_bin_expr::bin_op::E_XOR,
-      e,
-      t);
-    loc = p.nextLoc();
+    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_XOR, e, t);
   }
   return e;
 }
 static init_spec_atom *parseInitAtomBitwiseOR(parser &p)
 {
   init_spec_atom *e = parseInitAtomBitwiseXOR(p);
-  auto loc = p.nextLoc();
   while (p.consumeIf(PIPE)) {
     init_spec_atom *t = parseInitAtomBitwiseXOR(p);
-    e->defined_at.extend_to(p.nextLoc());
-    e = new init_spec_bin_expr(
-      loc,
-      init_spec_bin_expr::bin_op::E_OR,
-      e,
-      t);
-    loc = p.nextLoc();
+    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_OR, e, t);
   }
   return e;
 }

@@ -238,7 +238,7 @@ void init_spec_record::str(std::ostream &os, format_opts fopts) const {
     if (first)
       first = false;
     else
-      os << ", ";
+      os << ",";
     c->str(os,fopts);
   }
   os << "}";
@@ -250,7 +250,7 @@ void init_spec_bin_expr::str(std::ostream &os, format_opts fopts) const
     os << name << "("; fmt(os, fopts, el); os <<
       ", "; fmt(os, fopts, er); os << ")";
   };
-  switch (e_kind) {
+  switch (e_function) {
   // function syntax
   case init_spec_bin_expr::E_POW: fmtFunc("pow"); break;
   case init_spec_bin_expr::E_MIN: fmtFunc("min"); break;
@@ -260,7 +260,7 @@ void init_spec_bin_expr::str(std::ostream &os, format_opts fopts) const
   default:
    // infix operators
     fmt(os, fopts, el);
-    switch (e_kind) {
+    switch (e_function) {
     case init_spec_bin_expr::E_OR:   os << "|"; break;
     case init_spec_bin_expr::E_XOR:  os << "^"; break;
     case init_spec_bin_expr::E_AND:  os << "&"; break;
@@ -282,7 +282,7 @@ void init_spec_unr_expr::str(std::ostream &os, format_opts fopts) const
   auto unaryFunction = [&] (const char *sym) {
     os << sym << "("; fmt(os, fopts, e); os << ")";
   };
-  switch (e_kind) {
+  switch (e_function) {
   case init_spec_unr_expr::E_NEG: os << "-"; fmt(os, fopts, e); break;
   case init_spec_unr_expr::E_COMPL: os << "~"; fmt(os, fopts, e); break;
   case init_spec_unr_expr::E_ABS: unaryFunction("abs"); break;
@@ -310,13 +310,13 @@ void init_spec_rng::str(std::ostream &os, format_opts fopts) const
     os << "<" << seed << ">";
   }
   if (e_lo) {
-    os << "[";
+    os << "(";
     e_lo->str(os,fopts);
     if (e_hi) {
-      os << ", ";
+      os << ",";
       e_hi->str(os,fopts);
     }
-    os << "]";
+    os << ")";
   }
 }
 

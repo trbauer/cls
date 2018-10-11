@@ -249,7 +249,7 @@ namespace text
       return ss.str();
     }
 
-    void str(std::ostream &os,const char *delim = "") const;
+    void str(std::ostream &os,const char *delim = "  ") const;
   private:
     table(const table &) = delete;
     table &operator=(const table &t) = delete;

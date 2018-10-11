@@ -19,14 +19,13 @@ namespace fs = std::experimental::filesystem;
 #include <type_traits>
 
 
-struct script_compiler : public cl_fatal_handler {
+struct script_compiler : public interp_fatal_handler {
   const script &s;
-  const opts &os;
   compiled_script_impl *csi = nullptr;
 
   script_compiler(
     const opts &_os, const script &_s, compiled_script_impl *_csi)
-    : cl_fatal_handler(_s.source), os(_os), s(_s), csi(_csi)
+    : interp_fatal_handler(_os,_s.source), s(_s), csi(_csi)
   {
   }
   void compile();
@@ -36,19 +35,6 @@ private:
   program_object &compileProgram(const program_spec *ps);
   device_object &createDeviceObject(const device_spec *ds);
 
-  // other argument setters
-
-  template <typename...Ts>
-  void debug(loc loc, Ts... ts) {
-    if (os.verbosity >= 2) {
-      formatMessageWithContext(
-        std::cout, loc, &text::ANSI_GREEN, input(), ts...);
-    }
-  }
-  template <typename...Ts>
-  void debug(const spec *spec, Ts... ts) {
-    debug(spec->defined_at,ts...);
-  }
 };
 
 kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
@@ -107,20 +93,16 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   }
 
   // Fetch the required workgroup size
-  // a bug in Intel CPU driver means we have to use the C API
+  // a bug in Intel CPU driver means we have to use the C API (cl.hpp blows up)
   // __attribute__((reqd_work_group_size(X, Y, Z)))
-  cl_int err_wgsz = clGetKernelWorkGroupInfo(
-    (*ko.kernel)(),
-    po->device->device(),
-    CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
-    sizeof(ko.kernel_info->reqd_word_group_size),
-    ko.kernel_info->reqd_word_group_size,
-    nullptr);
-  if (err_wgsz != CL_SUCCESS) {
-    fatalAt(ks->defined_at,
-      "clGetKernelWorkGroupInfo<CL_KERNEL_COMPILE_WORK_GROUP_SIZE> "
-      "returned ", status_to_symbol(err_wgsz));
-  }
+  CL_COMMAND(ks->defined_at,
+    clGetKernelWorkGroupInfo,
+      (*ko.kernel)(),
+      po->device->device(),
+      CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
+      sizeof(ko.kernel_info->reqd_word_group_size),
+      ko.kernel_info->reqd_word_group_size,
+      nullptr);
 
   return ko;
 }
@@ -170,8 +152,9 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         break;
       }
     }
-    os.verbose() << ps->path << ": unable to infer program type from extension\n"
-      << "based on contents assuming " << (is_bin ? "binary" : "text");
+    os.warning() << ps->path << ": unable to infer program type from extension\n"
+      << "based on contents we're assuming " << (is_bin ? "binary" : "text") << "\n"
+      << "NOTE: we recognize .cl, .clc as text and .bin, .ptx, and .obj as binary\n";
   }
   auto fatalHere =
     [&](const char *do_what, const char *with_what, cl_int err) {
@@ -421,70 +404,23 @@ void script_compiler::compile()
         arg_index < (cl_uint)ds->arguments.size();
         arg_index++)
       {
+        std::stringstream ss;
         const arg_info &ai = ais[arg_index];
         const refable<init_spec*> &ris = ds->arguments[arg_index];
+        const init_spec *is = ris;
         if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
-          // Special treatment of local * arguments
-          // e.g. kernel void foo(..., local int2 *buffer)
-          // the user must tell us how many bytes they neeed for buffer
-          //  foo<1024,16>(...,16*8); // 16*sizeof(int2)
-          //
-          //  SPECIFY: do we allow the alternative?
-          //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
-          const init_spec *is = ris;
-          if (!std::holds_alternative<type_ptr>(ai.type.var)) {
-            fatalAt(
-              ris.defined_at,
-              "kernel argument in local address space must be pointer type");
-          } else if (!is->is_atom()) {
-            fatalAt(
-              ris.defined_at,
-              "local pointer requires size in bytes");
-          } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
-          const type_ptr &tp = std::get<type_ptr>(ai.type.var);
-          evaluator::context ec(dc.global_size,dc.local_size);
-          auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
-          size_t local_bytes = (size_t)v.u64;
-          CL_COMMAND(
-            ris.defined_at, // use the arg actual location, not the let
-            clSetKernelArg,
-              (*dc.kernel->kernel)(),
-              arg_index,
-              local_bytes,
-              nullptr);
+          csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
+        } else if (std::holds_alternative<type_ptr>(ai.type.var)) {
+
+          csi->e->setKernelArgMemobj(
+            arg_index, dc, ss, ris.defined_at, ris, ai);
         } else {
-          // Some other argument type, global buffer or
-          // scalar (immediate) argument.
-          arg_buffer ab(csi, ris.defined_at, ai.type.size());
-          csi->e->genArg(dc, ab, ris, ai);
-          if (ab.num_left() != 0) {
-            fatalAt(
-              ris.defined_at,
-              "INTERNAL ERROR: failed to set full argument");
-          }
-          CL_COMMAND(
-            ris.defined_at, // use the arg actual location, not the let
-            clSetKernelArg,
-              (*dc.kernel->kernel)(),
-              arg_index,
-              ab.size(),
-              (const void *)ab.ptr());
-          if (os.verbosity >= 2) {
-            debug(ris.defined_at, "setting immediate argument for ",
-              ai.type.syntax()," ",ai.name," to");
-            if (std::holds_alternative<type_ptr>(ai.type.var)) {
-              // fake a pointer to a pointer so the first dereference
-              // in formatBuffer is ignored
-              size_t ptr_size = std::get<type_ptr>(ai.type.var).size();
-              formatBuffer(std::cout,ab.base,ab.capacity,
-                type_ptr(&ai.type,ptr_size));
-            } else {
-              formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
-            }
-            std::cout << "\n";
-          }
+          // A uniform argument
+          csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);
         }
-      }
+        dc.evaluated_args.push_back(ss.str());
+
+      } // for kernel args
     } else if (st->kind == statement_spec::LET) {
       const let_spec *ls = (const let_spec *)st;
       fatalAt(ls->defined_at, "NOT IMPLEMENTED");

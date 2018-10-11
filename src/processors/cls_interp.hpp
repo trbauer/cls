@@ -1,9 +1,8 @@
 #ifndef PROCESSORS_CLS_INTERP_HPP
 #define PROCESSORS_CLS_INTERP_HPP
 
-#include "../ir/cls_ir.hpp"
-#include "../cls.hpp"
 #include "../cls_opts.hpp"
+#include "../ir/cls_ir.hpp"
 #include "../stats.hpp"
 
 #include <tuple>
@@ -16,9 +15,6 @@ namespace cls
   struct compiled_script {
     // various CL objects
     void *impl;
-
-    // intializer buffer values from whatever backing stores exist
-    void setup(int iteration);
 
     // intializer buffer values from whatever backing store
     void execute(int iteration);

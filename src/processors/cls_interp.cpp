@@ -15,13 +15,12 @@
 using namespace cls;
 
 compiled_script_impl::compiled_script_impl(const opts &_os,const script &_s)
-  : cl_fatal_handler(_s.source)
-  , os(_os)
+  : interp_fatal_handler(_os,_s.source)
   , s(_s)
   , e(new evaluator(this)) { }
 
 evaluator::val evaluator::eval(
-  const context &ec,
+  context &ec,
   const init_spec_atom *e)
 {
   // TODO: merge with evalInto<type_num>
@@ -32,7 +31,7 @@ evaluator::val evaluator::eval(
     return val(((const init_spec_float *)e)->value);
   case init_spec::IS_BEX: {
     const init_spec_bin_expr *be = ((const init_spec_bin_expr *)e);
-    switch (be->kind) {
+    switch (be->e_function) {
     case init_spec_bin_expr::E_OR:
     case init_spec_bin_expr::E_XOR:
     case init_spec_bin_expr::E_AND:
@@ -41,7 +40,7 @@ evaluator::val evaluator::eval(
       val
         vl = evalI(ec, be->el),
         vr = evalI(ec, be->er);
-      switch (be->kind) {
+      switch (be->e_function) {
       case init_spec_bin_expr::E_OR:   vl.s64 |= vr.s64; break;
       case init_spec_bin_expr::E_XOR:  vl.s64 ^= vr.s64; break;
       case init_spec_bin_expr::E_AND:  vl.s64 &= vr.s64; break;
@@ -75,7 +74,7 @@ evaluator::val evaluator::eval(
           vl.f64 = (double)vl.s64;
         if (!vr.is_float())
           vr.f64 = (double)vr.s64;
-        switch (be->kind) {
+        switch (be->e_function) {
         case init_spec_bin_expr::E_POW: vl.f64 = std::pow(vl.f64,vr.f64); break;
         case init_spec_bin_expr::E_MAX: vl.f64 = std::max(vl.f64,vr.f64); break;
         case init_spec_bin_expr::E_MIN: vl.f64 = std::min(vl.f64,vr.f64); break;
@@ -90,7 +89,7 @@ evaluator::val evaluator::eval(
         default: fatalAt(e->defined_at,"unsupported binary expression");
         }
       } else { // compute as integer
-        switch (be->kind) {
+        switch (be->e_function) {
         case init_spec_bin_expr::E_POW:
           fatalAt(e->defined_at,"function requires floating-point arguments"); break;
         case init_spec_bin_expr::E_MAX: vl.s64 = std::max(vl.s64,vr.s64); break;
@@ -121,7 +120,7 @@ evaluator::val evaluator::eval(
   case init_spec::IS_UEX: {
     const init_spec_unr_expr *ue = ((const init_spec_unr_expr *)e);
     val v = eval(ec,ue->e);
-    switch (ue->kind) {
+    switch (ue->e_function) {
     case init_spec_unr_expr::E_NEG:
       if (v.is_float())
         v.f64 = -v.f64;
@@ -201,14 +200,14 @@ evaluator::val evaluator::eval(
   return val((uint64_t)0); // unreachable
 }
 
-evaluator::val evaluator::evalI(const context &ec,const init_spec_atom *e)
+evaluator::val evaluator::evalI(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_int())
     fatalAt(e->defined_at,"argument must be integral");
   return v;
 }
-evaluator::val evaluator::evalF(const context &ec,const init_spec_atom *e)
+evaluator::val evaluator::evalF(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_float())
@@ -216,7 +215,7 @@ evaluator::val evaluator::evalF(const context &ec,const init_spec_atom *e)
   return v;
 }
 
-evaluator::val evaluator::evalToF(const context &ec,const init_spec_atom *e)
+evaluator::val evaluator::evalToF(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (v.is_signed()) {
@@ -228,23 +227,48 @@ evaluator::val evaluator::evalToF(const context &ec,const init_spec_atom *e)
 }
 
 
-void evaluator::genArg(
+void evaluator::setKernelArgImmediate(
+  cl_uint arg_index,
   dispatch_command &dc,
-  arg_buffer &ab,
+  std::stringstream &ss,
   const refable<init_spec *> &ris,
   const arg_info &ai)
 {
-  context ec(dc.global_size,dc.local_size);
+  // non-surface
+  context ec(dc.global_size,dc.local_size, &ss);
   const init_spec *is = ris;
-  if (std::holds_alternative<type_ptr>(ai.type.var)) {
-    // surface (not SLM)
-    if (is->kind != init_spec::IS_MEM) {
-      fatalAt(ris.defined_at,"expected surface initializer");
+
+  arg_buffer ab(this, ris.defined_at, ai.type.size());
+
+  evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, ai.type);
+
+  if (ab.num_left() != 0) {
+    fatalAt(
+      ris.defined_at,
+      "INTERNAL ERROR: failed to set full argument");
+  }
+
+  CL_COMMAND(
+    ris.defined_at, // use the arg actual location, not the let
+    clSetKernelArg,
+      (*dc.kernel->kernel)(),
+      arg_index,
+      ab.size(),
+      (const void *)ab.ptr());
+
+  if (os.verbosity >= 2) {
+    debug(ris.defined_at, "setting immediate argument for ",
+      ai.type.syntax()," ",ai.name," to");
+    if (std::holds_alternative<type_ptr>(ai.type.var)) {
+      // fake a pointer to a pointer so the first dereference
+      // in formatBuffer is ignored
+      size_t ptr_size = std::get<type_ptr>(ai.type.var).size();
+      formatBuffer(std::cout,ab.base,ab.capacity,
+        type_ptr(&ai.type,ptr_size));
+    } else {
+      formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
     }
-    genArgSurface(dc, ab, is->defined_at, (const init_spec_memory *)is, ai);
-  } else {
-    // non-surface
-    evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, ai.type);
+    std::cout << "\n";
   }
 }
 
@@ -269,13 +293,19 @@ static size_t computeBufferSize(
 }
 
 
-void evaluator::genArgSurface(
+void evaluator::setKernelArgMemobj(
+  cl_uint arg_index,
   dispatch_command &dc,
-  arg_buffer &ab,
+  std::stringstream &ss,
   const loc &arg_loc,
-  const init_spec_memory *ism,
+  const refable<init_spec *> &ris,
   const arg_info &ai)
 {
+  if (((const init_spec *)ris)->kind != init_spec::IS_MEM) {
+    fatalAt(ris.defined_at,"expected surface initializer");
+  }
+  const init_spec_memory *ism =
+    (const init_spec_memory *)(const init_spec *)ris;
   if (!std::holds_alternative<type_ptr>(ai.type.var)) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
@@ -320,20 +350,65 @@ void evaluator::genArgSurface(
       ism,
       surface_object::SO_BUFFER,
       buffer_size,
-      memobj);
+      memobj,
+      (int)csi->surfaces.size());
   }
+  ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
 
   dc.inits.emplace_back(
     arg_loc,
     std::get<type_ptr>(ai.type.var),
     so);
 
-  ab.write(&so->memobj,sizeof(cl_mem));
+  CL_COMMAND(
+    arg_loc,
+    clSetKernelArg,
+      (*dc.kernel->kernel)(),
+      arg_index,
+      sizeof(cl_mem),
+      (const void *)&so->memobj);
 }
 
+void evaluator::setKernelArgSLM(
+  cl_uint arg_index,
+  dispatch_command &dc,
+  std::stringstream &ss, // debug string for arg
+  const refable<init_spec *> &ris,
+  const arg_info &ai)
+{
+  const init_spec *is = ris;
+  // Special treatment of local * arguments
+  // e.g. kernel void foo(..., local int2 *buffer)
+  // the user must tell us how many bytes they neeed for buffer
+  //  foo<1024,16>(...,16*8); // 16*sizeof(int2)
+  //
+  //  SPECIFY: do we allow the alternative?
+  //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
+  if (!std::holds_alternative<type_ptr>(ai.type.var)) {
+    fatalAt(
+      ris.defined_at,
+      "kernel argument in local address space must be pointer type");
+  } else if (!is->is_atom()) {
+    fatalAt(
+      ris.defined_at,
+      "local pointer requires size in bytes");
+  } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
+  const type_ptr &tp = std::get<type_ptr>(ai.type.var);
+  evaluator::context ec(dc.global_size,dc.local_size);
+  auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
+  size_t local_bytes = (size_t)v.u64;
+  CL_COMMAND(
+    ris.defined_at, // use the arg actual location, not the let
+    clSetKernelArg,
+      (*dc.kernel->kernel)(),
+      arg_index,
+      local_bytes,
+      nullptr);
+  ss << "SLM[" << local_bytes << " B]";
+}
 
 void evaluator::evalInto(
-  const context &ec,
+  context &ec,
   const loc &arg_loc,
   const init_spec_atom *is,
   arg_buffer &ab,
@@ -351,7 +426,7 @@ void evaluator::evalInto(
 }
 
 void evaluator::evalInto(
-  const context &ec,
+  context &ec,
   const loc &arg_loc,
   const init_spec_atom *is,
   arg_buffer &ab,
@@ -392,7 +467,7 @@ void evaluator::evalInto(
 
 template <typename T>
 void evaluator::evalIntoT(
-  const context &ec,
+  context &ec,
   const loc &arg_loc,
   const init_spec_atom *is,
   arg_buffer &ab)
@@ -405,6 +480,7 @@ void evaluator::evalIntoT(
   case init_spec::IS_BIV: {
     val v = evalTo<T>(ec, is);
     ab.write<T>(v.as<T>());
+    ec.evaluated(v.as<T>());
     break;
   }
   default:
@@ -414,7 +490,7 @@ void evaluator::evalIntoT(
 
 
 void evaluator::evalInto(
-  const context &ec,
+  context &ec,
   const loc &arg_loc,
   const init_spec_atom *is,
   arg_buffer &ab,
@@ -425,9 +501,13 @@ void evaluator::evalInto(
     if (isr->children.size() != ts.elements_length) {
       fatalAt(arg_loc, "structure initializer has wrong number of elements");
     }
+    ec.evaluated("{");
     for (size_t i = 0; i < ts.elements_length; i++) {
+      if (i > 0)
+        ec.evaluated(",");
       evalInto(ec, arg_loc, isr->children[i], ab, *ts.elements[i]);
     }
+    ec.evaluated("}");
   } else {
     // TODO: we could support things like broadcast, random etc...
     fatalAt(arg_loc,"structure argument requires structure initializer");
@@ -435,7 +515,7 @@ void evaluator::evalInto(
 }
 
 void evaluator::evalInto(
-  const context &ec,
+  context &ec,
   const loc &arg_loc,
   const init_spec_atom *is,
   arg_buffer &ab,

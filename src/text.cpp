@@ -531,7 +531,8 @@ void text::table::str(std::ostream &os, const char *delim) const {
     max_rows = std::max<size_t>(max_rows, c->rows.size());
   }
   for (size_t i = 0; i < max_rows; i++) {
-    os << delim;
+    if (i > 0)
+      os << delim;
     for (const auto *c : cols) {
       auto align = c->numeric ? std::right : std::left;
       if (i >= c->rows.size()) {

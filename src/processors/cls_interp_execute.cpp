@@ -3,18 +3,13 @@
 
 #include <chrono>
 
-void compiled_script::setup(int)
-{
-  std::cout << "compiled_script::setup\n";
-}
-
 void compiled_script::execute(int)
 {
-  std::cout << "compiled_script::execute\n";
   compiled_script_impl *csi = (compiled_script_impl *)impl;
+  csi->os.debug() << "compiled_script::execute\n";
   for (dispatch_command *dc : csi->dispatches) {
-    std::cout << "EXECUTING  => " << dc->ds->spec::str() << "\n";
-    std::cout << "              " << dc->str() << "\n";
+    csi->os.verbose() << "EXECUTING  => " << dc->ds->spec::str() << "\n";
+    csi->os.verbose() << "              " << dc->str() << "\n";
 
     csi->init_surfaces(*dc);
 
@@ -43,7 +38,7 @@ times compiled_script::get_prof_times() const
 template <typename T>
 static void fill_buffer_with_const_loop(
   evaluator *e,
-  const evaluator::context &ec,
+  evaluator::context &ec,
   arg_buffer &ab,
   const init_spec_atom *is)
 {
@@ -56,7 +51,7 @@ static void fill_buffer_with_const_loop(
 
 static void fill_buffer_with_const(
   evaluator *e,
-  const evaluator::context &ec,
+  evaluator::context &ec,
   arg_buffer &ab,
   const loc &arg_loc,
   const type_num &tn,
@@ -92,7 +87,7 @@ static void fill_buffer_with_const(
 template <typename T>
 static void fill_buffer_rng_loop_int(
   evaluator *e,
-  const evaluator::context &ec,
+  evaluator::context &ec,
   arg_buffer &ab,
   const init_spec_rng *isr,
   std::mt19937 &g)
@@ -117,7 +112,7 @@ static void fill_buffer_rng_loop_int(
 template <typename T,typename R = T> // r is random type
 static void fill_buffer_rng_loop_flt(
   evaluator *e,
-  const evaluator::context &ec,
+  evaluator::context &ec,
   arg_buffer &ab,
   const init_spec_rng *isr,
   std::mt19937 &g)
@@ -140,7 +135,7 @@ static void fill_buffer_rng_loop_flt(
 
 static void fill_buffer_rng(
   compiled_script_impl &csi,
-  const evaluator::context &ec,
+  evaluator::context &ec,
   arg_buffer &ab,
   const init_spec_rng *isr,
   const type &t,
@@ -327,7 +322,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
     (cl_uint)dc.global_size.dimensions(),
     nullptr, // global offset
     dc.global_size.get(),
-    dc.global_size.dimensions() > 0 ? dc.global_size.get() : nullptr,
+    dc.local_size.dimensions() > 0 ? dc.local_size.get() : nullptr,
     0,
     nullptr,
     &enq_evt);

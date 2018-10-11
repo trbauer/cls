@@ -28,6 +28,9 @@ namespace cls
     void extend_to(loc end) {
       extent = end.offset - offset;
     }
+    void extend_past(loc end) {
+      extent = end.offset - offset + end.extent;
+    }
   }; // loc
 
   void formatMessageWithContextImpl(

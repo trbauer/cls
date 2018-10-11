@@ -24,12 +24,33 @@ endif()
 ##############################
 # cls##.exe
 ##############################
-file(GLOB CLS_SOURCES
+# file(GLOB CLS_SOURCES
+#  "src/*.hpp" "src/*.cpp"
+#  "src/ir/*.hpp" "src/ir/*.cpp"
+#  "src/parser/*.hpp" "src/parser/*.cpp" "src/parser/cls.flex"
+#  "src/processors/*.hpp" "src/processors/*.cpp"
+#	)
+#
+# we split the above up so we can setup the source groups
+file(GLOB CLS_ROOT
   "src/*.hpp" "src/*.cpp"
+)
+file(GLOB CLS_IR
   "src/ir/*.hpp" "src/ir/*.cpp"
+)
+file(GLOB CLS_PARSE
   "src/parser/*.hpp" "src/parser/*.cpp" "src/parser/cls.flex"
+)
+file(GLOB CLS_PROC
   "src/processors/*.hpp" "src/processors/*.cpp"
-	)
+)
+
+source_group("Source" FILES ${CLS_ROOT})
+source_group("Source\\IR" FILES ${CLS_IR})
+source_group("Source\\Parser" FILES ${CLS_PARSE})
+source_group("Source\\Interpreters" FILES ${CLS_PROC})
+
+set(CLS_SOURCES ${CLS_ROOT} ${CLS_IR} ${CLS_PARSE} ${CLS_PROC})
 
 add_executable("cls${TARGET_MODIFIER}"
   ${CLS_SOURCES}
@@ -38,7 +59,6 @@ add_executable("cls${TARGET_MODIFIER}"
 
 find_package(OpenCL REQUIRED)
 include_directories(. ${OpenCL_INCLUDE_DIRS})
-# include_directories(.)
 target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})
 
 set_target_properties("cls${TARGET_MODIFIER}" PROPERTIES

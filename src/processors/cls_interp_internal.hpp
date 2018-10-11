@@ -108,13 +108,20 @@ struct surface_object {
   const init_spec_memory   *spec;
   size_t                    size_in_bytes;
   cl_mem                    memobj = nullptr;
+  int                       memobj_index;
 
   surface_object(
     const init_spec_memory *_spec,
     enum surface_object::kind _kind,
     size_t _size_in_bytes,
-    cl_mem _mem)
-    : kind(_kind), spec(_spec), size_in_bytes(_size_in_bytes), memobj(_mem) { }
+    cl_mem _mem,
+    int _memobj_index)
+    : kind(_kind)
+    , spec(_spec)
+    , size_in_bytes(_size_in_bytes)
+    , memobj(_mem)
+    , memobj_index(_memobj_index)
+  { }
 };
 
 
@@ -132,6 +139,7 @@ struct dispatch_command {
       cls::k::type_ptr,
       surface_object*>;
   std::vector<surf_arg>                            inits; // the surfaces we have to re-initialize
+  std::vector<std::string>                         evaluated_args;
 
   sampler                                          wall_times;
   sampler                                          prof_times;
@@ -160,16 +168,10 @@ struct dispatch_command {
     ss << ">";
     ss << "(";
     size_t next_so = 0;
-    for (size_t i = 0; i < ds->arguments.size(); i++) {
+    for (size_t i = 0; i < evaluated_args.size(); i++) {
       if (i > 0)
         ss << ", ";
-      const init_spec *is = ds->arguments[i];
-      if (is->kind == init_spec::IS_MEM) {
-        const surface_object *so = std::get<2>(inits[next_so++]);
-        ss << so->memobj << "[" << so->size_in_bytes << "]";
-      } else {
-        is->str(ss,format_opts());
-      }
+      ss << evaluated_args[i];
     }
     ss << ")";
     return ss.str();
@@ -191,6 +193,7 @@ struct mapped_objects {
   list_iterator end() {return list.end();}
   list_const_iterator begin() const {return list.begin();}
   list_const_iterator end() const {return list.end();}
+  size_t size() const {return list.size();}
 
   template <typename...As>
   V& emplace_back(K k, As...as) {
@@ -243,8 +246,27 @@ struct cl_fatal_handler : fatal_handler {
     buffer_writer apply);
 }; // cl_fatal_handler
 
-struct compiled_script_impl : cl_fatal_handler {
-  const opts                                             &os;
+
+struct interp_fatal_handler : cl_fatal_handler {
+  const opts &os;
+
+  interp_fatal_handler(const opts &_os, const std::string &src)
+    : cl_fatal_handler(src), os(_os) { }
+
+  template <typename...Ts>
+  void debug(loc loc, Ts... ts) {
+    if (os.verbosity >= 2) {
+      formatMessageWithContext(
+        std::cout, loc, &text::ANSI_GREEN, input(), ts...);
+    }
+  }
+  template <typename...Ts>
+  void debug(const spec *spec, Ts... ts) {
+    debug(spec->defined_at,ts...);
+  }
+};
+
+struct compiled_script_impl : interp_fatal_handler {
   const script                                           &s;
   struct evaluator                                       *e;
 
@@ -315,7 +337,7 @@ struct arg_buffer : fatal_handler {
 }; // arg_buffer
 
 
-struct evaluator : cl_fatal_handler {
+struct evaluator : interp_fatal_handler {
   struct val {
     bool is_f;
     bool is_u;
@@ -377,26 +399,35 @@ struct evaluator : cl_fatal_handler {
   struct context {
     const cl::NDRange &global_size;
     const cl::NDRange &local_size;
-    context(const cl::NDRange &gs, const cl::NDRange &ls)
-      : global_size(gs), local_size(ls) { }
+    context(
+      const cl::NDRange &gs,
+      const cl::NDRange &ls,
+      std::stringstream *dss = nullptr)
+      : global_size(gs), local_size(ls), debug_stream(dss) { }
+
+    std::stringstream *debug_stream;
+
+    template <typename T> void evaluated(const T &t) {
+      if (debug_stream)
+        *debug_stream << t;
+    }
   };
 
   std::random_device                                          rd;
   std::mt19937                                                gen;
 
-  const opts                                                 &os;
   compiled_script_impl                                       *csi;
 
   evaluator(compiled_script_impl *_csi)
-    : cl_fatal_handler(_csi->input()), os(_csi->os), csi(_csi) { }
+    : interp_fatal_handler(_csi->os,_csi->input()), csi(_csi) { }
 
   /////////////////////////////////////////////////////////////////////////////
   // primitive value evaluation
-  val eval(const context &ec, const init_spec_atom *e);
-  val evalI(const context &ec, const init_spec_atom *e);
+  val eval(context &ec, const init_spec_atom *e);
+  val evalI(context &ec, const init_spec_atom *e);
 
   template <typename T>
-  val evalToI(const context &ec, const init_spec_atom *e) {
+  val evalToI(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     if (v.is_float())
       fatalAt(e->defined_at,"cannot convert float to int");
@@ -416,7 +447,7 @@ struct evaluator : cl_fatal_handler {
     return v;
   }
   template <typename T>
-  val evalToF(const context &ec, const init_spec_atom *e) {
+  val evalToF(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     //
     // implicit conversion from int to float is allowed
@@ -457,57 +488,64 @@ struct evaluator : cl_fatal_handler {
   }
 
   template <typename T>
-  val evalTo(const context &ec,const init_spec_atom *e) {
+  val evalTo(context &ec,const init_spec_atom *e) {
     if (std::is_signed<T>() || std::is_unsigned<T>()) {
       return evalToI<T>(ec,e);
     } else {
       return evalToF<T>(ec,e);
     }
   }
-  val evalF(const context &ec,const init_spec_atom *e);
-  val evalToF(const context &ec,const init_spec_atom *e);
+  val evalF(context &ec,const init_spec_atom *e);
+  val evalToF(context &ec,const init_spec_atom *e);
 
   /////////////////////////////////////////////////////////////////////////////
   // value generators for init_spec*
-  void genArg(
+  void setKernelArgImmediate(
+    cl_uint arg_index,
     dispatch_command &dc,
-    arg_buffer &ab,
+    std::stringstream &ss,
     const refable<init_spec *> &ris,
     const arg_info &ai); // top-level
-  void genArgSurface(
+  void setKernelArgMemobj(
+    cl_uint arg_index,
     dispatch_command &dc,
-    arg_buffer &ab,
+    std::stringstream &ss, // debug string for arg
     const loc &arg_loc,
-    const  init_spec_memory *ism,
+    const refable<init_spec *> &ris,
+    const arg_info &ai);
+  void setKernelArgSLM(
+    cl_uint arg_index,
+    dispatch_command &dc,
+    std::stringstream &ss, // debug string for arg
+    const refable<init_spec *> &ris,
     const arg_info &ai);
 
-
   void evalInto(
-    const context &ec,
+    context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type &t);
   void evalInto(
-    const context &ec,
+    context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_num &tn);
   template <typename T>
   void evalIntoT(
-    const context &ec,
+    context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab);
   void evalInto(
-    const context &ec,
+    context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_struct &ts);
   void evalInto(
-    const context &ec,
+    context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,

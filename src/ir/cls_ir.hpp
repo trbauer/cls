@@ -163,10 +163,13 @@ namespace cls
     , E_LSH, E_RSH
     , E_ADD, E_SUB
     , E_MUL, E_DIV, E_MOD
-    } e_kind;
+    } e_function;
     init_spec_bin_expr(loc loc) : init_spec_atom(loc, IS_BEX) { }
-    init_spec_bin_expr(loc loc, bin_op k, init_spec_atom *l, init_spec_atom *r)
-      : init_spec_atom(loc, IS_BEX), el(l), er(r), e_kind(k) { }
+    init_spec_bin_expr(bin_op k, init_spec_atom *l, init_spec_atom *r)
+      : init_spec_atom(l->defined_at, IS_BEX), el(l), er(r), e_function(k)
+    {
+      defined_at.extend_past(r->defined_at);
+    }
     void str(std::ostream &os, format_opts fopts) const;
   };
   struct init_spec_unr_expr : init_spec_atom {
@@ -180,11 +183,12 @@ namespace cls
     , E_SQT
     , E_EXP, E_LOG, E_LOG2, E_LOG10
     , E_SIN, E_COS, E_TAN, E_ATAN
-
-    } e_kind;
-    init_spec_unr_expr(loc loc) : init_spec_atom(loc, IS_UEX) { }
-    init_spec_unr_expr(loc loc, unr_op k, init_spec_atom *_e)
-      : init_spec_atom(loc, IS_UEX), e(_e), e_kind(k) { }
+    } e_function;
+    init_spec_unr_expr(loc loc, unr_op op, init_spec_atom *_e)
+      : init_spec_atom(loc, IS_UEX), e(_e), e_function(op)
+    {
+      defined_at.extend_past(_e->defined_at);
+    }
     void str(std::ostream &os, format_opts fopts) const;
   };
 
