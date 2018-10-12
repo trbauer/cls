@@ -19,7 +19,7 @@ compiled_script_impl::compiled_script_impl(const opts &_os,const script &_s)
   , s(_s)
   , e(new evaluator(this)) { }
 
-evaluator::val evaluator::eval(
+val evaluator::eval(
   context &ec,
   const init_spec_atom *e)
 {
@@ -30,142 +30,15 @@ evaluator::val evaluator::eval(
   case init_spec::IS_FLT:
     return val(((const init_spec_float *)e)->value);
   case init_spec::IS_BEX: {
-    const init_spec_bin_expr *be = ((const init_spec_bin_expr *)e);
-    switch (be->e_function) {
-    case init_spec_bin_expr::E_OR:
-    case init_spec_bin_expr::E_XOR:
-    case init_spec_bin_expr::E_AND:
-    case init_spec_bin_expr::E_LSH:
-    case init_spec_bin_expr::E_RSH: {
-      val
-        vl = evalI(ec, be->el),
-        vr = evalI(ec, be->er);
-      switch (be->e_function) {
-      case init_spec_bin_expr::E_OR:   vl.s64 |= vr.s64; break;
-      case init_spec_bin_expr::E_XOR:  vl.s64 ^= vr.s64; break;
-      case init_spec_bin_expr::E_AND:  vl.s64 &= vr.s64; break;
-      case init_spec_bin_expr::E_LSH:
-        if (vr.s64 > 63)
-          warningAt(be->er->defined_at,"shift amount too large");
-        vl.s64 <<= vr.s64;
-        break;
-      case init_spec_bin_expr::E_RSH:
-        if (vr.s64 > 63)
-          warningAt(be->er->defined_at,"shift amount too large");
-        vl.s64 >>= vr.s64; break;
-      }
-      return vl;
-    } // end bitwise ops
-    case init_spec_bin_expr::E_POW:
-    case init_spec_bin_expr::E_MAX:
-    case init_spec_bin_expr::E_MIN:
-    case init_spec_bin_expr::E_GCD:
-    case init_spec_bin_expr::E_LCM:
-    case init_spec_bin_expr::E_ADD:
-    case init_spec_bin_expr::E_SUB:
-    case init_spec_bin_expr::E_MUL:
-    case init_spec_bin_expr::E_DIV:
-    case init_spec_bin_expr::E_MOD: {
-      val vl = eval(ec, be->el);
-      val vr = eval(ec, be->er);
-      if (vl.is_float() || vr.is_float()) {
-        // compute as floating point
-        if (!vl.is_float())
-          vl.f64 = (double)vl.s64;
-        if (!vr.is_float())
-          vr.f64 = (double)vr.s64;
-        switch (be->e_function) {
-        case init_spec_bin_expr::E_POW: vl.f64 = std::pow(vl.f64,vr.f64); break;
-        case init_spec_bin_expr::E_MAX: vl.f64 = std::max(vl.f64,vr.f64); break;
-        case init_spec_bin_expr::E_MIN: vl.f64 = std::min(vl.f64,vr.f64); break;
-        case init_spec_bin_expr::E_LCM:
-        case init_spec_bin_expr::E_GCD:
-          fatalAt(e->defined_at,"function requires integer arguments");
-        case init_spec_bin_expr::E_ADD: vl.f64 += vr.f64; break;
-        case init_spec_bin_expr::E_SUB: vl.f64 -= vr.f64; break;
-        case init_spec_bin_expr::E_MUL: vl.f64 *= vr.f64; break;
-        case init_spec_bin_expr::E_DIV: vl.f64 /= vr.f64; break;
-        case init_spec_bin_expr::E_MOD: vl.f64 = std::fmod(vl.f64,vr.f64); break;
-        default: fatalAt(e->defined_at,"unsupported binary expression");
-        }
-      } else { // compute as integer
-        switch (be->e_function) {
-        case init_spec_bin_expr::E_POW:
-          fatalAt(e->defined_at,"function requires floating-point arguments"); break;
-        case init_spec_bin_expr::E_MAX: vl.s64 = std::max(vl.s64,vr.s64); break;
-        case init_spec_bin_expr::E_MIN: vl.s64 = std::min(vl.s64,vr.s64); break;
-        case init_spec_bin_expr::E_GCD: vl.s64 = std::gcd(vl.s64,vr.s64); break;
-        case init_spec_bin_expr::E_LCM: vl.s64 = std::lcm(vl.s64,vr.s64); break;
-
-        case init_spec_bin_expr::E_ADD: vl.s64 += vr.s64; break;
-        case init_spec_bin_expr::E_SUB: vl.s64 -= vr.s64; break;
-        case init_spec_bin_expr::E_MUL: vl.s64 *= vr.s64; break;
-        case init_spec_bin_expr::E_DIV:
-        case init_spec_bin_expr::E_MOD:
-          if (vl.s64 == 0)
-            fatalAt(e->defined_at,"division by zero");
-          if (be->kind == init_spec_bin_expr::E_DIV)
-            vl.s64 /= vr.s64;
-          else
-            vl.s64 %= vl.s64;
-          break;
-        default: fatalAt(e->defined_at,"unsupported binary expression");
-        }
-      } // else integer
-      return vl;
-    } // end arithmetic/transcendental functions
-    default: fatalAt(e->defined_at,"unsupported binary expression");
-    } // end binary expression switch
+    const init_spec_bex *be = ((const init_spec_bex *)e);
+    val vl = eval(ec, be->e_l),
+        vr = eval(ec, be->e_r);
+    return be->e_op.apply(this,be->defined_at,vl,vr);
   } // binary expression
   case init_spec::IS_UEX: {
-    const init_spec_unr_expr *ue = ((const init_spec_unr_expr *)e);
+    const init_spec_uex *ue = ((const init_spec_uex *)e);
     val v = eval(ec,ue->e);
-    switch (ue->e_function) {
-    case init_spec_unr_expr::E_NEG:
-      if (v.is_float())
-        v.f64 = -v.f64;
-      else
-        v.s64 = -v.s64;
-      break;
-    case init_spec_unr_expr::E_COMPL:
-      if (v.is_float())
-        fatalAt(e->defined_at,"complement of floating point value");
-      else
-        v.s64 = ~v.s64;
-      break;
-    case init_spec_unr_expr::E_ABS:
-      if (v.is_float())
-        v.f64 = std::abs(v.f64);
-      else
-        v.s64 = std::abs(v.s64);
-      break;
-    case init_spec_unr_expr::E_SQT:
-    case init_spec_unr_expr::E_EXP:
-    case init_spec_unr_expr::E_LOG:
-    case init_spec_unr_expr::E_LOG2:
-    case init_spec_unr_expr::E_LOG10:
-    case init_spec_unr_expr::E_SIN:
-    case init_spec_unr_expr::E_COS:
-    case init_spec_unr_expr::E_TAN:
-    case init_spec_unr_expr::E_ATAN:
-      if (!v.is_float())
-        fatalAt(e->defined_at,"floating-point argument required");
-      switch (ue->kind) {
-      case init_spec_unr_expr::E_SQT:   v.f64 = std::sqrt(v.f64);  break;
-      case init_spec_unr_expr::E_EXP:   v.f64 = std::exp(v.f64);   break;
-      case init_spec_unr_expr::E_LOG:   v.f64 = std::log(v.f64);   break;
-      case init_spec_unr_expr::E_LOG2:  v.f64 = std::log2(v.f64);  break;
-      case init_spec_unr_expr::E_LOG10: v.f64 = std::log10(v.f64); break;
-      case init_spec_unr_expr::E_SIN:   v.f64 = std::sin(v.f64);   break;
-      case init_spec_unr_expr::E_COS:   v.f64 = std::cos(v.f64);   break;
-      case init_spec_unr_expr::E_TAN:   v.f64 = std::tan(v.f64);   break;
-      case init_spec_unr_expr::E_ATAN:  v.f64 = std::atan(v.f64);  break;
-      }
-      break;
-    default:
-      fatalAt(e->defined_at,"unsupported unary expression for type");
-    }
-    break;
+    return ue->e_op.apply(this, ue->defined_at, v);
   } // end case IS_UEX:
   case init_spec::IS_BIV: {
     auto computeDim =
@@ -184,13 +57,13 @@ evaluator::val evaluator::eval(
     case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0, 1);
     case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1, 1);
     case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2, 1);
-    case init_spec_builtin::BIV_GXY:  return computeDim(ec.local_size,  0, 2);
-    case init_spec_builtin::BIV_GXYZ: return computeDim(ec.local_size,  0, 3);
+    // case init_spec_builtin::BIV_GXY:  return computeDim(ec.global_size, 0, 2);
+    // case init_spec_builtin::BIV_GXYZ: return computeDim(ec.global_size, 0, 3);
     case init_spec_builtin::BIV_LX:   return computeDim(ec.local_size,  0, 1);
     case init_spec_builtin::BIV_LY:   return computeDim(ec.local_size,  1, 1);
     case init_spec_builtin::BIV_LZ:   return computeDim(ec.local_size,  2, 1);
-    case init_spec_builtin::BIV_LXY:  return computeDim(ec.local_size,  0, 2);
-    case init_spec_builtin::BIV_LXYZ: return computeDim(ec.local_size,  0, 3);
+    // case init_spec_builtin::BIV_LXY:  return computeDim(ec.local_size,  0, 2);
+    // case init_spec_builtin::BIV_LXYZ: return computeDim(ec.local_size,  0, 3);
     default: fatalAt(e->defined_at,"unsupported built-in variable");
     }
     break;
@@ -200,14 +73,14 @@ evaluator::val evaluator::eval(
   return val((uint64_t)0); // unreachable
 }
 
-evaluator::val evaluator::evalI(context &ec,const init_spec_atom *e)
+val evaluator::evalI(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_int())
     fatalAt(e->defined_at,"argument must be integral");
   return v;
 }
-evaluator::val evaluator::evalF(context &ec,const init_spec_atom *e)
+val evaluator::evalF(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_float())
@@ -215,7 +88,7 @@ evaluator::val evaluator::evalF(context &ec,const init_spec_atom *e)
   return v;
 }
 
-evaluator::val evaluator::evalToF(context &ec,const init_spec_atom *e)
+val evaluator::evalToF(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (v.is_signed()) {
@@ -243,9 +116,7 @@ void evaluator::setKernelArgImmediate(
   evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, ai.type);
 
   if (ab.num_left() != 0) {
-    fatalAt(
-      ris.defined_at,
-      "INTERNAL ERROR: failed to set full argument");
+    fatalAt(ris.defined_at, "INTERNAL ERROR: failed to set full argument");
   }
 
   CL_COMMAND(
@@ -263,8 +134,7 @@ void evaluator::setKernelArgImmediate(
       // fake a pointer to a pointer so the first dereference
       // in formatBuffer is ignored
       size_t ptr_size = std::get<type_ptr>(ai.type.var).size();
-      formatBuffer(std::cout,ab.base,ab.capacity,
-        type_ptr(&ai.type,ptr_size));
+      formatBuffer(std::cout,ab.base,ab.capacity,type_ptr(&ai.type,ptr_size));
     } else {
       formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
     }
@@ -291,7 +161,6 @@ static size_t computeBufferSize(
     return prod*elem_type.size();
   }
 }
-
 
 void evaluator::setKernelArgMemobj(
   cl_uint arg_index,
@@ -487,7 +356,6 @@ void evaluator::evalIntoT(
     fatalAt(arg_loc,"INTERNAL ERROR: unsupported expression for primitive");
   }
 }
-
 
 void evaluator::evalInto(
   context &ec,

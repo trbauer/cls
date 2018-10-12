@@ -338,64 +338,6 @@ struct arg_buffer : fatal_handler {
 
 
 struct evaluator : interp_fatal_handler {
-  struct val {
-    bool is_f;
-    bool is_u;
-    union {
-      int64_t  s64;
-      uint64_t u64;
-      double   f64;
-    };
-    val() : val((int64_t)0) {}
-    val(int8_t _s) : val((int64_t)_s) {}
-    val(int16_t _s) : val((int64_t)_s) {}
-    val(int32_t _s) : val((int64_t)_s) {}
-    val(int64_t _s64) : s64(_s64), is_f(false), is_u(false) {}
-    val(uint8_t _u) : val((uint64_t)_u) {}
-    val(uint16_t _u) : val((uint64_t)_u) {}
-    val(uint32_t _u) : val((uint64_t)_u) {}
-    val(uint64_t _u64) : u64(_u64), is_f(false), is_u(true) {}
-    val(double _f64) : f64(_f64), is_f(true), is_u(false) {}
-    val(float _f32) : val((double)_f32) {}
-
-    val &operator=(uint64_t _val) {*this = val(_val); return *this;}
-    val &operator=(uint32_t _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(uint16_t _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(uint8_t  _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(int64_t  _val) {*this = val(_val); return *this;}
-    val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(half     _val) {*this = (double)_val; return *this;}
-    val &operator=(float    _val) {*this = (double)_val; return *this;}
-    val &operator=(double   _val) {*this = val(_val); return *this;}
-
-    bool is_float() const {return is_f;}
-    bool is_int() const {return !is_f;}
-    bool is_signed() const {return !is_f && !is_u;}
-    bool is_unsigned() const {return is_u;}
-
-    template <typename T>
-    T as() const
-    {
-      if (std::is_unsigned<T>()) {
-        if (is_f)
-          return (T)f64;
-        return (T)u64;
-      } else if (std::is_signed<T>()) {
-        if (is_f)
-          return (T)f64;
-        return (T)s64;
-      } else {
-        if (is_signed())
-          return (T)s64;
-        if (is_unsigned())
-          return (T)u64;
-        return (T)f64;
-      }
-    }
-  }; // val
-
   struct context {
     const cl::NDRange &global_size;
     const cl::NDRange &local_size;
@@ -489,10 +431,10 @@ struct evaluator : interp_fatal_handler {
 
   template <typename T>
   val evalTo(context &ec,const init_spec_atom *e) {
-    if (std::is_signed<T>() || std::is_unsigned<T>()) {
-      return evalToI<T>(ec,e);
-    } else {
+    if (std::is_floating_point<T>()) {
       return evalToF<T>(ec,e);
+    } else {
+      return evalToI<T>(ec,e);
     }
   }
   val evalF(context &ec,const init_spec_atom *e);

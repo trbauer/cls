@@ -50,16 +50,17 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       // e.g. "g.x"
       while (p.consumeIf(DOT)) {
         s += '.';
-        if (p.lookingAt(IDENT)) {
+        if (!p.lookingAt(IDENT))
           p.fatal("syntax error in initializer expression field access");
-        }
         s += p.tokenString();
+        p.skip();
       }
       for (int biv = init_spec_builtin::BIV_FIRST;
         biv <= init_spec_builtin::BIV_LAST;
         biv++)
       {
         if (s == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
+          loc.extend_to(p.nextLoc());
           return new init_spec_builtin(loc, (init_spec_builtin::biv_kind)biv);
         }
       }
@@ -98,64 +99,43 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         }
         p.consume(RPAREN);
 
-        auto makeBinary = [&](init_spec_bin_expr::bin_op op) {
-          if (args.size() != 2) {
-            p.fatalAt(loc, "binary function requires two arguments");
-          }
-          auto *isbe = new init_spec_bin_expr(op,args[0],args[1]);
-          isbe->defined_at = loc; // reset start loc to beg. of the primary
-          isbe->defined_at.extend_to(p.nextLoc());
-          return isbe;
-        };
-        auto makeUnary = [&](init_spec_unr_expr::unr_op op) {
-          if (args.size() != 1) {
-            p.fatalAt(loc, "unary function requires one argument");
-          }
-          return new init_spec_unr_expr(loc,op,args[0]);
-        };
-        // binary functions
-        if (s == "min")
-          return makeBinary(init_spec_bin_expr::E_MIN);
-        else if (s == "max")
-          return makeBinary(init_spec_bin_expr::E_MAX);
-        else if (s == "pow")
-          return makeBinary(init_spec_bin_expr::E_POW);
-        else if (s == "lcm")
-          return makeBinary(init_spec_bin_expr::E_LCM);
-        else if (s == "gcd")
-          return makeBinary(init_spec_bin_expr::E_GCD);
-        // unary functions
-        else if (s == "abs")
-          return makeUnary(init_spec_unr_expr::E_ABS);
-        else if (s == "fabs")
-          p.fatalAt(loc,"use \"abs\" for the absolute value");
-        else if (s == "sqrt")
-          p.fatalAt(loc,"use \"sqt\" for the square root");
-        else if (s == "sqt")
-          return makeUnary(init_spec_unr_expr::E_SQT);
-        else if (s == "exp")
-          return makeUnary(init_spec_unr_expr::E_EXP);
-        else if (s == "log")
-          return makeUnary(init_spec_unr_expr::E_LOG);
-        else if (s == "log2")
-          return makeUnary(init_spec_unr_expr::E_LOG2);
-        else if (s == "log10")
-          return makeUnary(init_spec_unr_expr::E_LOG10);
-        else if (s == "sin")
-          return makeUnary(init_spec_unr_expr::E_SIN);
-        else if (s == "cos")
-          return makeUnary(init_spec_unr_expr::E_COS);
-        else if (s == "tan")
-          return makeUnary(init_spec_unr_expr::E_TAN);
-        else if (s == "atan")
-          return makeUnary(init_spec_unr_expr::E_ATAN);
         ///////////////////////////////////////////////////
-        // other expressions (pseudo functions)
+        // special functions (pseudo functions)
         if (s == "seq") {
           p.fatal("parseInitAtomPrim: implement SEQ");
         }
+
+        ///////////////////////////////////////////////////
+        // regular arithmetic functions
+        if (args.size() == 1) {
+          if (s == "fabs")
+            p.fatalAt(loc,"use \"abs\" for the absolute value");
+          else if (s == "sqt")
+            p.fatalAt(loc,"use \"sqrt\" for the square root");
+
+          const auto *op = init_spec_uex::lookup_op(s.c_str());
+          if (!op) {
+            if (init_spec_bex::lookup_op(s.c_str())) {
+              p.fatalAt(loc, "function requires two arguments");
+            } else {
+              p.fatalAt(loc, "not a unary function");
+            }
+          }
+          return new init_spec_uex(loc,*op,args[0]);
+        } else if (args.size() == 2) {
+          const auto *op = init_spec_bex::lookup_op(s.c_str());
+          if (!op) {
+            p.fatalAt(loc, "not a binary function");
+          }
+          auto *isbe = new init_spec_bex(*op,args[0],args[1]);
+          isbe->defined_at = loc; // reset start loc to function name
+          isbe->defined_at.extend_to(p.nextLoc());
+          return isbe;
+        } else {
+          p.fatalAt(loc,"undefined function");
+        }
+
         // fallback
-        p.fatal("undefined function");
         return nullptr; // unreachable
       } // end else not random
     } else {
@@ -163,13 +143,11 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         return new init_spec_float(loc, M_E);
       else if (s == "PI")
         return new init_spec_float(loc, M_PI);
-      // regular symbol
-      //
-      // TODO: support E and PI
+      // some other symbol (may target a LET binding)
       return new init_spec_symbol(loc, s);
     }
   } else if (p.consumeIf(LBRACE)) {
-    // {...,...,...,...}
+    // {...}
     auto re = new init_spec_record(loc);
     if (!p.lookingAt(RBRACE)) {
       re->children.push_back(parseInitAtom(p));
@@ -179,7 +157,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
     p.consume(RBRACE);
     re->defined_at.extend_to(p.nextLoc());
     return re;
-  } else if (p.lookingAt(LPAREN)) {
+  } else if (p.consumeIf(LPAREN)) {
     init_spec_atom *e = parseInitAtom(p);
     p.consume(RPAREN);
     return e;
@@ -192,12 +170,13 @@ static init_spec_atom *parseInitAtomUnr(parser &p)
 {
   if (p.lookingAt(SUB) || p.lookingAt(TILDE)) {
     auto loc = p.nextLoc();
-    auto op =
+    const auto &op =
       p.lookingAt(SUB) ?
-        init_spec_unr_expr::E_NEG : init_spec_unr_expr::E_COMPL;
+        *init_spec_uex::lookup_op("-") :
+        *init_spec_uex::lookup_op("~");
     p.skip();
     init_spec_atom *e = parseInitAtomUnr(p);
-    return new init_spec_unr_expr(loc, op, e);
+    return new init_spec_uex(loc, op, e);
   } else {
     return parseInitAtomPrim(p);
   }
@@ -205,13 +184,14 @@ static init_spec_atom *parseInitAtomUnr(parser &p)
 static init_spec_atom *parseInitAtomMul(parser &p)
 {
   init_spec_atom *e = parseInitAtomUnr(p);
-  while (p.lookingAt(MUL) || p.lookingAt(DIV)) {
-    auto op = p.lookingAt(MUL) ?
-      init_spec_bin_expr::bin_op::E_MUL :
-      init_spec_bin_expr::bin_op::E_DIV;
+  while (p.lookingAt(MUL) || p.lookingAt(DIV) || p.lookingAt(MOD)) {
+    const auto &op =
+      p.lookingAt(MUL) ? *init_spec_bex::lookup_op("*") :
+      p.lookingAt(DIV) ? *init_spec_bex::lookup_op("/") :
+      *init_spec_bex::lookup_op("%");
     p.skip();
     init_spec_atom *t = parseInitAtomUnr(p);
-    e = new init_spec_bin_expr(op, e, t);
+    e = new init_spec_bex(op, e, t);
   }
   return e;
 }
@@ -219,12 +199,12 @@ static init_spec_atom *parseInitAtomAdd(parser &p)
 {
   init_spec_atom *e = parseInitAtomMul(p);
   while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
-    auto op = p.lookingAt(ADD) ?
-      init_spec_bin_expr::bin_op::E_ADD :
-      init_spec_bin_expr::bin_op::E_SUB;
+    const auto &op = p.lookingAt(ADD) ?
+      *init_spec_bex::lookup_op("+") :
+      *init_spec_bex::lookup_op("-");
     p.skip();
     init_spec_atom *t = parseInitAtomMul(p);
-    e = new init_spec_bin_expr(op, e, t);
+    e = new init_spec_bex(op, e, t);
   }
   return e;
 }
@@ -232,12 +212,12 @@ static init_spec_atom *parseInitAtomShift(parser &p)
 {
   init_spec_atom *e = parseInitAtomAdd(p);
   while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
-    auto op = p.lookingAt(LSH) ?
-      init_spec_bin_expr::bin_op::E_LSH :
-      init_spec_bin_expr::bin_op::E_RSH;
+    const auto &op = p.lookingAt(LSH) ?
+      *init_spec_bex::lookup_op("<<") :
+      *init_spec_bex::lookup_op(">>");
     p.skip();
     init_spec_atom *t = parseInitAtomAdd(p);
-    e = new init_spec_bin_expr(op, e, t);
+    e = new init_spec_bex(op, e, t);
   }
   return e;
 }
@@ -246,7 +226,7 @@ static init_spec_atom *parseInitAtomBitwiseAND(parser &p)
   init_spec_atom *e = parseInitAtomShift(p);
   while (p.consumeIf(AMP)) {
     init_spec_atom *t = parseInitAtomShift(p);
-    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_AND, e, t);
+    e = new init_spec_bex(*init_spec_bex::lookup_op("&"), e, t);
   }
   return e;
 }
@@ -255,7 +235,7 @@ static init_spec_atom *parseInitAtomBitwiseXOR(parser &p)
   init_spec_atom *e = parseInitAtomBitwiseAND(p);
   while (p.consumeIf(CIRC)) {
     init_spec_atom *t = parseInitAtomBitwiseAND(p);
-    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_XOR, e, t);
+    e = new init_spec_bex(*init_spec_bex::lookup_op("^"), e, t);
   }
   return e;
 }
@@ -264,7 +244,7 @@ static init_spec_atom *parseInitAtomBitwiseOR(parser &p)
   init_spec_atom *e = parseInitAtomBitwiseXOR(p);
   while (p.consumeIf(PIPE)) {
     init_spec_atom *t = parseInitAtomBitwiseXOR(p);
-    e = new init_spec_bin_expr(init_spec_bin_expr::bin_op::E_OR, e, t);
+    e = new init_spec_bex(*init_spec_bex::lookup_op("|"), e, t);
   }
   return e;
 }

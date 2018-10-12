@@ -388,6 +388,7 @@ void formatBufferElement(
       }
       break;
     case type_num::SIGNED:
+      os << std::dec;
       switch (tn.size()) {
       case 1:
         os << std::setw(4) << read_unaligned<int8_t>(ptr);
@@ -404,6 +405,7 @@ void formatBufferElement(
       }
       break;
     case type_num::UNSIGNED:
+      os << std::hex;
       switch (tn.size()) {
       case 1:
         os << "0x" << std::setw(2) << std::setfill('0') <<
@@ -457,6 +459,7 @@ void formatBufferElement(
     }
     os << "}";
   } else if (std::holds_alternative<type_ptr>(t.var)) {
+    os << std::hex;
     if (std::get<type_ptr>(t.var).size() == 4) {
       os << "0x" << std::setw(8) << std::setfill('0') <<
         read_unaligned<uint32_t>(ptr);

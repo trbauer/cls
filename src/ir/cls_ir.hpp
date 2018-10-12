@@ -3,6 +3,7 @@
 
 #include "../cl_headers.hpp"
 #include "../cls_opts.hpp"
+#include "../half.hpp"
 #include "../fatal.hpp"
 #include "../text.hpp"
 
@@ -31,6 +32,64 @@ namespace cls
     color_span let_var(std::string s) const;
     color_span str_lit(std::string s) const;
   };
+
+  struct val {
+    bool is_f;
+    bool is_u;
+    union {
+      int64_t  s64;
+      uint64_t u64;
+      double   f64;
+    };
+    val() : val((int64_t)0) {}
+    val(int8_t _s) : val((int64_t)_s) {}
+    val(int16_t _s) : val((int64_t)_s) {}
+    val(int32_t _s) : val((int64_t)_s) {}
+    val(int64_t _s64) : s64(_s64), is_f(false), is_u(false) {}
+    val(uint8_t _u) : val((uint64_t)_u) {}
+    val(uint16_t _u) : val((uint64_t)_u) {}
+    val(uint32_t _u) : val((uint64_t)_u) {}
+    val(uint64_t _u64) : u64(_u64), is_f(false), is_u(true) {}
+    val(double _f64) : f64(_f64), is_f(true), is_u(false) {}
+    val(float _f32) : val((double)_f32) {}
+
+    val &operator=(uint64_t _val) {*this = val(_val); return *this;}
+    val &operator=(uint32_t _val) {*this = (uint64_t)_val; return *this;}
+    val &operator=(uint16_t _val) {*this = (uint64_t)_val; return *this;}
+    val &operator=(uint8_t  _val) {*this = (uint64_t)_val; return *this;}
+    val &operator=(int64_t  _val) {*this = val(_val); return *this;}
+    val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
+    val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
+    val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
+    val &operator=(half     _val) {*this = (double)_val; return *this;}
+    val &operator=(float    _val) {*this = (double)_val; return *this;}
+    val &operator=(double   _val) {*this = val(_val); return *this;}
+
+    bool is_float() const {return is_f;}
+    bool is_int() const {return !is_f;}
+    bool is_signed() const {return !is_f && !is_u;}
+    bool is_unsigned() const {return is_u;}
+
+    template <typename T>
+    T as() const
+    {
+      if (std::is_floating_point<T>()) {
+        // * -> {half,float,double}
+        if (is_float())
+          return (T)f64; // double -> ...
+        else if (is_signed())
+          return (T)s64; // int64_t -> ...
+        else // if (is_unsigned())
+          return (T)u64; // uint64_t -> ...
+      } else {
+        // * -> uint{8,16,32,64}_t
+        if (is_float())
+          return (T)f64; // double-> ...
+        return std::is_signed<T>() ?
+          (T)s64 : (T)u64; // {u,}int64-> ...
+      }
+    }
+  }; // val
 
   /////////////////////////////////////////////////////////////////////////////
   // specification of some syntactic form
@@ -120,6 +179,12 @@ namespace cls
       : init_spec_atom(loc, IS_FLT), value(_value) { }
     void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
+  // e.g. {1,2,4,8}
+  struct init_spec_record : init_spec_atom {
+    std::vector<init_spec_atom *> children;
+    init_spec_record(loc loc) : init_spec_atom(loc, IS_REC) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
   // a variable reference (e.g. to a let)
   struct init_spec_symbol : init_spec_atom {
     std::string identifier;
@@ -134,62 +199,53 @@ namespace cls
       BIV_GX = BIV_FIRST,
       BIV_GY,
       BIV_GZ,
-      BIV_GXY,
-      BIV_GXYZ,
       BIV_LX,
       BIV_LY,
       BIV_LZ,
-      BIV_LXY,
-      BIV_LXYZ,
-      BIV_LAST = BIV_LXYZ
+      BIV_LAST = BIV_LZ
     } kind = BIV_INVALID;
     init_spec_builtin(loc loc, biv_kind _kind) :
       init_spec_atom(loc, IS_BIV), kind(_kind) { }
     void str(std::ostream &os, format_opts fopts) const;
     static const char *syntax_for(biv_kind kind);
   };
-  // e.g. {1,2,4,8}
-  struct init_spec_record : init_spec_atom {
-    std::vector<init_spec_atom *> children;
-    init_spec_record(loc loc) : init_spec_atom(loc, IS_REC) { }
-    void str(std::ostream &os, format_opts fopts) const;
-  };
-  struct init_spec_bin_expr : init_spec_atom {
-    init_spec_atom *el = nullptr, *er = nullptr;
-    enum bin_op {
-      EB_INVALID = 0
-    , E_POW, E_MIN, E_MAX, E_GCD, E_LCM
-    , E_OR, E_XOR, E_AND
-    , E_LSH, E_RSH
-    , E_ADD, E_SUB
-    , E_MUL, E_DIV, E_MOD
-    } e_function;
-    init_spec_bin_expr(loc loc) : init_spec_atom(loc, IS_BEX) { }
-    init_spec_bin_expr(bin_op k, init_spec_atom *l, init_spec_atom *r)
-      : init_spec_atom(l->defined_at, IS_BEX), el(l), er(r), e_function(k)
+  struct init_spec_bex : init_spec_atom {
+    struct op_spec {
+      const char              *symbol;
+      int                      precedence; // precedence == 0 implies a function symbol
+      enum {N,R,L}             assoc = N;
+      // std::function<val(fatal_handler *,const val&,const val&)> apply;
+      val (*apply)(fatal_handler *,const loc&,const val&,const val&);
+    };
+    const op_spec &e_op;
+    const init_spec_atom *e_l, *e_r;
+
+    init_spec_bex(const op_spec &_os, init_spec_atom *l, init_spec_atom *r)
+      : init_spec_atom(l->defined_at, IS_BEX), e_op(_os), e_l(l), e_r(r)
     {
       defined_at.extend_past(r->defined_at);
     }
     void str(std::ostream &os, format_opts fopts) const;
+
+    static const op_spec *lookup_op(const char *symbol);
   };
-  struct init_spec_unr_expr : init_spec_atom {
-    init_spec_atom *e = nullptr;
-    enum unr_op {
-      EU_INVALID = 0
-      // operators
-    , E_NEG, E_COMPL
-      // functions
-    , E_ABS
-    , E_SQT
-    , E_EXP, E_LOG, E_LOG2, E_LOG10
-    , E_SIN, E_COS, E_TAN, E_ATAN
-    } e_function;
-    init_spec_unr_expr(loc loc, unr_op op, init_spec_atom *_e)
-      : init_spec_atom(loc, IS_UEX), e(_e), e_function(op)
+
+  struct init_spec_uex : init_spec_atom {
+    struct op_spec {
+      const char     *symbol;
+      int             precedence;
+      val (*apply)(fatal_handler *,const loc&,const val&);
+    };
+    const op_spec &e_op;
+    init_spec_atom *e;
+    init_spec_uex(loc loc, const op_spec &_op, init_spec_atom *_e)
+      : init_spec_atom(loc, IS_UEX), e(_e), e_op(_op)
     {
       defined_at.extend_past(_e->defined_at);
     }
     void str(std::ostream &os, format_opts fopts) const;
+
+    static const op_spec *lookup_op(const char *symbol);
   };
 
   // 'foo.bmp'
@@ -220,8 +276,8 @@ namespace cls
       : init_spec_atom(loc, IS_RND), seed(_seed) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
-  struct init_spec_seq_generator : init_spec_atom {
-    init_spec_seq_generator(loc loc) : init_spec_atom(loc, IS_SEQ) { }
+  struct init_spec_seq : init_spec_atom {
+    init_spec_seq(loc loc) : init_spec_atom(loc, IS_SEQ) { }
     void str(std::ostream &os, format_opts fopts) const {
       os << "seq(TODO)";
     }

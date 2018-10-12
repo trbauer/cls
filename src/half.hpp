@@ -1,4 +1,5 @@
 #ifndef HALF_HPP
+#define HALF_HPP
 
 #include <cstdint>
 #include <ostream>

@@ -34,7 +34,6 @@ private:
   kernel_object &compileKernel(const kernel_spec *ks);
   program_object &compileProgram(const program_spec *ps);
   device_object &createDeviceObject(const device_spec *ds);
-
 };
 
 kernel_object &script_compiler::compileKernel(const kernel_spec *ks)

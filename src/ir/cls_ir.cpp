@@ -2,6 +2,11 @@
 #include "../system.hpp"
 #include "../text.hpp"
 
+#include <cfenv>
+#include <cmath>
+#include <numeric>
+#include <tuple>
+
 using namespace cls;
 using namespace text::spans;
 
@@ -20,16 +25,16 @@ static format_opts::color_span make_colored(
 std::string spec::name() const
 {
   switch (kind) {
-  case spec::STATEMENT_LIST_SPEC: return "statement list";
+  case spec::STATEMENT_LIST_SPEC:  return "statement list";
   case spec::STATEMENT_SPEC:
     switch (((const statement_spec *)this)->kind) {
     case statement_spec::DISPATCH: return "dispatch";
     case statement_spec::LET:      return "let";
-    case statement_spec::BARRIER: return "barrier";
-    case statement_spec::DIFF:    return "diff";
-    case statement_spec::SAVE:    return "save";
-    case statement_spec::PRINT:   return "print";
-    default: return "unknown statement";
+    case statement_spec::BARRIER:  return "barrier";
+    case statement_spec::DIFF:     return "diff";
+    case statement_spec::SAVE:     return "save";
+    case statement_spec::PRINT:    return "print";
+    default:                       return "unknown statement";
     }
   case spec::INIT_SPEC:
     switch (((const init_spec *)this)->kind) {
@@ -44,12 +49,12 @@ std::string spec::name() const
     case init_spec::IS_RND: return "random value initializer";
     case init_spec::IS_SEQ: return "sequence initializer";
     case init_spec::IS_MEM: return "memory initializer";
-    default: return "unknown initializer";
+    default:                return "unknown initializer";
     }
   case spec::DEVICE_SPEC:  return "device";
   case spec::PROGRAM_SPEC: return "program";
   case spec::KERNEL_SPEC:  return "kernel";
-  default: return "unknown syntax";
+  default:                 return "unknown syntax";
   }
 }
 
@@ -200,11 +205,11 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_FLT: fmt(os, fopts, (const init_spec_float         *)this); break;
   case IS_BIV: fmt(os, fopts, (const init_spec_builtin       *)this); break;
   case IS_REC: fmt(os, fopts, (const init_spec_record        *)this); break;
-  case IS_BEX: fmt(os, fopts, (const init_spec_bin_expr      *)this); break;
-  case IS_UEX: fmt(os, fopts, (const init_spec_unr_expr      *)this); break;
+  case IS_BEX: fmt(os, fopts, (const init_spec_bex           *)this); break;
+  case IS_UEX: fmt(os, fopts, (const init_spec_uex           *)this); break;
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
-  case IS_RND: fmt(os, fopts, (const init_spec_rng *)this); break;
-  case IS_SEQ: fmt(os, fopts, (const init_spec_seq_generator *)this); break;
+  case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
+  case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_memory        *)this); break;
   default: os << "init_spec?"; break;
   }
@@ -220,13 +225,13 @@ const char *init_spec_builtin::syntax_for(biv_kind kind)
   case BIV_GX:   return "g.x";
   case BIV_GY:   return "g.y";
   case BIV_GZ:   return "g.z";
-  case BIV_GXY:  return "g.xy";
-  case BIV_GXYZ: return "g.xyz";
+  // case BIV_GXY:  return "g.xy"; // use g.x*g.y
+  // case BIV_GXYZ: return "g.xyz";
   case BIV_LX:   return "l.x";
   case BIV_LY:   return "l.y";
   case BIV_LZ:   return "l.z";
-  case BIV_LXY:  return "l.xy";
-  case BIV_LXYZ: return "l.xyz";
+  // case BIV_LXY:  return "l.xy";
+  // case BIV_LXYZ: return "l.xyz";
   default:       return "?biv?";
   }
 }
@@ -244,63 +249,429 @@ void init_spec_record::str(std::ostream &os, format_opts fopts) const {
   os << "}";
 }
 
-void init_spec_bin_expr::str(std::ostream &os, format_opts fopts) const
+
+#if 0
+static
+val apply(fatal_handler *,const val &vl, const val &vr)
 {
-  auto fmtFunc = [&] (const char *name) {
-    os << name << "("; fmt(os, fopts, el); os <<
-      ", "; fmt(os, fopts, er); os << ")";
-  };
-  switch (e_function) {
-  // function syntax
-  case init_spec_bin_expr::E_POW: fmtFunc("pow"); break;
-  case init_spec_bin_expr::E_MIN: fmtFunc("min"); break;
-  case init_spec_bin_expr::E_MAX: fmtFunc("max"); break;
-  case init_spec_bin_expr::E_GCD: fmtFunc("gcd"); break;
-  case init_spec_bin_expr::E_LCM: fmtFunc("lcm"); break;
-  default:
-   // infix operators
-    fmt(os, fopts, el);
-    switch (e_function) {
-    case init_spec_bin_expr::E_OR:   os << "|"; break;
-    case init_spec_bin_expr::E_XOR:  os << "^"; break;
-    case init_spec_bin_expr::E_AND:  os << "&"; break;
-    case init_spec_bin_expr::E_LSH:  os << "<<"; break;
-    case init_spec_bin_expr::E_RSH:  os << ">>"; break;
-    case init_spec_bin_expr::E_ADD:  os << "+"; break;
-    case init_spec_bin_expr::E_SUB:  os << "-"; break;
-    case init_spec_bin_expr::E_MUL:  os << "*"; break;
-    case init_spec_bin_expr::E_DIV:  os << "/"; break;
-    case init_spec_bin_expr::E_MOD:  os << "%"; break;
-    default: os << "?binop?"; break;
+  if (vl.is_float() || vr.is_float()) {
+    return F1(vl.as<double>(),vr.as<double>());
+  } else if (vl.is_signed() || vr.is_signed()) {
+    return F2(vl.as<int64_t>(),vr.as<int64_t>());
+  } else {
+    return F3(vl.as<uint64_t>(),vr.as<uint64_t>());
+  }
+}
+template <
+  double (*FD)(double,double),
+  int64_t (*FS)(int64_t,int64_t),
+  uint64_t (*FU)(uint64_t,uint64_t)>
+static
+val apply(fatal_handler *,const val &vl, const val &vr)
+{
+  return val(0);
+}
+
+#define FSU_FUNC(ID) apply<ID<double>,ID<int64_t>,ID<uint64_t>>
+
+template <
+  double (*FD)(double,double)>
+static
+val applyX(fatal_handler *,const val &vl, const val &vr)
+{
+  return val(0);
+}
+
+template <double (*F)(double,double)>
+static void apply() {
+  F(1.0,2.0);
+}
+template <const double &(*F)(const double &,const double &)>
+static void applyRef() {
+  F(1.0,2.0);
+}
+template <double (*F)(std::initializer_list<double> il)>
+static void applyInit() {
+  F(1.0,2.0);
+}
+
+double minD(double,double) {return 0.0;}
+void test()
+{
+  auto x1 = apply<minD>();
+  // auto x2 = apply<std::min<double>>(); // FAILS
+  applyRef<std::min<const double &>>(); // FAILS
+  applyInit<std::min<double>>();
+//  std::min<double>(x);
+}
+
+#endif
+// I couldn't get this to work with templates :(
+// I sort of got it to work, but the template deduction and function
+// conversion is too complex
+#define BIN_OP(F) \
+  static val apply_ ## F (fatal_handler *,const loc &,const val &vl,const val &vr) {\
+    if (vl.is_float() || vr.is_float()) {\
+      return std:: F (vl.as<double>(),vr.as<double>());\
+    } else if (vl.is_signed() || vr.is_signed()) {\
+      return std:: F (vl.as<int64_t>(),vr.as<int64_t>());\
+    } else {\
+      return std:: F (vl.as<uint64_t>(),vr.as<uint64_t>());\
+    }\
+  }
+#define BIN_OP_INFIX(SYM,OP) \
+  static val apply_ ## SYM (fatal_handler *,const loc &,const val &vl,const val &vr) {\
+    if (vl.is_float() || vr.is_float()) {\
+      return (vl.as<double>() OP vr.as<double>());\
+    } else if (vl.is_signed() || vr.is_signed()) {\
+      return (vl.as<int64_t>() OP vr.as<int64_t>());\
+    } else {\
+      return (vl.as<uint64_t>() OP vr.as<uint64_t>());\
+    }\
+  }
+
+#define BIN_OP_INTEGRAL(F) \
+  static val apply_ ## F (fatal_handler *fh,const loc &at,const val &vl,const val &vr) {\
+    if (vl.is_float() || vr.is_float()) {\
+      fh->fatalAt(at,"function/operator requires integral arguments");\
+      return val(0);\
+    } else if (vl.is_signed() || vr.is_signed()) {\
+      return std:: F (vl.as<int64_t>(),vr.as<int64_t>());\
+    } else {\
+      return std:: F (vl.as<uint64_t>(),vr.as<uint64_t>());\
+    }\
+  }
+#define BIN_OP_INFIX_INTEGRAL(SYM,OP) \
+  static val apply_ ## SYM (fatal_handler *fh,const loc &at,const val &vl,const val &vr) {\
+    if (vl.is_float() || vr.is_float()) {\
+      fh->fatalAt(at,"function/operator requires integral arguments");\
+      return val(0);\
+    } else if (vl.is_signed() || vr.is_signed()) {\
+      return (vl.as<int64_t>() OP vr.as<int64_t>());\
+    } else {\
+      return (vl.as<uint64_t>() OP vr.as<uint64_t>());\
+    }\
+  }
+
+static val apply_pow(fatal_handler *,const loc &,const val &vl, const val &vr)
+{
+  if (vl.is_float()) {
+    if (vr.is_float()) {
+      return std::pow(vl.as<double>(),vr.as<double>());
+    } else {
+      return std::pow(vl.as<double>(),vr.as<int64_t>());
     }
-    fmt(os, fopts, er);
+  } else if (vr.is_signed()) {
+    return std::pow(vl.as<int64_t>(),vr.as<int64_t>());
+  } else {
+    return std::pow(vl.as<uint64_t>(),vr.as<uint64_t>());
+  }
+}
+static val apply_div(fatal_handler *fh,const loc &at,const val &vl, const val &vr)
+{
+  if (vl.is_float() || vr.is_float()) {
+    return vl.as<double>() / vr.as<double>();
+  } else if (vr.s64 == 0) {
+    fh->fatalAt(at,"division by 0");
+  } else if (vl.is_signed() || vr.is_signed()) {
+    return vl.as<int64_t>() / vr.as<int64_t>();
+  } else {
+    return vl.as<uint64_t>() / vr.as<uint64_t>();
+  }
+}
+static val apply_mod(fatal_handler *fh,const loc &at,const val &vl, const val &vr)
+{
+  if (vl.is_float() || vr.is_float()) {
+    return std::fmod(vl.as<double>(),vr.as<double>());
+  } else if (vr.s64 == 0) {
+    fh->fatalAt(at,"division by 0");
+  } else if (vl.is_signed() || vr.is_signed()) {
+    return vl.as<int64_t>() % vr.as<int64_t>();
+  } else {
+    return vl.as<uint64_t>() % vr.as<uint64_t>();
   }
 }
 
-void init_spec_unr_expr::str(std::ostream &os, format_opts fopts) const
+BIN_OP(fmod)
+//
+BIN_OP(fdim)
+BIN_OP(hypot)
+BIN_OP(atan2)
+// BIN_OP(pow) is manual
+BIN_OP(min)
+BIN_OP(max)
+BIN_OP_INTEGRAL(gcd)
+BIN_OP_INTEGRAL(lcm)
+//
+BIN_OP_INFIX_INTEGRAL(ior,|)
+BIN_OP_INFIX_INTEGRAL(xor,^)
+BIN_OP_INFIX_INTEGRAL(and,&)
+BIN_OP_INFIX_INTEGRAL(lsh,<<)
+BIN_OP_INFIX_INTEGRAL(rsh,>>)
+//
+BIN_OP_INFIX(add,+)
+BIN_OP_INFIX(sub,-)
+BIN_OP_INFIX(mul,*)
+// BIN_OP(div) is manual (check division by 0)
+// BIN_OP(mod) is manual (check division by 0)
+//
+
+const static init_spec_bex::op_spec BIN_FUNCS[] {
+  {"fmod", 0, init_spec_bex::op_spec::N, apply_fmod},
+  //
+  {"atan2", 0, init_spec_bex::op_spec::N, apply_atan2},
+  {"fdim", 0, init_spec_bex::op_spec::N, apply_fdim},
+  {"hypot", 0, init_spec_bex::op_spec::N, apply_hypot},
+  //
+  {"pow", 0, init_spec_bex::op_spec::N, apply_pow},
+  {"min", 0, init_spec_bex::op_spec::N, apply_min},
+  {"max", 0, init_spec_bex::op_spec::N, apply_max},
+  {"gcd", 0, init_spec_bex::op_spec::N, apply_gcd},
+  {"lcm", 0, init_spec_bex::op_spec::N, apply_lcm},
+  //
+  //
+  {"|",   5, init_spec_bex::op_spec::N, apply_ior},
+  //
+  {"^",   6, init_spec_bex::op_spec::N, apply_xor},
+  //
+  {"&",   7, init_spec_bex::op_spec::N, apply_and},
+  //
+  {">>",  8, init_spec_bex::op_spec::N, apply_rsh},
+  {"<<",  8, init_spec_bex::op_spec::N, apply_lsh},
+  //
+  {"+",   9, init_spec_bex::op_spec::N, apply_add},
+  {"-",   9, init_spec_bex::op_spec::N, apply_sub},
+  //
+  {"*",  10, init_spec_bex::op_spec::N, apply_mul},
+  {"/",  10, init_spec_bex::op_spec::N, apply_div},
+  {"%",  10, init_spec_bex::op_spec::N, apply_mod},
+};
+
+
+const init_spec_bex::op_spec *init_spec_bex::lookup_op(const char *symbol)
 {
-  auto unaryFunction = [&] (const char *sym) {
-    os << sym << "("; fmt(os, fopts, e); os << ")";
-  };
-  switch (e_function) {
-  case init_spec_unr_expr::E_NEG: os << "-"; fmt(os, fopts, e); break;
-  case init_spec_unr_expr::E_COMPL: os << "~"; fmt(os, fopts, e); break;
-  case init_spec_unr_expr::E_ABS: unaryFunction("abs"); break;
-
-  case init_spec_unr_expr::E_SQT: unaryFunction("sqt"); break;
-
-  case init_spec_unr_expr::E_EXP: unaryFunction("exp"); break;
-  case init_spec_unr_expr::E_LOG: unaryFunction("log"); break;
-  case init_spec_unr_expr::E_LOG2: unaryFunction("log2"); break;
-  case init_spec_unr_expr::E_LOG10: unaryFunction("log10"); break;
-
-  case init_spec_unr_expr::E_SIN: unaryFunction("sin"); break;
-  case init_spec_unr_expr::E_COS: unaryFunction("cos"); break;
-  case init_spec_unr_expr::E_TAN: unaryFunction("tan"); break;
-  case init_spec_unr_expr::E_ATAN: unaryFunction("atan"); break;
-
-  default: os << "?unop?"; fmt(os, fopts, e); break;
+  for (const auto &bos : BIN_FUNCS) {
+    if (text::streq(bos.symbol,symbol)) {
+      return &bos;
+    }
   }
+  return nullptr;
+}
+
+
+void init_spec_bex::str(std::ostream &os, format_opts fopts) const
+{
+  if (e_op.precedence == 0) {
+    os << e_op.symbol << "("; fmt(os, fopts, e_l); os <<
+      ", "; fmt(os, fopts, e_r); os << ")";
+  } else {
+    auto fmtWithPrec =
+      [&](const init_spec *e) {
+        if (e->kind == init_spec::IS_BEX &&
+          ((const init_spec_bex *)e)->e_op.precedence > e_op.precedence)
+        {
+          os << "(";
+          fmt(os, fopts, e);
+          os << ")";
+        } else {
+          fmt(os, fopts, e);
+        }
+      };
+    fmtWithPrec(e_l);
+    os << e_op.symbol;
+    fmtWithPrec(e_r);
+  }
+}
+
+
+void init_spec_uex::str(std::ostream &os, format_opts fopts) const
+{
+  if (e_op.precedence == 0 || e->kind == init_spec::IS_BEX) {
+    os << e_op.symbol << "(";
+    fmt(os, fopts, e);
+    os << ")";
+  } else {
+    os << e_op.symbol;
+    fmt(os, fopts, e);
+  }
+}
+
+#define UNR_OP(F) \
+  static val apply_ ## F (fatal_handler *,const loc &,const val &v) {\
+    if (v.is_float()) {\
+      return std:: F (v.as<double>());\
+    } else if (v.is_signed()) {\
+      return std:: F (v.as<int64_t>());\
+    } else {\
+      return std:: F (v.as<uint64_t>());\
+    }\
+  }
+#define UNR_OP_FLOAT(F) \
+  static val apply_ ## F (fatal_handler *,const loc &,const val &v) {\
+    return std:: F (v.as<double>());\
+  }
+
+static val apply_float(fatal_handler *,const loc &,const val &v) {
+  return v.as<double>();
+}
+static val apply_signed(fatal_handler *,const loc &,const val &v) {
+  return v.as<int64_t>();
+}
+static val apply_unsigned(fatal_handler *,const loc &,const val &v) {
+  return v.as<uint64_t>();
+}
+static val apply_abs(fatal_handler *,const loc &,const val &v) {
+  if (v.is_float()) {
+    return std::abs(v.as<double>());
+  } else if (v.is_signed()) {
+    return std::abs(v.as<int64_t>());
+  } else {
+    return v.as<uint64_t>();
+  }
+}
+
+UNR_OP_FLOAT(fabs)
+UNR_OP_FLOAT(sqrt)
+UNR_OP_FLOAT(cbrt)
+UNR_OP_FLOAT(exp)
+UNR_OP_FLOAT(exp2)
+UNR_OP_FLOAT(expm1)
+UNR_OP_FLOAT(log)
+UNR_OP_FLOAT(log2)
+UNR_OP_FLOAT(log10)
+UNR_OP_FLOAT(log1p)
+UNR_OP_FLOAT(sin)
+UNR_OP_FLOAT(cos)
+UNR_OP_FLOAT(tan)
+UNR_OP_FLOAT(asin)
+UNR_OP_FLOAT(acos)
+UNR_OP_FLOAT(atan)
+UNR_OP_FLOAT(sinh)
+UNR_OP_FLOAT(cosh)
+UNR_OP_FLOAT(tanh)
+UNR_OP_FLOAT(asinh)
+UNR_OP_FLOAT(acosh)
+UNR_OP_FLOAT(atanh)
+//
+UNR_OP_FLOAT(erf)
+UNR_OP_FLOAT(erfc)
+UNR_OP_FLOAT(tgamma)
+UNR_OP_FLOAT(lgamma)
+//
+UNR_OP_FLOAT(ceil)
+UNR_OP_FLOAT(floor)
+UNR_OP_FLOAT(trunc)
+UNR_OP_FLOAT(round)
+static val apply_llround(fatal_handler *,const loc &,const val &v) {
+  if (v.is_float()) {
+    return std::llround(v.as<double>());
+  } else if (v.is_signed()) {
+    return v.as<int64_t>();
+  } else {
+    return v.as<uint64_t>();
+  }
+}
+static val apply_nearbyint(fatal_handler *fh,const loc &at,const val &v) {
+  return  std::nearbyint(v.as<double>());
+}
+template<int mode>
+static val apply_nearbyint_by(fatal_handler *fh,const loc &at,const val &v) {
+  auto old_mode = std::fegetround();
+  if (old_mode < 0) {
+    fh->fatalAt(at,"cannot determine old rounding mode");
+  }
+  double d = std::nearbyint(v.as<double>());
+  if (std::fesetround(old_mode) != 0)
+    fh->fatalAt(at,"cannot restore old rounding mode");
+  return d;
+}
+#define UNR_OP_FLOAT_BOOL(F) \
+  static val apply_ ## F (fatal_handler *fh,const loc &at,const val &v) { \
+    if (v.is_float()) { \
+      return std:: F (v.as<double>()) ? 1 : 0; \
+    } else { \
+      fh->fatalAt(at, "floating point input required"); \
+    } \
+  }
+
+UNR_OP_FLOAT_BOOL(isfinite)
+UNR_OP_FLOAT_BOOL(isinf)
+UNR_OP_FLOAT_BOOL(isnan)
+UNR_OP_FLOAT_BOOL(isnormal)
+
+// https://en.cppreference.com/w/cpp/numeric/math
+const static init_spec_uex::op_spec UNR_FUNCS[] {
+  // type conversions
+  {"float",    0, apply_float},
+  {"int",      0, apply_signed},
+  {"signed",   0, apply_signed},
+  {"unsigned", 0, apply_unsigned},
+  //
+  {"fabs",     0, apply_fabs},
+  {"abs",      0, apply_abs},
+  //
+  {"sqrt",     0, apply_sqrt},
+  {"cbrt",     0, apply_cbrt},
+  //
+  {"exp",      0, apply_exp},
+  {"exp2",     0, apply_exp2},
+  {"expm1",    0, apply_expm1},
+  {"log",      0, apply_log},
+  {"log2",     0, apply_log2},
+  {"log10",    0, apply_log10},
+  {"log1p",    0, apply_log1p},
+  //
+  {"sin",      0, apply_sin},
+  {"cos",      0, apply_cos},
+  {"tan",      0, apply_tan},
+  {"asin",     0, apply_asin},
+  {"acos",     0, apply_acos},
+  {"atan",     0, apply_atan},
+  //
+  {"sinh",     0, apply_sinh},
+  {"cosh",     0, apply_cosh},
+  {"tanh",     0, apply_tanh},
+  {"asinh",    0, apply_asinh},
+  {"acosh",    0, apply_acosh},
+  {"atanh",    0, apply_atanh},
+  //
+  {"erf",      0, apply_erf},
+  {"erfc",     0, apply_erfc},
+  {"tgamma",   0, apply_tgamma},
+  {"lgamma",   0, apply_lgamma},
+  //
+  {"ceil",     0, apply_ceil},
+  {"floor",    0, apply_floor},
+  {"trunc",    0, apply_trunc},
+  {"round",    0, apply_round},
+  {"lround",   0, apply_llround},
+  {"llround",  0, apply_llround},
+  {"llround",  0, apply_llround},
+
+  {"nearbyint",      0, apply_nearbyint},
+  {"nearbyint_rde",  0, apply_nearbyint_by<FE_TONEAREST>},
+  {"nearbyint_rdd",  0, apply_nearbyint_by<FE_DOWNWARD>},
+  {"nearbyint_rdu",  0, apply_nearbyint_by<FE_UPWARD>},
+  {"nearbyint_rtz",  0, apply_nearbyint_by<FE_TOWARDZERO>},
+
+  {"isfinite",  0, apply_isfinite},
+  {"isinf",     0, apply_isinf},
+  {"isnan",     0, apply_isnan},
+  {"isnormal",  0, apply_isnormal},
+
+  /////////////////////////////
+  //
+  {"-",        1, nullptr},
+  {"~",        1, nullptr},
+};
+
+const init_spec_uex::op_spec *init_spec_uex::lookup_op(const char *symbol)
+{
+  for (const init_spec_uex::op_spec &op : UNR_FUNCS) {
+    if (streq(symbol,op.symbol))
+      return &op;
+  }
+  return nullptr;
 }
 
 void init_spec_rng::str(std::ostream &os, format_opts fopts) const
@@ -371,5 +742,3 @@ void let_spec::str(std::ostream &os, format_opts fopts) const {
   os << " = ";
   value->str(os,fopts);
 }
-
-

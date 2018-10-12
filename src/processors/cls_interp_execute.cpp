@@ -92,8 +92,8 @@ static void fill_buffer_rng_loop_int(
   const init_spec_rng *isr,
   std::mt19937 &g)
 {
-  evaluator::val v_lo = (T)0;
-  evaluator::val v_hi = std::numeric_limits<T>::max();
+  val v_lo = (T)0;
+  val v_hi = std::numeric_limits<T>::max();
   if (isr->e_lo) {
     v_lo = e->evalTo<T>(ec, isr->e_lo);
   }
@@ -117,8 +117,8 @@ static void fill_buffer_rng_loop_flt(
   const init_spec_rng *isr,
   std::mt19937 &g)
 {
-  evaluator::val v_lo = 0.0;
-  evaluator::val v_hi = 1.0;
+  val v_lo = 0.0;
+  val v_hi = 1.0;
   if (isr->e_hi) {
     v_hi = e->evalToF(ec, isr->e_hi);
     if (isr->e_lo) {

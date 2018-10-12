@@ -108,7 +108,7 @@ If extra context needed:
 [0-9]+\.[0-9]+([eE][-+]?[0-9]+)?  return cls::lexemes::FLTLIT;
 [0-9]+[eE][-+]?[0-9]+  return cls::lexemes::FLTLIT;
 
-[1-9][0-9]*(x[1-9][0-9]*) return cls::lexemes::DIMENSION;
+[1-9][0-9]*(x[1-9][0-9]*)* return cls::lexemes::DIMENSION;
 
 \n                     { return cls::lexemes::NEWLINE; }
 [ \t\r]+               { inp_off += (unsigned)yyget_leng(yyscanner); } /* whitespace */;
