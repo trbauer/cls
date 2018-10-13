@@ -139,7 +139,7 @@ struct dispatch_command {
   using surf_arg =
     std::tuple<
       loc,
-      cls::k::type_ptr,
+      cls::type_ptr,
       surface_object*>;
 
   // we replicate this because ds can be null and reqd size may be set

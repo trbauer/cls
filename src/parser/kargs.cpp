@@ -2,6 +2,7 @@
 #include "parser.hpp"
 #include "../cl_headers.hpp"
 #include "../half.hpp"
+#include "../ir/types.hpp"
 #include "../devices.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
@@ -20,6 +21,7 @@ namespace fs = std::experimental::filesystem;
 using namespace cls::k;
 using namespace cls;
 
+/*
 struct child_a {
   int x;
 //  child_a(int _x) : x(_x) { }
@@ -37,100 +39,7 @@ struct example {
   constexpr example(const char *_name, child_b b) : name(_name), v(b) { }
 };
 constexpr static example X{"foo",child_b("foo",3)};
-
-
-#define CAT2(X,Y) X ## Y
-#define CAT(X,Y) CAT2(X,Y)
-
-#define DEFINE_PRIM_TYPE_VEC(N,IDENT,NAME,CATEGORY,SIZE) \
-  constexpr static type_struct ST_ ## IDENT ## N{NAME #N,SIZE,&IDENT,N}; \
-  constexpr static type IDENT ## N{ST_ ## IDENT ## N};
-
-#define DEFINE_PRIM_TYPE(IDENT,NAME,CATEGORY,SIZE) \
-  constexpr static type IDENT{type_num{NAME,type_num::CATEGORY,SIZE}}; \
-  DEFINE_PRIM_TYPE_VEC(2,IDENT,NAME,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(3,IDENT,NAME,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(4,IDENT,NAME,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(8,IDENT,NAME,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(16,IDENT,NAME,CATEGORY,SIZE)
-
-/*
-DEFINE_PRIM_TYPE(CHAR,"char",SIGNED,1);
-constexpr static type_struct ST_CHAR2{"char2",sizeof(char),&CHAR,2};
-constexpr static type CHAR2{ST_CHAR2};
-DEFINE_PRIM_TYPE(INT,"int",SIGNED,4);
 */
-
-DEFINE_PRIM_TYPE(HALF,   "half",   FLOATING, 2);
-DEFINE_PRIM_TYPE(FLOAT,  "float",  FLOATING, 4);
-DEFINE_PRIM_TYPE(DOUBLE, "double", FLOATING, 8);
-
-DEFINE_PRIM_TYPE( CHAR,  "char",     SIGNED, 1);
-DEFINE_PRIM_TYPE(UCHAR,  "uchar",  UNSIGNED, 1);
-DEFINE_PRIM_TYPE( SHORT, "short",    SIGNED, 2);
-DEFINE_PRIM_TYPE(USHORT, "ushort", UNSIGNED, 2);
-DEFINE_PRIM_TYPE( INT,   "int",      SIGNED, 4);
-DEFINE_PRIM_TYPE(UINT,   "uint",   UNSIGNED, 4);
-DEFINE_PRIM_TYPE( LONG,  "long",     SIGNED, 8);
-DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
-
-// constexpr static type FLOAT{type_num{"float",type_num::FLOATING,4}};
-// constexpr static type_struct ST_FLOAT2{"float2",sizeof(float),&FLOAT,2};
-// constexpr static type FLOAT2{ST_FLOAT2};
-// ...
-
-
-// constexpr static type CHAR{type_num("char",type_num::SIGNED,1)};
-// constexpr static type_struct TS2 = type_struct{&CHAR};
-// constexpr static type CHAR2{TS2};
-
-static const type *lookupPrimtiveType(std::string name)
-{
-  // normalize primitive names (e.g. unsigned int -> uint)
-  if (name == "signed") {
-    name = "int";
-  } else if (name == "unsigned") {
-    name = "uint";
-  } else {
-    auto pos = name.find(' ');
-    if (pos != std::string::npos) {
-      auto tk1 = name.substr(0,pos);
-      auto tk2 = name.substr(pos);
-      if (tk2 == "char" || tk2 == "short" || tk2 == "int" || tk2 == "long") {
-        if (tk1 == "signed") {
-          name = tk2;
-        } else if (tk1 == "unsigned") {
-          name = "u" + tk2; //
-        }
-      }
-    }
-  }
-
-#define MATCH_PRIM_TYPE(T_ID,T_STR) \
-  do { \
-    if (name == (T_STR)) return &(T_ID); \
-    if (name == (T_STR "2")) return &(CAT(T_ID,2)); \
-    if (name == (T_STR "3")) return &(CAT(T_ID,3)); \
-    if (name == (T_STR "4")) return &(CAT(T_ID,4)); \
-    if (name == (T_STR "8")) return &(CAT(T_ID,8)); \
-    if (name == (T_STR "16")) return &(CAT(T_ID,16)); \
-  } while (0)
-
-  MATCH_PRIM_TYPE(HALF,"half");
-  MATCH_PRIM_TYPE(FLOAT,"float");
-  MATCH_PRIM_TYPE(DOUBLE,"double");
-
-  MATCH_PRIM_TYPE(INT,"char");
-  MATCH_PRIM_TYPE(UINT,"uchar");
-  MATCH_PRIM_TYPE(SHORT,"short");
-  MATCH_PRIM_TYPE(USHORT,"ushort");
-  MATCH_PRIM_TYPE(INT,"int");
-  MATCH_PRIM_TYPE(UINT,"uint");
-  MATCH_PRIM_TYPE(LONG,"long");
-  MATCH_PRIM_TYPE(ULONG,"ulong");
-
-  return nullptr;
-}
 
 
 struct karg_parser : cls::parser
@@ -223,6 +132,7 @@ struct karg_parser : cls::parser
       if (lookingAtIdentEq("char") || lookingAtIdentEq("short") ||
         lookingAtIdentEq("int") || lookingAtIdentEq("long"))
       {
+        // e.g. unsigned int
         type_name += ' ';
         type_name += consumeIdent("type");
       }
@@ -230,9 +140,9 @@ struct karg_parser : cls::parser
     auto t = lookupPrimtiveType(type_name);
     if (t == nullptr) {
       if (type_name == "size_t" || type_name == "uintptr_t")
-        t = (bytes_per_addr == 4) ? &UINT : &ULONG;
+        t = lookupPrimtiveType(bytes_per_addr == 4 ? "uint" : "ulong");
       else if (type_name == "intptr_t" || type_name == "ptrdiff_t")
-        t = (bytes_per_addr == 4) ? &INT : &LONG;
+        t = lookupPrimtiveType(bytes_per_addr == 4 ? "int" : "long");
       else
         fatalAt(type_loc,"unrecognized type");
     }
@@ -351,162 +261,5 @@ cls::k::program_info cls::k::parseProgramInfo(
     return parseProgramInfoBinary(os, fh, at, src.path);
   } else {
     return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
-  }
-}
-
-template <typename T>
-static T read_unaligned(const void *buf)
-{
-  T val;
-  memcpy(&val,buf,sizeof(val));
-  return val;
-}
-
-void formatBufferElement(
-  std::ostream &os,
-  const type &t,
-  const void *ptr)
-{
-  if (std::holds_alternative<type_num>(t.var)) {
-    type_num tn = std::get<type_num>(t.var);
-    switch (tn.kind) {
-    case type_num::FLOATING:
-      switch (tn.size()) {
-      case 2:
-        os << std::setw(8) << std::fixed << std::setprecision(3) <<
-          (float)(read_unaligned<half>(ptr));
-        break;
-      case 4:
-        // std::numeric_limits<float>::digits10()
-        os << std::setw(10) << std::fixed << std::setprecision(5) <<
-          read_unaligned<float>(ptr);
-        break;
-      case 8:
-        os << std::setw(12) << std::fixed << std::setprecision(8) <<
-          read_unaligned<double>(ptr);
-        break;
-      }
-      break;
-    case type_num::SIGNED:
-      os << std::dec;
-      switch (tn.size()) {
-      case 1:
-        os << std::setw(4) << read_unaligned<int8_t>(ptr);
-        break;
-      case 2:
-        os << std::setw(6) << read_unaligned<int16_t>(ptr);
-        break;
-      case 4:
-        os << std::setw(12) << read_unaligned<int32_t>(ptr);
-        break;
-      case 8:
-        os << std::setw(22) << read_unaligned<int64_t>(ptr);
-        break;
-      }
-      break;
-    case type_num::UNSIGNED:
-      os << std::hex;
-      switch (tn.size()) {
-      case 1:
-        os << "0x" << std::setw(2) << std::setfill('0') <<
-          read_unaligned<uint8_t>(ptr);
-        break;
-      case 2:
-        os << "0x" << std::setw(4) << std::setfill('0') <<
-          read_unaligned<uint16_t>(ptr);
-        break;
-      case 4:
-        os << "0x" << std::setw(8) << std::setfill('0') <<
-          read_unaligned<uint32_t>(ptr);
-        break;
-      case 8:
-        os << "0x" << std::setw(16) << std::setfill('0') <<
-          read_unaligned<uint64_t>(ptr);
-        break;
-      }
-      break;
-    }
-  // } else if (std::holds_alternative<type_enum>(t.var)) {
-    // type_enum te = std::get<type_enum>(t.var);
-    // ss << std::setw(12) << read_unaligned<int32_t>(ptr);
-  } else if (std::holds_alternative<type_builtin>(t.var)) {
-    const type_builtin &tbi = std::get<type_builtin>(t.var);
-    if (std::get<type_ptr>(t.var).size() == 4) {
-      os << "0x" << std::setw(8) << std::setfill('0') <<
-        read_unaligned<uint32_t>(ptr);
-    } else {
-      os << "0x" << std::setw(16) << std::setfill('0') <<
-        read_unaligned<uint64_t>(ptr);
-    }
-  } else if (std::holds_alternative<type_struct>(t.var)) {
-    const type_struct &ts = std::get<type_struct>(t.var);
-    os << "{";
-    const uint8_t *struct_ptr = (const uint8_t *)ptr;
-    for (size_t i = 0; i < ts.elements_length; i++) {
-      if (i > 0)
-        os << ",";
-      formatBufferElement(os, *ts.elements[i], struct_ptr);
-      struct_ptr += ts.elements[i]->size();
-    }
-    os << "}";
-  } else if (std::holds_alternative<type_union>(t.var)) {
-    const type_union &tu = std::get<type_union>(t.var);
-    os << "{";
-    for (size_t i = 0; i < tu.elements_length; i++) {
-      if (i > 0)
-        os << "|";
-      formatBufferElement(os, *tu.elements[i], ptr);
-    }
-    os << "}";
-  } else if (std::holds_alternative<type_ptr>(t.var)) {
-    os << std::hex;
-    if (std::get<type_ptr>(t.var).size() == 4) {
-      os << "0x" << std::setw(8) << std::setfill('0') <<
-        read_unaligned<uint32_t>(ptr);
-    } else {
-      os << "0x" << std::setw(16) << std::setfill('0') <<
-        read_unaligned<uint64_t>(ptr);
-    }
-  } else {
-    os << "formatBufferElement<" << t.syntax() << ">?";
-  }
-}
-
-void cls::k::formatBuffer(
-  std::ostream &os,
-  const void *buffer,
-  size_t buffer_length_in_bytes,
-  const type &buffer_type)
-{
-  const size_t max_cols = sys::get_terminal_width();
-  size_t curr_col = 1;
-  const uint8_t *base = (const uint8_t *)buffer;
-  const uint8_t *curr = base;
-
-  auto startNewLine = [&] {
-    os << std::setw(5) << std::setfill('0') << std::hex << (curr - base);
-    os << ": ";
-    curr_col = 7;
-  };
-  auto fmtElem = [&] (const type &t) {
-    std::stringstream ss;
-    formatBufferElement(ss, t, curr);
-    if (curr_col + ss.tellp() > max_cols) {
-      startNewLine();
-    }
-    os << ss.str();
-    curr += t.size();
-  };
-
-  if (std::holds_alternative<type_ptr>(buffer_type.var)) {
-    while (curr < base + buffer_length_in_bytes) {
-      if (curr_col > max_cols) {
-        os << "\n";
-        startNewLine();
-      }
-      fmtElem(*std::get<type_ptr>(buffer_type.var).element_type);
-    }
-  } else {
-    fmtElem(buffer_type);
   }
 }
