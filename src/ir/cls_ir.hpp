@@ -287,7 +287,7 @@ namespace cls
   // memory initializers (buffers and images)
   //
   // e.g. "0:w", "file.bmp:rw", or "binary.buf:r"
-  struct init_spec_memory : init_spec {
+  struct init_spec_mem : init_spec {
     init_spec_atom    *root = nullptr; // 0x44
 
     init_spec_atom *dimension = nullptr; // optional dimension expression: e.g. [g.x]
@@ -312,7 +312,7 @@ namespace cls
 
     bool print_pre = false, print_post = false;
 
-    init_spec_memory(loc loc) : init_spec(loc,IS_MEM) { }
+    init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
 
     void str(std::ostream &os, format_opts fopts) const;
   };
@@ -404,19 +404,30 @@ namespace cls
       : spec(ps->defined_at,spec::KERNEL_SPEC), program(ps) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
-  struct dim {
-    loc                       defined_at;
-    std::vector<size_t>       dims; // empty means use nullptr or reqd wg sz
+  struct ndr {
+    size_t num_dims;
+    size_t dims[3];
 
-    size_t total_size() const {
-      size_t p = 1; for (size_t d : dims) {p *= d;}; return p;
-    }
-    void str(std::ostream &os, format_opts fopts) const;
+    ndr();
+    ndr(size_t x);
+    ndr(size_t x, size_t y);
+    ndr(size_t x, size_t y, size_t z);
+    // ndr(const ndr &) = default;
+
+    const size_t *get() const {return dims;}
+
+    size_t rank() const {return num_dims;}
+    size_t product() const;
+
+    std::string str() const;
+    void        str(std::ostream &os) const;
   };
   struct dispatch_spec : statement_spec {
     refable<kernel_spec*>                               kernel;
-    dim                                                 global_size;
-    dim                                                 local_size;
+    ndr                                                 global_size;
+    loc                                                 global_size_loc;
+    ndr                                                 local_size;
+    loc                                                 local_size_loc;
     std::vector<refable<init_spec*>>                    arguments;
     std::vector<std::tuple<std::string,init_spec*>>     where_bindings;
 
@@ -449,17 +460,13 @@ namespace cls
     barrier_spec(loc loc) : statement_spec(loc, statement_spec::BARRIER) { }
     void str(std::ostream &os,format_opts fopts) const {os << "barrier";}
   };
-  // diff(REF,SUT)
+  // diff(REF,SUT) => exits the program non-zero if there is a difference
   struct diff_spec : statement_spec {
-    init_spec *ref;
-    init_spec_symbol *sut;
-    diff_spec(loc loc, init_spec *_ref, init_spec_symbol *_sut)
+    init_spec                    *ref;
+    refable<init_spec_mem *>      sut;
+    diff_spec(loc loc, init_spec *_ref, refable<init_spec_mem *> &_sut)
       : statement_spec(loc, statement_spec::DIFF), ref(_ref), sut(_sut) { }
-    void str(std::ostream &os,format_opts fopts) const {
-      os << "diff(";
-      ref->str(os,fopts); os << ","; sut->str(os,fopts);
-      os << ")";
-    }
+    void str(std::ostream &os,format_opts fopts) const;
   };
   // print(X)
   struct print_spec : statement_spec {

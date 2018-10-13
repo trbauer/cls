@@ -140,11 +140,10 @@ void statement_spec::str(std::ostream &os, format_opts fopts) const {
   case DISPATCH: ((const dispatch_spec*)this)->str(os,fopts); break;
   case LET:      ((const let_spec     *)this)->str(os,fopts); break;
   case BARRIER:  ((const barrier_spec *)this)->str(os,fopts); break;
-  case SAVE:
-  case PRINT:
-  default:
-    os << "statement_spec???";
-    break;
+  case DIFF:     ((const diff_spec    *)this)->str(os,fopts); break;
+  case SAVE:     ((const save_spec    *)this)->str(os,fopts); break;
+  case PRINT:    ((const print_spec   *)this)->str(os,fopts); break;
+  default:       os << "statement_spec???"; break;
   }
 }
 
@@ -173,26 +172,26 @@ void program_spec::str(std::ostream &os, format_opts fopts) const {
     os << "[" << build_options << "]";
 }
 
-void init_spec_memory::str(std::ostream &os, format_opts fopts) const {
+void init_spec_mem::str(std::ostream &os, format_opts fopts) const {
   fmt(os, fopts, root);
   os << ":";
   if (dimension) {
     os << "["; dimension->str(os,fopts); os << "]";
   }
-  if (access_properties & init_spec_memory::INIT_SPEC_MEM_READ)
+  if (access_properties & init_spec_mem::INIT_SPEC_MEM_READ)
     os << 'r';
-  if (access_properties & init_spec_memory::INIT_SPEC_MEM_WRITE)
+  if (access_properties & init_spec_mem::INIT_SPEC_MEM_WRITE)
     os << 'w';
 //  if (access_properties & init_spec_memory::INIT_SPEC_MEM_DIRECT)
 //    os << 'd'; // direct access (SVM)
   // SPECIFY: do we allow for a default
-  if (transfer_properties == init_spec_memory::TX_MAP)
+  if (transfer_properties == init_spec_mem::TX_MAP)
     os << 'm';
-  if (transfer_properties == init_spec_memory::TX_COPY)
+  if (transfer_properties == init_spec_mem::TX_COPY)
     os << 'c';
-  if (transfer_properties == init_spec_memory::TX_SVM_COARSE)
+  if (transfer_properties == init_spec_mem::TX_SVM_COARSE)
     os << 's';
-  if (transfer_properties == init_spec_memory::TX_SVM_FINE)
+  if (transfer_properties == init_spec_mem::TX_SVM_FINE)
     os << 's' << 'f';
 
 }
@@ -210,7 +209,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
-  case IS_MEM: fmt(os, fopts, (const init_spec_memory        *)this); break;
+  case IS_MEM: fmt(os, fopts, (const init_spec_mem        *)this); break;
   default: os << "init_spec?"; break;
   }
 }
@@ -530,6 +529,25 @@ static val apply_abs(fatal_handler *,const loc &,const val &v) {
   }
 }
 
+static val apply_negate(fatal_handler *,const loc &,const val &v) {
+  if (v.is_float()) {
+    return -v.as<double>();
+  } else if (v.is_signed()) {
+    return -v.as<int64_t>();
+  } else {
+    return v.as<uint64_t>();
+  }
+}
+static val apply_complement(fatal_handler *fh,const loc &at,const val &v) {
+  if (v.is_float()) {
+    fh->fatalAt(at,"~ requires integer argument");
+  } else if (v.is_signed()) {
+    return ~v.as<int64_t>();
+  } else {
+    return ~v.as<uint64_t>();
+  }
+}
+
 UNR_OP_FLOAT(fabs)
 UNR_OP_FLOAT(sqrt)
 UNR_OP_FLOAT(cbrt)
@@ -661,8 +679,8 @@ const static init_spec_uex::op_spec UNR_FUNCS[] {
 
   /////////////////////////////
   //
-  {"-",        1, nullptr},
-  {"~",        1, nullptr},
+  {"-",        1, apply_negate},
+  {"~",        1, apply_complement},
 };
 
 const init_spec_uex::op_spec *init_spec_uex::lookup_op(const char *symbol)
@@ -696,21 +714,50 @@ void kernel_spec::str(std::ostream &os, format_opts fopts) const {
   os << "`" <<  name;
 }
 
-void dim::str(std::ostream &os, format_opts fopts) const {
-  bool first = true;
-  for (size_t d : dims) {
-    if (first) first = false; else os << "x";
-    os << d;
+ndr::ndr() {
+  dims[0] = 0; dims[1] = 0; dims[2] = 0;
+  num_dims = 0;
+}
+ndr::ndr(size_t x) {
+  dims[0] = x; dims[1] = 0; dims[2] = 0;
+  num_dims = 1;
+}
+ndr::ndr(size_t x, size_t y) {
+  dims[0] = x; dims[1] = y; dims[2] = 0;
+  num_dims = 2;
+}
+ndr::ndr(size_t x, size_t y, size_t z)  {
+  dims[0] = x; dims[1] = y; dims[2] = z;
+  num_dims = 3;
+}
+
+std::string ndr::str() const {
+  std::stringstream ss;
+  str(ss);
+  return ss.str();
+}
+
+void ndr::str(std::ostream &os) const {
+  for (int i = 0; i < sizeof(dims)/sizeof(dims[0]) && dims[i] != 0; i++) {
+    if (i > 0) os << "x";
+    os << dims[i];
   }
+}
+
+size_t ndr::product() const {
+  size_t p = 1;
+  for (int i = 0; i < sizeof(dims)/sizeof(dims[0]) && dims[i] != 0; i++)
+    p *= dims[i];
+  return p;
 }
 
 void dispatch_spec::str(std::ostream &os, format_opts fopts) const {
   kernel.str(os,fopts);
   os << "<";
-  global_size.str(os,fopts);
-  if (!local_size.dims.empty()) {
+  global_size.str(os);
+  if (local_size.rank() > 0) {
     os << ",";
-    local_size.str(os,fopts);
+    local_size.str(os);
   }
   os << ">";
   os << "(";
@@ -741,4 +788,8 @@ void let_spec::str(std::ostream &os, format_opts fopts) const {
   }
   os << " = ";
   value->str(os,fopts);
+}
+
+void diff_spec::str(std::ostream &os,format_opts fopts) const  {
+  os << "diff("; ref->str(os,fopts); os << ","; sut.str(os,fopts); os << ")";
 }

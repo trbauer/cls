@@ -260,7 +260,7 @@ static init_spec *parseInit(parser &p)
 
   if (p.consumeIf(COLON)) {
     // memory initializer
-    init_spec_memory *m = new init_spec_memory(l);
+    init_spec_mem *m = new init_spec_mem(l);
     m->root = e;
     if (p.consumeIf(LBRACK)) {
       init_spec_atom *de = parseInitAtom(p);
@@ -274,8 +274,8 @@ static init_spec *parseInit(parser &p)
     auto s = p.tokenString();
     p.skip();
     for (size_t i = 0; i < s.size(); i++) {
-      auto setTx = [&] (init_spec_memory::transfer t) {
-        if (m->transfer_properties != init_spec_memory::transfer::TX_INVALID) {
+      auto setTx = [&] (init_spec_mem::transfer t) {
+        if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID) {
           p.fatalAt(l, "memory transfer respecification");
         }
         m->transfer_properties = t;
@@ -283,14 +283,14 @@ static init_spec *parseInit(parser &p)
 
       switch (s[i]) {
       case 'r':
-        m->access_properties = (init_spec_memory::access)(
+        m->access_properties = (init_spec_mem::access)(
           m->access_properties |
-          init_spec_memory::access::INIT_SPEC_MEM_READ);
+          init_spec_mem::access::INIT_SPEC_MEM_READ);
         break;
       case 'w':
-        m->access_properties = (init_spec_memory::access)(
+        m->access_properties = (init_spec_mem::access)(
           m->access_properties |
-          init_spec_memory::access::INIT_SPEC_MEM_WRITE);
+          init_spec_mem::access::INIT_SPEC_MEM_WRITE);
         break;
       case 's': // SVM
         if (i < s.size() - 1) {
@@ -298,24 +298,24 @@ static init_spec *parseInit(parser &p)
           switch (s[i]) {
           case 'c':
           case 'f':
-            if (m->transfer_properties != init_spec_memory::transfer::TX_INVALID)
+            if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID)
               p.fatalAt(l, "invalid svm memory attribute (must be :..sc.. or :..sf..)");
             setTx(s[i] == 'c' ?
-              init_spec_memory::transfer::TX_SVM_COARSE :
-              init_spec_memory::transfer::TX_SVM_FINE);
+              init_spec_mem::transfer::TX_SVM_COARSE :
+              init_spec_mem::transfer::TX_SVM_FINE);
             break;
           default:
             // p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
             // assume coarse if only one char given
-            setTx(init_spec_memory::transfer::TX_SVM_COARSE);
+            setTx(init_spec_mem::transfer::TX_SVM_COARSE);
           }
         }
         break;
       case 'm':
-        setTx(init_spec_memory::transfer::TX_MAP);
+        setTx(init_spec_mem::transfer::TX_MAP);
         break;
       case 'c':
-        setTx(init_spec_memory::transfer::TX_COPY);
+        setTx(init_spec_mem::transfer::TX_COPY);
         break;
       // SPECIFY: do we consider deprecating these after stable development
       //          they are certainly nice for debugging
@@ -331,8 +331,8 @@ static init_spec *parseInit(parser &p)
         p.fatalAt(l, "invalid memory attribute");
       }
     }
-    if (m->transfer_properties == init_spec_memory::transfer::TX_INVALID)
-      m->transfer_properties = init_spec_memory::transfer::TX_COPY; // default to copy
+    if (m->transfer_properties == init_spec_mem::transfer::TX_INVALID)
+      m->transfer_properties = init_spec_mem::transfer::TX_COPY; // default to copy
     m->defined_at.extend_to(p.nextLoc());
     return m;
   } else {
@@ -340,7 +340,6 @@ static init_spec *parseInit(parser &p)
     return e;
   }
 }
-
 
 template <typename T>
 static refable<T*> dereferenceLet(
@@ -363,8 +362,24 @@ static refable<T*> dereferenceLet(
     ss << " (defined on line " << rs->defined_at.line << ")";
     p.fatalAt(loc,ss.str());
   }
-  return refable<T*>((T *)rs);
+  return refable<T*>(loc,name,(T *)rs);
 }
+
+static refable<init_spec_mem*> dereferenceLetMem(
+  parser &p,
+  script &s)
+{
+  refable<init_spec*> rf =
+    dereferenceLet<init_spec>(p, s, spec::INIT_SPEC, "memory object");
+  if (rf.value->kind != init_spec::IS_MEM) {
+    p.fatalAt(rf.defined_at,"identifier does not reference a memory object");
+  }
+  return refable<init_spec_mem*>(
+    rf.defined_at,
+    rf.identifier,
+    (init_spec_mem*)rf.value);
+}
+
 
 // Three full forms
 // Full form:                   #1`path/foo.cl`kernel<128,16>(...)
@@ -382,9 +397,10 @@ static void parseDispatchStatementDimensions(
   // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
   //                      ^^^^^^^^^^^^^^^^^
   if (p.consumeIf(LANGLE)) {
-    auto parseDim = [&] (bool allow_null) {
-      dim d;
-      d.defined_at = p.nextLoc();
+    auto parseDim = [&] (bool allow_null, loc &loc_ref) {
+      ndr d;
+      loc_ref = p.nextLoc();
+      std::vector<size_t> ds;
       if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL")) {
         if (!allow_null)
           p.fatal(p.tokenString(), " not allowed here");
@@ -392,10 +408,10 @@ static void parseDispatchStatementDimensions(
       } else if (p.lookingAtInt()) {
         // 1024 x 768
         // 0x200 x 0x100
-        d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
+        ds.push_back((size_t)p.consumeInt("dimension (int)"));
         while (p.lookingAtIdentEq("x")) {
           p.skip();
-          d.dims.push_back((size_t)p.consumeInt("dimension (int)"));
+          ds.push_back((size_t)p.consumeInt("dimension (int)"));
         }
       } else if (p.lookingAt(DIMENSION)) {
         // 1024x768
@@ -411,20 +427,33 @@ static void parseDispatchStatementDimensions(
           }
           return val;
         };
-        d.dims.push_back(parseDimCoord());
+        ds.push_back(parseDimCoord());
         while (s_off < s.size() && s[s_off] == 'x') {
           s_off++;
-          d.dims.push_back(parseDimCoord());
+          ds.push_back(parseDimCoord());
         }
         p.skip();
       } else {
         p.fatal("expected dimension");
       }
+
+      loc_ref.extend_to(p.nextLoc());
+      if (ds.size() == 0) {
+        d = ndr();
+      } else if (ds.size() == 1) {
+        d = ndr(ds[0]);
+      } else if (ds.size() == 2) {
+        d = ndr(ds[0],ds[1]);
+      } else if (ds.size() == 3) {
+        d = ndr(ds[0],ds[1],ds[2]);
+      } else {
+        p.fatal("dimension is too large");
+      }
       return d;
-    };
-    ds.global_size = parseDim(false);
+    }; // parseDim
+    ds.global_size = parseDim(false, ds.global_size_loc);
     if (p.consumeIf(COMMA)) {
-      ds.local_size = parseDim(true);
+      ds.local_size = parseDim(true, ds.local_size_loc);
     }
     p.consume(RANGLE);
   } // end dimension part <...>
@@ -712,15 +741,20 @@ static bool parseBuiltIn(parser &p, script &s)
       p.skip();
       if (p.consumeIf(LPAREN)) // optional ()
         p.consume(RPAREN);
+    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
     return true;
   } else if (p.lookingAtIdentEq("diff")) {
     p.skip();
     p.consume(LPAREN);
     auto *ref = parseInit(p);
     p.consume(COMMA);
-    init_spec_symbol *sut = parseSymbol(p);
-    s.statement_list.statements.push_back(new diff_spec(loc, ref, sut));
+    if (!p.lookingAt(IDENT))
+      p.fatal("expected reference to memory object");
+    refable<init_spec_mem*> r_sut = dereferenceLetMem(p, s);
+    s.statement_list.statements.push_back(new diff_spec(loc, ref, r_sut));
+    // delete sut;
     p.consume(RPAREN);
+    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
     return true;
   } else if (p.lookingAtIdentEq("print")) {
     p.skip();
@@ -728,6 +762,7 @@ static bool parseBuiltIn(parser &p, script &s)
     init_spec_symbol *val = parseSymbol(p);
     s.statement_list.statements.push_back(new print_spec(loc, val));
     p.consume(RPAREN);
+    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
     return true;
   } else if (p.lookingAtIdentEq("save")) {
     p.skip();
@@ -738,6 +773,7 @@ static bool parseBuiltIn(parser &p, script &s)
     init_spec_symbol *val = parseSymbol(p);
     s.statement_list.statements.push_back(new save_spec(loc, file, val));
     p.consume(RPAREN);
+    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
     return true;
   } else {
     return false;

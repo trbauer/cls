@@ -133,7 +133,9 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   // program_object &po = eitr.first->second;
 
   if (!sys::file_exists(ps->path)) {
-    fatalAt(ps->defined_at, "file not found");
+    loc at = ps->defined_at;
+    at.extent = (uint32_t)ps->path.size();
+    fatalAt(at, "file not found");
   }
   bool is_bin =
     strsfx(".bin",ps->path) ||
@@ -338,42 +340,20 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
   kernel_object &ko = compileKernel(ds->kernel);
   dispatch_command &dc = csi->dispatches.emplace_back(ds,ds,&ko);
 
-  const auto &gsz = ds->global_size.dims;
-  switch (gsz.size()) {
-  case 1: dc.global_size = cl::NDRange(gsz[0]);               break;
-  case 2: dc.global_size = cl::NDRange(gsz[0],gsz[1]);        break;
-  case 3: dc.global_size = cl::NDRange(gsz[0],gsz[1],gsz[2]); break;
-  default:
-    fatalAt(
-      ds->global_size.defined_at,
-      "global rank (dimension) too large (must be <=3)");
-  }
-
-  const auto &lsz = ds->local_size.dims;
-  if (lsz.size() > 0 && gsz.size() != lsz.size()) {
-    fatalAt(ds->local_size.defined_at,
+  if (ds->local_size.rank() > 0 && ds->global_size.rank() != ds->local_size.rank()) {
+    fatalAt(ds->local_size_loc,
       "local rank doesn't match global rank (dimensions)");
   }
-  switch (lsz.size()) {
-  case 0: { // auto size
+  if (ds->local_size.rank() != 0) {
     const size_t *rqsz = ko.kernel_info->reqd_word_group_size;
-    if (rqsz[0] == 0 && rqsz[1] == 0 && rqsz[2] == 0) {
-      dc.local_size = cl::NullRange;
-    } else {
-      switch (gsz.size()) {
-      case 1: dc.local_size = cl::NDRange(rqsz[0]);                 break;
-      case 2: dc.local_size = cl::NDRange(rqsz[0],rqsz[1]);         break;
-      case 3: dc.local_size = cl::NDRange(rqsz[0],rqsz[1],rqsz[2]); break;
+    if (rqsz[0] != 0 && rqsz[1] != 0 && rqsz[2] != 0) {
+      switch (dc.global_size.rank()) {
+      case 1: dc.local_size = ndr(rqsz[0]);                 break;
+      case 2: dc.local_size = ndr(rqsz[0],rqsz[1]);         break;
+      case 3: dc.local_size = ndr(rqsz[0],rqsz[1],rqsz[2]); break;
       }
     }
-    break;
   }
-  case 1: dc.local_size = cl::NDRange(lsz[0]);               break;
-  case 2: dc.local_size = cl::NDRange(lsz[0],lsz[1]);        break;
-  case 3: dc.local_size = cl::NDRange(lsz[0],lsz[1],lsz[2]); break;
-  default:
-    fatalAt(ds->local_size.defined_at, "local rank too large (must be <=3)");
-  } // local size
 }
 
 void script_compiler::compile()
@@ -418,11 +398,16 @@ void script_compiler::compile()
           csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);
         }
         dc.evaluated_args.push_back(ss.str());
-
       } // for kernel args
-    } else if (st->kind == statement_spec::LET) {
-      const let_spec *ls = (const let_spec *)st;
-      fatalAt(ls->defined_at, "NOT IMPLEMENTED");
+      csi->instructions.emplace_back(&dc);
+    } else if (st->kind == statement_spec::DIFF) {
+      diff_spec *ds = (diff_spec *)st;
+      surface_object *so = &csi->surfaces.get(ds->sut.value);
+      diff_command *dc = new diff_command(ds,so);
+      csi->instructions.emplace_back(dc);
+//    } else if (st->kind == statement_spec::LET) {
+//      const let_spec *ls = (const let_spec *)st;
+//      // fatalAt(ls->defined_at, "NOT IMPLEMENTED");
     }
   }
 }

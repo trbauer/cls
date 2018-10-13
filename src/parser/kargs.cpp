@@ -274,7 +274,7 @@ static cls::k::program_info parseProgramInfoText(
   std::stringstream ss;
   size_t off = src.build_opts.find("-D",0);
   while (off < src.build_opts.size()) {
-    if (ss.gcount() != 0) // is this right?
+    if (ss.tellp() != 0) // separate arguments
       ss << " ";
 
     // consume the -D option

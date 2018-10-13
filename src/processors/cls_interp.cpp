@@ -42,26 +42,22 @@ val evaluator::eval(
   } // end case IS_UEX:
   case init_spec::IS_BIV: {
     auto computeDim =
-      [&](const cl::NDRange &ndr, int dim_ix, int dim_len) {
-        if (dim_ix + dim_len > ndr.dimensions())
-          fatalAt(
-            e->defined_at,
+      [&] (const ndr &ndr, int dim_ix) {
+        if (dim_ix > ndr.rank())
+          fatalAt(e->defined_at,
             &ndr == &ec.global_size ? "global" : "local",
             " dimension size is out of bounds for this dispatch");
-        size_t prod = 1;
-        for (int ix = dim_ix; ix < dim_ix + dim_len; ix++)
-          prod *= ndr.get()[ix];
-        return val(prod);
+        return ndr.get()[dim_ix];
       };
     switch (((const init_spec_builtin *)e)->kind) {
-    case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0, 1);
-    case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1, 1);
-    case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2, 1);
+    case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0);
+    case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1);
+    case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2);
     // case init_spec_builtin::BIV_GXY:  return computeDim(ec.global_size, 0, 2);
     // case init_spec_builtin::BIV_GXYZ: return computeDim(ec.global_size, 0, 3);
-    case init_spec_builtin::BIV_LX:   return computeDim(ec.local_size,  0, 1);
-    case init_spec_builtin::BIV_LY:   return computeDim(ec.local_size,  1, 1);
-    case init_spec_builtin::BIV_LZ:   return computeDim(ec.local_size,  2, 1);
+    case init_spec_builtin::BIV_LX:   return computeDim(ec.local_size,  0);
+    case init_spec_builtin::BIV_LY:   return computeDim(ec.local_size,  1);
+    case init_spec_builtin::BIV_LZ:   return computeDim(ec.local_size,  2);
     // case init_spec_builtin::BIV_LXY:  return computeDim(ec.local_size,  0, 2);
     // case init_spec_builtin::BIV_LXYZ: return computeDim(ec.local_size,  0, 3);
     default: fatalAt(e->defined_at,"unsupported built-in variable");
@@ -146,7 +142,7 @@ static size_t computeBufferSize(
   evaluator *e,
   dispatch_command &dc,
   const type &elem_type,
-  const init_spec_memory *ism)
+  const init_spec_mem *ism)
 {
   if (ism->dimension) {
     return (size_t)e->evalTo<size_t>(
@@ -154,11 +150,7 @@ static size_t computeBufferSize(
         dc.global_size,
         dc.local_size), ism->dimension).u64;
   } else {
-    size_t prod = 1;
-    for (size_t i = 0; i < dc.global_size.dimensions(); i++) {
-      prod *= dc.global_size.get()[i];
-    }
-    return prod*elem_type.size();
+    return dc.global_size.product() * elem_type.size();
   }
 }
 
@@ -173,8 +165,8 @@ void evaluator::setKernelArgMemobj(
   if (((const init_spec *)ris)->kind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at,"expected surface initializer");
   }
-  const init_spec_memory *ism =
-    (const init_spec_memory *)(const init_spec *)ris;
+  const init_spec_mem *ism =
+    (const init_spec_mem *)(const init_spec *)ris;
   if (!std::holds_alternative<type_ptr>(ai.type.var)) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
@@ -195,9 +187,9 @@ void evaluator::setKernelArgMemobj(
   } else {
     // creating a new surface
     bool is_r =
-      (ism->access_properties & init_spec_memory::INIT_SPEC_MEM_READ);
+      (ism->access_properties & init_spec_mem::INIT_SPEC_MEM_READ);
     bool is_w =
-      (ism->access_properties & init_spec_memory::INIT_SPEC_MEM_WRITE);
+      (ism->access_properties & init_spec_mem::INIT_SPEC_MEM_WRITE);
     cl_mem_flags cl_mfs = 0;
     if (is_r && is_w) {
       cl_mfs |= CL_MEM_READ_WRITE;
@@ -220,7 +212,8 @@ void evaluator::setKernelArgMemobj(
       surface_object::SO_BUFFER,
       buffer_size,
       memobj,
-      (int)csi->surfaces.size());
+      (int)csi->surfaces.size(),
+      (*dc.dobj->queue)());
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
 

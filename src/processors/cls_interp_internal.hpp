@@ -105,22 +105,25 @@ struct surface_object {
     SO_IMAGE
   } kind;
 
-  const init_spec_memory   *spec;
+  const init_spec_mem   *spec;
   size_t                    size_in_bytes;
   cl_mem                    memobj = nullptr;
   int                       memobj_index;
+  cl_command_queue          queue = nullptr;
 
   surface_object(
-    const init_spec_memory *_spec,
+    const init_spec_mem *_spec,
     enum surface_object::kind _kind,
     size_t _size_in_bytes,
     cl_mem _mem,
-    int _memobj_index)
+    int _memobj_index,
+    cl_command_queue _queue)
     : kind(_kind)
     , spec(_spec)
     , size_in_bytes(_size_in_bytes)
     , memobj(_mem)
     , memobj_index(_memobj_index)
+    , queue(_queue)
   { }
 };
 
@@ -138,21 +141,26 @@ struct dispatch_command {
       loc,
       cls::k::type_ptr,
       surface_object*>;
+
+  // we replicate this because ds can be null and reqd size may be set
+  ndr                                              global_size, local_size;
+
   std::vector<surf_arg>                            inits; // the surfaces we have to re-initialize
   std::vector<std::string>                         evaluated_args;
 
   sampler                                          wall_times;
   sampler                                          prof_times;
 
-  // this is unique to the dispatch
-  cl::NDRange local_size = cl::NullRange;
-  cl::NDRange global_size;
 
   dispatch_command(const dispatch_spec *_ds, kernel_object *_kernel)
-    : ds(_ds), kernel(_kernel), dobj(_kernel->program->device) { }
-  size_t pointer_size() const {
-    return kernel->program->device->pointer_size;
+    : ds(_ds), kernel(_kernel)
+    , dobj(_kernel->program->device)
+    , global_size(ds->global_size)
+    , local_size(ds->local_size)
+  {
   }
+
+  size_t pointer_size() const {return kernel->program->device->pointer_size;}
 
   std::string str() const {
     std::stringstream ss;
@@ -162,9 +170,14 @@ struct dispatch_command {
     cl_program p = (*kernel->program->program)();
     ss << p << "`" << (*kernel->kernel)();
     ss << "<";
-    ss << fmtNDRange(global_size);
-    ss << ",";
-    ss << fmtNDRange(local_size);
+    if (ds) {
+      ss << global_size.str();
+      if (local_size.rank() > 0) {
+        ss << ",";
+        ss << local_size.str();
+      }
+    } else {
+    }
     ss << ">";
     ss << "(";
     size_t next_so = 0;
@@ -177,6 +190,9 @@ struct dispatch_command {
     return ss.str();
   }
 };
+
+
+
 
 template <typename K,typename V>
 struct mapped_objects {
@@ -266,6 +282,25 @@ struct interp_fatal_handler : cl_fatal_handler {
   }
 };
 
+struct diff_command {
+  diff_spec                 *spec;
+  surface_object            *so;
+  diff_command(diff_spec *_spec, surface_object *_so)
+    : spec(_spec), so(_so)
+  {
+  }
+};
+
+struct script_instruction {
+  enum {DISPATCH,DIFF} kind;
+  union {
+    dispatch_command *dsc;
+    diff_command     *dfc;
+  };
+  script_instruction(dispatch_command *_dc) : dsc(_dc), kind(DISPATCH) { }
+  script_instruction(diff_command *_dc) : dfc(_dc), kind(DIFF) { }
+};
+
 struct compiled_script_impl : interp_fatal_handler {
   const script                                           &s;
   struct evaluator                                       *e;
@@ -275,12 +310,15 @@ struct compiled_script_impl : interp_fatal_handler {
   mapped_objects<const program_spec*,program_object>      programs;
   mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
-  mapped_objects<const init_spec_memory*,surface_object>  surfaces;
+  mapped_objects<const init_spec_mem*,surface_object>  surfaces;
+
+  std::vector<script_instruction>                         instructions;
 
   compiled_script_impl(const opts &_os,const script &_s);
 
   void init_surfaces(dispatch_command &dc);
   void execute(dispatch_command &dc);
+  void execute(diff_command &dc);
 };
 
 // A buffer that we can write values to for kernel arguments.
@@ -300,7 +338,10 @@ struct arg_buffer : fatal_handler {
   }
   // e.g. writing to a mapped buffer
   arg_buffer(const fatal_handler *_fh, loc _arg_loc, void *ptr, size_t cap)
-    : fatal_handler(_fh->input()), arg_loc(_arg_loc), base((uint8_t *)ptr), capacity(cap)
+    : fatal_handler(_fh->input())
+    , arg_loc(_arg_loc)
+    , base((uint8_t *)ptr)
+    , capacity(cap)
   {
     curr = base;
     owns_memory = false;
@@ -339,12 +380,9 @@ struct arg_buffer : fatal_handler {
 
 struct evaluator : interp_fatal_handler {
   struct context {
-    const cl::NDRange &global_size;
-    const cl::NDRange &local_size;
-    context(
-      const cl::NDRange &gs,
-      const cl::NDRange &ls,
-      std::stringstream *dss = nullptr)
+    const ndr &global_size;
+    const ndr &local_size;
+    context(const ndr &gs, const ndr &ls, std::stringstream *dss = nullptr)
       : global_size(gs), local_size(ls), debug_stream(dss) { }
 
     std::stringstream *debug_stream;
@@ -492,24 +530,5 @@ struct evaluator : interp_fatal_handler {
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_ptr &tp); // for SVM?
-
-  /*
-  void genArg(
-    arg_buffer &ab,
-    const init_spec *is,
-    const type &t);
-  void genArg(
-    arg_buffer &ab,
-    const init_spec *is,
-    const type_num &tn);
-  void genArg(
-    arg_buffer &ab,
-    const init_spec *is,
-    const type_struct &ts);
-  void genArg(
-    arg_buffer &ab,
-    const init_spec *is,
-    const type_ptr &tp); // for SVM?
-    */
 };
 

@@ -7,13 +7,26 @@ void compiled_script::execute(int)
 {
   compiled_script_impl *csi = (compiled_script_impl *)impl;
   csi->os.debug() << "compiled_script::execute\n";
-  for (dispatch_command *dc : csi->dispatches) {
-    csi->os.verbose() << "EXECUTING  => " << dc->ds->spec::str() << "\n";
-    csi->os.verbose() << "              " << dc->str() << "\n";
-
-    csi->init_surfaces(*dc);
-
-    csi->execute(*dc);
+  for (script_instruction &si : csi->instructions) {
+    switch (si.kind) {
+    case script_instruction::DISPATCH: {
+      dispatch_command *dc = si.dsc;
+      csi->os.verbose() << "EXECUTING  => " << dc->ds->spec::str() << "\n";
+      csi->os.verbose() << "              " << dc->str() << "\n";
+      csi->init_surfaces(*dc);
+      csi->execute(*dc);
+      break;
+    }
+    case script_instruction::DIFF: {
+      diff_command *dfc = (diff_command *)si.dfc;
+      csi->os.verbose() << "EXECUTING  => " << dfc->spec->spec::str() << "\n";
+      csi->execute(*dfc);
+      break;
+    }
+    default:
+      std::cerr << "UNSUPPORTED INSTRUCTION!\n";
+      exit(1);
+    }
   }
 }
 
@@ -319,10 +332,10 @@ void compiled_script_impl::execute(dispatch_command &dc)
   CL_COMMAND(dc_at,clEnqueueNDRangeKernel,
     cq,
     krn,
-    (cl_uint)dc.global_size.dimensions(),
+    (cl_uint)dc.global_size.rank(),
     nullptr, // global offset
     dc.global_size.get(),
-    dc.local_size.dimensions() > 0 ? dc.local_size.get() : nullptr,
+    dc.local_size.rank() > 0 ? dc.local_size.get() : nullptr,
     0,
     nullptr,
     &enq_evt);
@@ -362,9 +375,32 @@ void compiled_script_impl::execute(dispatch_command &dc)
         });
     }
   }
-
   CL_COMMAND(dc_at,clFinish,cq);
 }
+
+void compiled_script_impl::execute(diff_command &dc)
+{
+  evaluator::context ec{ndr(),ndr()};
+  if (!dc.spec->ref->is_atom()) {
+    fatalAt(dc.spec->defined_at,"only atoms supported as reference argument");
+  }
+  val v = e->eval(ec,(const init_spec_atom *)dc.spec->ref);
+  if (v.s64 != 0) {
+    fatalAt(dc.spec->defined_at,"only 0 is supported as reference argument");
+  }
+  withBufferMapRead(
+    dc.spec->defined_at,
+    dc.so->queue,
+    dc.so,
+    [&] (const void *ptr) {
+      const char *buf = (char *)ptr;
+      for (size_t i = 0; i < dc.so->size_in_bytes; i++)
+        if (buf[i] != 0)
+          fatalAt(dc.spec->defined_at,"memory object is not 0");
+    });
+}
+
+
 
 void cl_fatal_handler::withBufferMapRead(
   loc at,
