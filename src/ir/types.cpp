@@ -148,6 +148,7 @@ void cls::formatBuffer(
   int elems_per_row)
 {
   const size_t max_cols = sys::get_terminal_width();
+  bool is_os_tty = sys::is_tty(os);
   const uint8_t *base = (const uint8_t *)buffer;
   const uint8_t *curr = base;
 
@@ -166,7 +167,7 @@ void cls::formatBuffer(
     ss << "  ";
     formatBufferElement(ss, elem_type, curr);
     if (elems_per_row > 0 && elems_on_row == elems_per_row ||
-      curr_col + ss.tellp() >= max_cols)
+      is_os_tty && curr_col + ss.tellp() >= max_cols)
     {
       os << "\n";
       startNewLine();

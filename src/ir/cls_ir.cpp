@@ -708,6 +708,20 @@ void init_spec_rng::str(std::ostream &os, format_opts fopts) const
   }
 }
 
+void init_spec_seq::str(std::ostream &os, format_opts fopts) const
+{
+  os << "seq";
+  if (base) {
+    os << "(";
+    base->str(os,fopts);
+    if (delta) {
+      os << ",";
+      delta->str(os,fopts);
+    }
+    os << ")";
+  }
+}
+
 void kernel_spec::str(std::ostream &os, format_opts fopts) const {
   program.str(os,fopts);
   os << "`" <<  name;

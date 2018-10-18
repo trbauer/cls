@@ -255,17 +255,17 @@ void evaluator::setKernelArgSLM(
 
 void evaluator::evalInto(
   context &ec,
-  const loc &arg_loc,
+  const loc &at,
   const init_spec_atom *is,
   arg_buffer &ab,
   const type &t)
 {
   if (t.holds<type_num>()) {
-    evalInto(ec, arg_loc, is, ab, t.as<type_num>());
+    evalInto(ec, at, is, ab, t.as<type_num>());
   } else if (t.holds<type_struct>()) {
-    evalInto(ec, arg_loc, is, ab, t.as<type_struct>());
+    evalInto(ec, at, is, ab, t.as<type_struct>());
   } else if (t.holds<type_ptr>()) {
-    evalInto(ec, arg_loc, is, ab, t.as<type_ptr>());
+    evalInto(ec, at, is, ab, t.as<type_ptr>());
   } else {
     fatalAt(is->defined_at,"unsupported argument type");
   }
@@ -273,7 +273,7 @@ void evaluator::evalInto(
 
 void evaluator::evalInto(
   context &ec,
-  const loc &arg_loc,
+  const loc &at,
   const init_spec_atom *is,
   arg_buffer &ab,
   const type_num &tn)
@@ -282,39 +282,39 @@ void evaluator::evalInto(
   switch (tn.kind) {
   case type_num::SIGNED:
     switch (tn.size_in_bytes) {
-    case 1: evalIntoT<int8_t>(ec,arg_loc,is,ab); break;
-    case 2: evalIntoT<int16_t>(ec,arg_loc,is,ab); break;
-    case 4: evalIntoT<int32_t>(ec,arg_loc,is,ab); break;
-    case 8: evalIntoT<int64_t>(ec,arg_loc,is,ab); break;
-    default: fatalAt(arg_loc,"INTERNAL ERROR: unreachable");
+    case 1: evalIntoT<int8_t>(ec,at,is,ab); break;
+    case 2: evalIntoT<int16_t>(ec,at,is,ab); break;
+    case 4: evalIntoT<int32_t>(ec,at,is,ab); break;
+    case 8: evalIntoT<int64_t>(ec,at,is,ab); break;
+    default: fatalAt(at,"INTERNAL ERROR: unreachable");
     }
     break;
   case type_num::UNSIGNED:
     switch (tn.size_in_bytes) {
-    case 1: evalIntoT<uint8_t>(ec,arg_loc,is,ab); break;
-    case 2: evalIntoT<uint16_t>(ec,arg_loc,is,ab); break;
-    case 4: evalIntoT<uint32_t>(ec,arg_loc,is,ab); break;
-    case 8: evalIntoT<uint64_t>(ec,arg_loc,is,ab); break;
-    default: fatalAt(arg_loc,"INTERNAL ERROR: unreachable");
+    case 1: evalIntoT<uint8_t>(ec,at,is,ab); break;
+    case 2: evalIntoT<uint16_t>(ec,at,is,ab); break;
+    case 4: evalIntoT<uint32_t>(ec,at,is,ab); break;
+    case 8: evalIntoT<uint64_t>(ec,at,is,ab); break;
+    default: fatalAt(at,"INTERNAL ERROR: unreachable");
     }
     break;
   case type_num::FLOATING:
     switch (tn.size_in_bytes) {
-    case 2: evalIntoT<half>(ec,arg_loc,is,ab); break;
-    case 4: evalIntoT<float>(ec,arg_loc,is,ab); break;
-    case 8: evalIntoT<double>(ec,arg_loc,is,ab); break;
-    default: fatalAt(arg_loc,"INTERNAL ERROR: unreachable");
+    case 2: evalIntoT<half>(ec,at,is,ab); break;
+    case 4: evalIntoT<float>(ec,at,is,ab); break;
+    case 8: evalIntoT<double>(ec,at,is,ab); break;
+    default: fatalAt(at,"INTERNAL ERROR: unreachable");
     }
     break;
   default:
-    fatalAt(arg_loc,"INTERNAL ERROR: unreachable");
+    fatalAt(at,"INTERNAL ERROR: unreachable");
   }
 }
 
 template <typename T>
 void evaluator::evalIntoT(
   context &ec,
-  const loc &arg_loc,
+  const loc &at,
   const init_spec_atom *is,
   arg_buffer &ab)
 {
@@ -329,14 +329,16 @@ void evaluator::evalIntoT(
     ec.evaluated(v.as<T>());
     break;
   }
+  case init_spec::IS_SYM:
+    fatalAt(at,"unbound symbol");
   default:
-    fatalAt(arg_loc,"INTERNAL ERROR: unsupported expression for primitive");
+    fatalAt(at,"INTERNAL ERROR: unsupported expression for primitive");
   }
 }
 
 void evaluator::evalInto(
   context &ec,
-  const loc &arg_loc,
+  const loc &at,
   const init_spec_atom *is,
   arg_buffer &ab,
   const type_struct &ts)
@@ -344,24 +346,24 @@ void evaluator::evalInto(
   if (is->kind == init_spec::IS_REC) {
     const init_spec_record *isr = (const init_spec_record *)is;
     if (isr->children.size() != ts.elements_length) {
-      fatalAt(arg_loc, "structure initializer has wrong number of elements");
+      fatalAt(at, "structure initializer has wrong number of elements");
     }
     ec.evaluated("{");
     for (size_t i = 0; i < ts.elements_length; i++) {
       if (i > 0)
         ec.evaluated(",");
-      evalInto(ec, arg_loc, isr->children[i], ab, *ts.elements[i]);
+      evalInto(ec, at, isr->children[i], ab, *ts.elements[i]);
     }
     ec.evaluated("}");
   } else {
     // TODO: we could support things like broadcast, random etc...
-    fatalAt(arg_loc,"structure argument requires structure initializer");
+    fatalAt(at,"structure argument requires structure initializer");
   }
 }
 
 void evaluator::evalInto(
   context &ec,
-  const loc &arg_loc,
+  const loc &at,
   const init_spec_atom *is,
   arg_buffer &ab,
   const type_ptr &tp)

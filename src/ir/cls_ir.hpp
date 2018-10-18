@@ -277,11 +277,16 @@ namespace cls
     void set_seed(int64_t _seed) {seed = _seed; has_seed = true;}
     void str(std::ostream &os, format_opts fopts) const;
   };
+  // seq       => 0,1,...
+  // seq(4)    => 4,5,6...
+  // seq(4,2)  => 4,6,8,...
   struct init_spec_seq : init_spec_atom {
-    init_spec_seq(loc loc) : init_spec_atom(loc, IS_SEQ) { }
-    void str(std::ostream &os, format_opts fopts) const {
-      os << "seq(TODO)";
-    }
+    const init_spec_atom *base;
+    const init_spec_atom *delta;
+    init_spec_seq(
+      loc loc, const init_spec_atom *_base, const init_spec_atom *_delta)
+      : init_spec_atom(loc, IS_SEQ), base(_base), delta(_delta) { }
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   /////////////////////////////////////////////////////////////////////////////

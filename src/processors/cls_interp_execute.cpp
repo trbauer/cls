@@ -220,6 +220,79 @@ static void fill_buffer_rng(
   }
 }
 
+
+template <typename T, typename R = T>
+static void fill_buffer_seq_loop(
+  evaluator *e,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_seq *iss)
+{
+  val v_base((R)0);
+  if (iss->base)
+    v_base = e->evalTo<R>(ec, iss->base);
+
+  val v_delta((R)1);
+  if (iss->delta)
+    v_delta = e->evalTo<R>(ec, iss->delta);
+
+  R curr = v_base.as<R>(), delta = v_delta.as<R>();
+  size_t total_elems = ab.capacity / sizeof(T);
+  for (size_t i = 0; i < total_elems; i++) {
+    ab.write<T>((R)curr);
+    curr += delta;
+  }
+}
+
+static void fill_buffer_seq(
+  compiled_script_impl &csi,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_seq *iss,
+  const type &t,
+  const loc &at)
+{
+ if (t.holds<type_num>()) {
+    const type_num &tn = t.as<type_num>();
+    switch (tn.kind) {
+    case type_num::SIGNED: {
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_seq_loop<int8_t>(csi.e,ec,ab,iss); break;
+      case 2: fill_buffer_seq_loop<int16_t>(csi.e,ec,ab,iss); break;
+      case 4: fill_buffer_seq_loop<int32_t>(csi.e,ec,ab,iss); break;
+      case 8: fill_buffer_seq_loop<int64_t>(csi.e,ec,ab,iss); break;
+      }
+      break;
+    }
+    case type_num::UNSIGNED:
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_seq_loop<uint8_t>(csi.e,ec,ab,iss); break;
+      case 2: fill_buffer_seq_loop<uint16_t>(csi.e,ec,ab,iss); break;
+      case 4: fill_buffer_seq_loop<uint32_t>(csi.e,ec,ab,iss); break;
+      case 8: fill_buffer_seq_loop<uint64_t>(csi.e,ec,ab,iss); break;
+      }
+      break;
+    case type_num::FLOATING:
+      switch (tn.size_in_bytes) {
+      case 2: fill_buffer_seq_loop<half,float>(csi.e,ec,ab,iss); break;
+      case 4: fill_buffer_seq_loop<float>(csi.e,ec,ab,iss); break;
+      case 8: fill_buffer_seq_loop<double>(csi.e,ec,ab,iss); break;
+      }
+      break;
+    }
+  } else if (t.holds<type_struct>()) {
+    const type_struct &ts = t.as<type_struct>();
+    if (ts.is_uniform() && ts.elements[0]->holds<type_num>()) {
+      const type_num &tn = ts.elements[0]->as<type_num>();
+      fill_buffer_seq(csi, ec, ab, iss, tn, at);
+    } else {
+      csi.fatalAt(at,"cannot broadcast random for this struct");
+    }
+  } else {
+    csi.fatalAt(at,"unsupported type for random generator");
+  }
+}
+
 void compiled_script_impl::execute(dispatch_command &dc)
 {
   cl_command_queue queue = (*dc.dobj->queue)();
@@ -549,6 +622,25 @@ void compiled_script_impl::init_surface(
     } else {
       fatalAt(so.spec->defined_at,
         "random inits can only apply to numeric element types");
+    }
+    break;
+  }
+  case init_spec::IS_SEQ: {
+    if (elem_type == nullptr) {
+      fatalAt(so.spec->defined_at, "no element type found ");
+    } else if (elem_type->holds<type_num>()) {
+      // generator_state &gs =
+      //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
+      fill_buffer_seq(
+        *this,
+        ec,
+        ab,
+        (const init_spec_seq *)so.spec->root,
+        *elem_type,
+        so.spec->defined_at);
+    } else {
+      fatalAt(so.spec->defined_at,
+        "sequential inits can only apply to numeric element types");
     }
     break;
   }

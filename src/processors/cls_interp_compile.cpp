@@ -366,8 +366,9 @@ void script_compiler::compile()
       print_command *pc = compilePrint(st_ix,(const print_spec *)st);
       csi->instructions.emplace_back(pc);
     } else if (st->kind == statement_spec::SAVE) {
-      surface_object *so = nullptr;
-      save_command *sc = new save_command((const save_spec *)st,so);
+      const save_spec *ss = (const save_spec *)st;
+      surface_object *so =  &csi->surfaces.get(ss->arg.value);
+      save_command *sc = new save_command(ss,so);
       csi->instructions.emplace_back(sc);
     } else if (st->kind == statement_spec::LET) {
       ; // nop

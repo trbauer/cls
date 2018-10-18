@@ -66,7 +66,9 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       }
       loc.extend_to(p.nextLoc());
       return new init_spec_symbol(loc, s);
-    } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE)) {
+    } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
+      s == "random" || s == "seq")
+    {
       // foo<...  (e.g. random<12007>(...))
       // or
       // foo(...
@@ -117,7 +119,15 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         ///////////////////////////////////////////////////
         // special functions (pseudo functions)
         if (s == "seq") {
-          p.fatal("parseInitAtomPrim: implement SEQ");
+          init_spec_seq *iss = nullptr;
+          switch (args.size()) {
+          case 0: iss = new init_spec_seq(loc,nullptr,nullptr); break;
+          case 1: iss = new init_spec_seq(loc,args[0],nullptr); break;
+          case 2: iss = new init_spec_seq(loc,args[0],args[1]); break;
+          default: p.fatalAt(loc,"wrong number of args to seq");
+          }
+          iss->defined_at.extend_to(p.nextLoc());
+          return iss;
         }
 
         ///////////////////////////////////////////////////
@@ -833,6 +843,8 @@ static bool parseBuiltIn(parser &p, script &s)
     if (!p.lookingAt(STRLIT))
       p.fatal("expected file name (string literal)");
     std::string file = p.tokenStringLiteral();
+    p.skip();
+    p.consume(COMMA);
     refable<init_spec_mem*> r_surf = dereferenceLetMem(p,s);
     p.consume(RPAREN);
     loc.extend_to(p.nextLoc());

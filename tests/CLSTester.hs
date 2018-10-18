@@ -50,9 +50,23 @@ run as = do
     die $ cls64_exe ++ ": file not found"
   os <- parseOpts as dft_opts
   --
+  runPrintCommandTests os
+  runPrintAttributeTests os
+  --
   runImmTests os
   --
-  runAddTest os "int" ["1","3","-2"] "2"
+  runSequentialAddTest os "int" ["1","3","-2"] "2"
+  -- TODO:
+  -- tests that use:
+  --   mem init random
+  --   mem init file
+  --   mem init resize expression
+  --   inline print :p, :P  (print one elem and grep it)
+  --     (match output)
+  --   print()
+  --   save()
+  --   diff()
+  return ()
 
 -- tests evaluators (kernel arg evaluates)
 runImmTests :: Opts -> IO ()
@@ -110,18 +124,49 @@ runArgTestImm os ty arg_expr expect_value = do
     arg_expr
     (showNum expect_value)
 
-runAddTest :: Opts -> String -> [String] -> String -> IO ()
-runAddTest os arg_type args result = do
+runPrintCommandTests :: Opts -> IO ()
+runPrintCommandTests os = do
   let script :: String
       script =
-        "let B=0:w\n" ++
+        "let B=seq():rw\n" ++
+        "#0`tests/add.cl[-DT=uint]`add<8>(B,16)\n" ++
+        "print(B)\n" ++
+        "print<int>(B)\n" ++
+        "print<int,4>(B)\n" ++
+        ""
+  let match = hasAllLines $
+        "00000:  0x00000010  0x00000011  0x00000012  0x00000013  0x00000014  0x00000015  0x00000016  0x00000017\n" ++
+        "00000:            16            17            18            19            20            21            22            23\n" ++
+        "00000:            16            17            18            19\n" ++
+        "00010:            20            21            22            23\n" ++
+        ""
+  runScript os "print command test" match script
+
+
+runPrintAttributeTests :: Opts -> IO ()
+runPrintAttributeTests os = do
+  let script :: String
+      script =
+        "#0`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
+  let match = hasAllLines $
+        "00000:  0x00000002  0x00000004  0x00000006  0x00000008  0x0000000A  0x0000000C  0x0000000E  0x00000010\n" ++
+        "00000:  0x00000012  0x00000014  0x00000016  0x00000018\n" ++
+        "00010:  0x0000001A  0x0000001C  0x0000001E  0x00000020\n" ++
+        ""
+  runScript os "print attribute test" match script
+
+
+runSequentialAddTest :: Opts -> String -> [String] -> String -> IO ()
+runSequentialAddTest os arg_type args result = do
+  let script :: String
+      script =
+        "let B=0:rw\n" ++
         concatMap (\a -> "#0`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
         "diff<" ++ arg_type ++ ">(" ++ result ++ ",B)\n"
-  runScript os script
+  runScript os "sequential add test" alwaysSucceed script
 
 runArgTest :: Opts -> String -> String -> String -> String -> IO ()
 runArgTest os arg_desc arg_type arg_expr show_expect_value = do
-  putStr $ printf "%-32s" arg_desc
   let script :: String
       script =
         "let R=0:w\n" ++
@@ -129,21 +174,76 @@ runArgTest os arg_desc arg_type arg_expr show_expect_value = do
         "#0`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
         "diff<" ++ arg_type ++ ">(" ++ show_expect_value ++ ",V)\n"
         -- "diff<" ++ arg_type ++ ">(0,R)\n"
-  runScript os script
+  runScript os arg_desc alwaysSucceed script
 
-runScript :: Opts -> String -> IO ()
-runScript os script = do
+
+
+runScript :: Opts -> String -> Matcher -> String -> IO ()
+runScript os tag match script = do
+  putStr $ printf "%-64s" (tag ++ ":  ")
   (ec,out,err) <- readProcessWithExitCode cls64_exe ["-e",script] ""
+  let failed why = do
+        putStrLn "  FAILED"
+        putStrLn $ why
+        putStrLn $
+          "******************************************\n" ++
+          "***OUT***:\n" ++
+          out ++ "\n" ++
+          "***ERR***:\n" ++
+          err ++ "\n" ++
+          "******************************************"
+        hFlush stdout
+        let failed_cls = "failed.cls"
+        writeFile failed_cls script
+        when (oFailFast os) $
+          die $ "test failed (run " ++ failed_cls ++ ")"
   case ec of
     ExitSuccess -> do
-      putStrLn $ "  PASSED"
-      when (oVerbose os) $
-        putStrLn $ out ++ err
-      return ()
-    ExitFailure ec -> do
-      putStrLn $ "  FAILED"
-      putStrLn $ out ++ err
-      hFlush stdout
-      writeFile "failed.cls" script
-      when (oFailFast os) $
-        die "test failed"
+      mf <- match out
+      case mf of
+        Nothing -> do
+          putStrLn $ "  PASSED"
+          when (oVerbose os) $
+            putStrLn $ out ++ err
+        Just msg -> failed msg
+    ExitFailure ec -> failed ("exited " ++ show ec)
+
+
+-----------------------------------
+-- MATCHER EDSL
+type Matcher = String -> IO (Maybe String)
+
+(.&&.) :: Matcher -> Matcher -> Matcher
+(.&&.) = combineAND
+infixl 2 .&&.
+(.||.) :: Matcher -> Matcher -> Matcher
+(.||.) = combineOR
+infixl 1 .||.
+
+combineAND :: Matcher -> Matcher -> Matcher
+combineAND m1 m2 = \out -> do
+  mr <- m1 out
+  case mr of
+    Just x -> return $ Just x
+    Nothing -> m2 out
+combineOR :: Matcher -> Matcher -> Matcher
+combineOR m1 m2 = \out -> do
+  mr <- m1 out
+  case mr of
+    Just x -> do
+      ms <- m2 out
+      case ms of
+        Nothing -> return Nothing
+        Just y -> return $ Just $ "!(" ++ x ++ ") && !(" ++ y ++ ")"
+    Nothing -> return $ Nothing
+
+alwaysSucceed :: Matcher
+alwaysSucceed _ = return Nothing
+
+-- ensures that output has all the following lines somewhere in the output
+hasAllLines :: String -> Matcher
+hasAllLines = foldl (.&&.) alwaysSucceed . map hasLine . lines
+  where hasLine :: String -> String -> IO (Maybe String)
+        hasLine ln out
+          | words ln `elem` map words (lines out) = return Nothing
+          | otherwise = return $ Just $ "failed to find line with words: " ++ ln
