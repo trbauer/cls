@@ -43,7 +43,7 @@ val evaluator::eval(
   case init_spec::IS_BIV: {
     auto computeDim =
       [&] (const ndr &ndr, int dim_ix) {
-        if (dim_ix > ndr.rank())
+        if (dim_ix >= ndr.rank())
           fatalAt(e->defined_at,
             &ndr == &ec.global_size ? "global" : "local",
             " dimension size is out of bounds for this dispatch");
@@ -53,13 +53,9 @@ val evaluator::eval(
     case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0);
     case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1);
     case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2);
-    // case init_spec_builtin::BIV_GXY:  return computeDim(ec.global_size, 0, 2);
-    // case init_spec_builtin::BIV_GXYZ: return computeDim(ec.global_size, 0, 3);
     case init_spec_builtin::BIV_LX:   return computeDim(ec.local_size,  0);
     case init_spec_builtin::BIV_LY:   return computeDim(ec.local_size,  1);
     case init_spec_builtin::BIV_LZ:   return computeDim(ec.local_size,  2);
-    // case init_spec_builtin::BIV_LXY:  return computeDim(ec.local_size,  0, 2);
-    // case init_spec_builtin::BIV_LXYZ: return computeDim(ec.local_size,  0, 3);
     default: fatalAt(e->defined_at,"unsupported built-in variable");
     }
     break;
@@ -83,7 +79,6 @@ val evaluator::evalF(context &ec,const init_spec_atom *e)
     fatalAt(e->defined_at,"argument must be floating point");
   return v;
 }
-
 val evaluator::evalToF(context &ec,const init_spec_atom *e)
 {
   val v = eval(ec, e);
@@ -126,14 +121,7 @@ void evaluator::setKernelArgImmediate(
   if (os.verbosity >= 2) {
     debug(ris.defined_at, "setting immediate argument for ",
       ai.type.syntax()," ",ai.name," to");
-    if (std::holds_alternative<type_ptr>(ai.type.var)) {
-      // fake a pointer to a pointer so the first dereference
-      // in formatBuffer is ignored
-      size_t ptr_size = std::get<type_ptr>(ai.type.var).size();
-      formatBuffer(std::cout,ab.base,ab.capacity,type_ptr(&ai.type,ptr_size));
-    } else {
-      formatBuffer(std::cout,ab.base,ab.capacity,ai.type);
-    }
+    format(std::cout, ab.base, ab.capacity, ai.type);
     std::cout << "\n";
   }
 }
@@ -146,11 +134,9 @@ static size_t computeBufferSize(
 {
   if (ism->dimension) {
     return (size_t)e->evalTo<size_t>(
-      evaluator::context(
-        dc.global_size,
-        dc.local_size), ism->dimension).u64;
+      evaluator::context(dc.global_size, dc.local_size), ism->dimension).u64;
   } else {
-    return dc.global_size.product() * elem_type.size();
+    return dc.global_size.product()*elem_type.size();
   }
 }
 
@@ -158,19 +144,19 @@ void evaluator::setKernelArgMemobj(
   cl_uint arg_index,
   dispatch_command &dc,
   std::stringstream &ss,
-  const loc &arg_loc,
+  const loc &at,
   const refable<init_spec *> &ris,
   const arg_info &ai)
 {
   if (((const init_spec *)ris)->kind != init_spec::IS_MEM) {
-    fatalAt(ris.defined_at,"expected surface initializer");
+    fatalAt(ris.defined_at, "expected surface initializer");
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!std::holds_alternative<type_ptr>(ai.type.var)) {
+  if (!ai.type.holds<type_ptr>()) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
-  const type &elem_type = *std::get<type_ptr>(ai.type.var).element_type;
+  const type &elem_type = *ai.type.as<type_ptr>().element_type;
   size_t buffer_size = computeBufferSize(this,dc,elem_type,ism);
 
   surface_object *so = nullptr;
@@ -201,7 +187,7 @@ void evaluator::setKernelArgMemobj(
 
     cl_mem memobj = nullptr;
     cl_context context = (*dc.kernel->program->device->context)();
-    CL_COMMAND_CREATE(memobj, arg_loc,
+    CL_COMMAND_CREATE(memobj, at,
       clCreateBuffer,
         context,
         cl_mfs,
@@ -216,14 +202,12 @@ void evaluator::setKernelArgMemobj(
       (*dc.dobj->queue)());
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
-
-  dc.inits.emplace_back(
-    arg_loc,
-    std::get<type_ptr>(ai.type.var),
-    so);
-
-  CL_COMMAND(
-    arg_loc,
+  //
+  dc.surfaces.emplace_back(so, *ai.type.as<type_ptr>().element_type, ai, at);
+  //
+  so->dispatch_uses.emplace_back(&dc, arg_index, ai);
+  //
+  CL_COMMAND(at,
     clSetKernelArg,
       (*dc.kernel->kernel)(),
       arg_index,
@@ -246,7 +230,7 @@ void evaluator::setKernelArgSLM(
   //
   //  SPECIFY: do we allow the alternative?
   //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
-  if (!std::holds_alternative<type_ptr>(ai.type.var)) {
+  if (!ai.type.holds<type_ptr>()) {
     fatalAt(
       ris.defined_at,
       "kernel argument in local address space must be pointer type");
@@ -255,7 +239,7 @@ void evaluator::setKernelArgSLM(
       ris.defined_at,
       "local pointer requires size in bytes");
   } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
-  const type_ptr &tp = std::get<type_ptr>(ai.type.var);
+  const type_ptr &tp = ai.type.as<type_ptr>();
   evaluator::context ec(dc.global_size,dc.local_size);
   auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
   size_t local_bytes = (size_t)v.u64;
@@ -276,12 +260,12 @@ void evaluator::evalInto(
   arg_buffer &ab,
   const type &t)
 {
-  if (std::holds_alternative<type_num>(t.var)) {
-    evalInto(ec, arg_loc, is, ab, std::get<type_num>(t.var));
-  } else if (std::holds_alternative<type_struct>(t.var)) {
-    evalInto(ec, arg_loc, is, ab, std::get<type_struct>(t.var));
-  } else if (std::holds_alternative<type_ptr>(t.var)) {
-    evalInto(ec, arg_loc, is, ab, std::get<type_ptr>(t.var));
+  if (t.holds<type_num>()) {
+    evalInto(ec, arg_loc, is, ab, t.as<type_num>());
+  } else if (t.holds<type_struct>()) {
+    evalInto(ec, arg_loc, is, ab, t.as<type_struct>());
+  } else if (t.holds<type_ptr>()) {
+    evalInto(ec, arg_loc, is, ab, t.as<type_ptr>());
   } else {
     fatalAt(is->defined_at,"unsupported argument type");
   }

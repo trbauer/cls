@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -181,17 +182,19 @@ static void runFile(
       std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::high_resolution_clock::now() - start_setup);
 
-    auto start_execute = std::chrono::high_resolution_clock::now();
     try {
+      auto start_execute = std::chrono::high_resolution_clock::now();
+
       cs.execute(i);
+
+      auto duration_exec =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::high_resolution_clock::now() - start_execute);
+      execute_times.add(duration_exec.count()/1000.0/1000.0);
     } catch (cls::diagnostic &d) {
       d.str(std::cerr);
       exit(EXIT_FAILURE);
     }
-    auto duration_exec =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::high_resolution_clock::now() - start_execute);
-    execute_times.add(duration_exec.count()/1000.0/1000.0);
   }
 
   text::table t;
@@ -204,10 +207,13 @@ static void runFile(
   auto &min_col = t.define_col("min", true, 1);
   t.define_spacer("/");
   auto &max_col = t.define_col("max", true, 1);
+  t.define_spacer("  ");
+  auto &pct_total_col = t.define_col("overall%", true, 1);
 
   auto emitStats = [&](
     const std::string &clk,
-    const sampler &s)
+    const sampler &s,
+    std::optional<double> avg_total)
   {
     ckl_col.emit(clk);
     itr_col.emit(s.size());
@@ -216,20 +222,43 @@ static void runFile(
     cfv_col.emit(100*s.cfv(), 1);
     min_col.emit(s.min(), 5);
     max_col.emit(s.max(), 5);
+    if (avg_total) {
+      pct_total_col.emit(100.0 * s.avg() / *avg_total, 1);
+    } else {
+      pct_total_col.emit("");
+    }
+    if (os.verbosity > 0) {
+      int i = 0;
+      for (double d : s.samples()) {
+        ckl_col.emit("");
+        itr_col.emit(i++);
+        med_col.emit("=>");
+        avg_col.emit(d, 5);
+        cfv_col.emit("");
+        min_col.emit("");
+        max_col.emit("");
+        pct_total_col.emit("");
+      }
+    }
   };
-  emitStats("TOTAL",execute_times);
+  emitStats("TOTAL",execute_times,std::nullopt);
   if (os.prof_time) {
     std::cout << "PROF=================================================\n";
   } else {
     std::cout << "WALL=================================================\n";
   }
-  auto dispatch_times = os.prof_time ? cs.get_prof_times() :
-    cs.get_wall_times();
+  auto dispatch_times =
+    os.prof_time ? cs.get_prof_times() : cs.get_wall_times();
+  const double total = execute_times.avg();
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);
-    emitStats(ds.spec::str(),ts);
+    emitStats(ds.spec::str(), ts, std::make_optional(total));
   }
-
+  for (const auto &dt : cs.get_init_times()) {
+    const cls::init_spec_mem &im = *std::get<0>(dt);
+    const sampler &ts = std::get<1>(dt);
+    emitStats("INIT(" + im.spec::str() + ")", ts, std::make_optional(total));
+  }
   t.str(std::cout);
 }

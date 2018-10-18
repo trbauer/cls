@@ -41,7 +41,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
   } else if (p.lookingAtFloat()) {
     return new init_spec_float(loc, p.consumeFloat());
   } else if (p.lookingAtInt()) {
-    return new init_spec_int(loc, p.consumeInt());
+    return new init_spec_int(loc, p.consumeIntegral<int64_t>());
   } else if (p.lookingAtIdent()) {
     // e.g. "X" or "g.x" or "pow(...)"
     auto s = p.tokenString();
@@ -75,21 +75,36 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       //    F<...>(....)
       // then match by template arguments
       if (s == "random") {
+        auto func = new init_spec_rng(loc);
         int64_t seed = 0;
+        bool has_seed = false;
         if (p.consumeIf(LANGLE)) {
-          seed = p.consumeInt("seed (int)");
+          if (!p.lookingAt(RANGLE)) {
+            seed = p.consumeIntegral<int64_t>("seed (int)");
+            has_seed = true;
+          }
           p.consume(RANGLE);
         }
-        auto func = new init_spec_rng(loc, seed);
-        if (p.consumeIf(LBRACK)) {
-          func->e_lo = parseInitAtom(p);
-          if (p.consumeIf(COMMA))
-            func->e_hi = parseInitAtom(p);
-          p.consume(RBRACK);
+        if (p.consumeIf(LPAREN)) {
+          if (!p.lookingAt(RPAREN)) {
+            auto *arg1 = parseInitAtom(p);
+            if (p.consumeIf(COMMA)) {
+              auto *arg2 = parseInitAtom(p);
+              func->e_lo = arg1;
+              func->e_hi = arg2;
+            } else {
+              func->e_hi = arg1;
+            }
+          }
+          p.consume(RPAREN);
         }
+        if (has_seed)
+          func->set_seed(seed);
         func->defined_at.extend_to(p.nextLoc());
         return func;
       } else {
+        ///////////////////////////////////////////////////
+        // generic function
         std::vector<init_spec_atom *> args;
         p.consume(LPAREN);
         while (!p.lookingAt(RPAREN)) {
@@ -321,9 +336,25 @@ static init_spec *parseInit(parser &p)
       //          they are certainly nice for debugging
       case 'P':
         m->print_pre = true;
+        if (i + 1 < s.size() && ::isdigit(s[i+1])) {
+          i++;
+          m->print_pre_elems_per_row = 0;
+          if (i < s.size() && ::isdigit(s[i])) {
+            m->print_pre_elems_per_row =
+              10 * m->print_pre_elems_per_row + s[i] - '0';
+          }
+        }
         break;
       case 'p':
         m->print_post = true;
+        if (i + 1 < s.size() && ::isdigit(s[i+1])) {
+          i++;
+          m->print_post_elems_per_row = 0;
+          if (i < s.size() && ::isdigit(s[i])) {
+            m->print_post_elems_per_row =
+              10 * m->print_post_elems_per_row + s[i] - '0';
+          }
+        }
         break;
       default:
         l.column += (uint32_t)i;
@@ -408,10 +439,10 @@ static void parseDispatchStatementDimensions(
       } else if (p.lookingAtInt()) {
         // 1024 x 768
         // 0x200 x 0x100
-        ds.push_back((size_t)p.consumeInt("dimension (int)"));
+        ds.push_back((size_t)p.consumeIntegral<uint64_t>("dimension (int)"));
         while (p.lookingAtIdentEq("x")) {
           p.skip();
-          ds.push_back((size_t)p.consumeInt("dimension (int)"));
+          ds.push_back((size_t)p.consumeIntegral<uint64_t>("dimension (int)"));
         }
       } else if (p.lookingAt(DIMENSION)) {
         // 1024x768
@@ -590,7 +621,7 @@ static program_spec *parseDispatchStatementDeviceProgramPart(
       }
       p.skip();
     } else if (p.lookingAtInt()) {
-      dev.setSource((int)p.consumeInt("device index (integer)"));
+      dev.setSource(p.consumeIntegral<int32_t>("device index (integer)"));
     } else {
       p.fatal("invalid device specification");
     }
@@ -637,11 +668,14 @@ static kernel_spec *parseDispatchStatementKernelPart(
   return ks;
 }
 
+
 // allows for default devices:
 //   EASY CSE:  #1`....
 //              ^ yes!
 //   HARD CASE: long/path with/spaces/foo.cl[long args]`kernel<...>()
-//                                                     ^ YES!
+//                                          ^ YES!
+//              long/path with/spaces/foo.cl`kernel<...>()
+//                                          ^ YES!
 static bool lookingAtImmediateDispatchStatement(parser &p) {
     if (p.lookingAt(HASH))
       return true;
@@ -652,12 +686,15 @@ static bool lookingAtImmediateDispatchStatement(parser &p) {
     int i = 1;
     while (i < (int)p.tokensLeft()) {
       if (p.lookingAt(BACKTICK,i) || // correct dispatch
-        p.lookingAt(LANGLE,i)) // malformed dispatch   foo.cl<1024>(...)
+        p.lookingAt(LANGLE,i) || // malformed dispatch   foo.cl`bar<1024>(...)
+                                 //                            ^
+        p.lookingAt(LBRACK,i)) // malformed dispatchd    foo.cl[...]`bar(...)
+                               //                              ^
       {
         return true;
       } else if (p.lookingAt(NEWLINE,i) || // malformed statement
-        p.lookingAt(SEMI,i) || // malformed statement
-        p.lookingAt(EQ,i)) // malformed let possibly
+        p.lookingAt(SEMI,i) || // malformed statement    .....; ....
+        p.lookingAt(EQ,i)) // malformed let possibly     foo=BAR
       {
         break;
       }
@@ -745,24 +782,50 @@ static bool parseBuiltIn(parser &p, script &s)
     return true;
   } else if (p.lookingAtIdentEq("diff")) {
     p.skip();
+    const type *elem_type = nullptr;
+    if (p.consumeIf(LANGLE)) {
+      auto at = p.nextLoc();
+      elem_type = lookupPrimtiveType(p.consumeIdent("type name"));
+      p.consume(RANGLE);
+    }
     p.consume(LPAREN);
     auto *ref = parseInit(p);
     p.consume(COMMA);
     if (!p.lookingAt(IDENT))
       p.fatal("expected reference to memory object");
     refable<init_spec_mem*> r_sut = dereferenceLetMem(p, s);
-    s.statement_list.statements.push_back(new diff_spec(loc, ref, r_sut));
-    // delete sut;
     p.consume(RPAREN);
-    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
+    loc.extend_to(p.nextLoc());
+    s.statement_list.statements.push_back(
+      new diff_spec(loc, ref, r_sut, elem_type));
     return true;
   } else if (p.lookingAtIdentEq("print")) {
+    // print(X)
+    // print<TYPE>(X)
+    // print<INT>(X)
+    // print<TYPE,INT>(X)
     p.skip();
+    const type *elem_type = nullptr;
+    int elems_per_row = 0;
+    if (p.consumeIf(LANGLE)) {
+      if (p.lookingAtInt()) {
+        elems_per_row = p.consumeIntegral<int>("elements per column");
+      } else {
+        elem_type = lookupPrimtiveType(p.consumeIdent("type name"));
+        if (p.consumeIf(COMMA)) {
+          elems_per_row = p.consumeIntegral<int>("elements per column");
+        }
+      }
+      p.consume(RANGLE);
+    }
     p.consume(LPAREN);
-    init_spec_symbol *val = parseSymbol(p);
-    s.statement_list.statements.push_back(new print_spec(loc, val));
+    if (!p.lookingAt(IDENT))
+      p.fatal("expected reference to memory object");
+    refable<init_spec_mem*> r_surf = dereferenceLetMem(p,s);
     p.consume(RPAREN);
-    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
+    loc.extend_to(p.nextLoc());
+    s.statement_list.statements.push_back(
+      new print_spec(loc, r_surf, elem_type, elems_per_row));
     return true;
   } else if (p.lookingAtIdentEq("save")) {
     p.skip();
@@ -770,10 +833,11 @@ static bool parseBuiltIn(parser &p, script &s)
     if (!p.lookingAt(STRLIT))
       p.fatal("expected file name (string literal)");
     std::string file = p.tokenStringLiteral();
-    init_spec_symbol *val = parseSymbol(p);
-    s.statement_list.statements.push_back(new save_spec(loc, file, val));
+    refable<init_spec_mem*> r_surf = dereferenceLetMem(p,s);
     p.consume(RPAREN);
-    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
+    loc.extend_to(p.nextLoc());
+    s.statement_list.statements.push_back(
+      new save_spec(loc, file, r_surf));
     return true;
   } else {
     return false;

@@ -16,6 +16,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 #include <limits>
 #include <numeric>
+#include <set>
 #include <type_traits>
 
 
@@ -31,6 +32,11 @@ struct script_compiler : public interp_fatal_handler {
   void compile();
 private:
   void compileDispatch(const dispatch_spec *ds);
+  dispatch_command *compileDispatchArgs(const dispatch_spec *ds);
+  diff_command *compileDiff(size_t st_ix, const diff_spec *ds);
+  print_command *compilePrint(size_t st_ix, const print_spec *ps);
+  const type *inferSurfaceElementType(surface_object *so, size_t from_st_ix);
+
   kernel_object &compileKernel(const kernel_spec *ks);
   program_object &compileProgram(const program_spec *ps);
   device_object &createDeviceObject(const device_spec *ds);
@@ -332,6 +338,45 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   return dobj;
 }
 
+
+
+void script_compiler::compile()
+{
+  // Contruct contexts, command queues, programs, kernels, and whatnot
+  // Construct contexts and command queues (device_state) for all
+  // device_spec's that appear in the script and compile programs.
+  for (const statement_spec *st : s.statement_list.statements) {
+    if (st->kind == statement_spec::DISPATCH) {
+      compileDispatch((const dispatch_spec *)st);
+    }
+  }
+
+  // Loop through all the statements
+  //  - compile dispatch arguments
+  //  - compile diff command (needs args for surface info type)
+  for (size_t st_ix = 0; st_ix < s.statement_list.statements.size(); st_ix++) {
+    const statement_spec *st = s.statement_list.statements[st_ix];
+    if (st->kind == statement_spec::DISPATCH) {
+      dispatch_command *dc = compileDispatchArgs((const dispatch_spec *)st);
+      csi->instructions.emplace_back(dc);
+    } else if (st->kind == statement_spec::DIFF) {
+      diff_command *dc = compileDiff(st_ix,(const diff_spec *)st);
+      csi->instructions.emplace_back(dc);
+    } else if (st->kind == statement_spec::PRINT) {
+      print_command *pc = compilePrint(st_ix,(const print_spec *)st);
+      csi->instructions.emplace_back(pc);
+    } else if (st->kind == statement_spec::SAVE) {
+      surface_object *so = nullptr;
+      save_command *sc = new save_command((const save_spec *)st,so);
+      csi->instructions.emplace_back(sc);
+    } else if (st->kind == statement_spec::LET) {
+      ; // nop
+    } else {
+      fatalAt(st->defined_at, "NOT IMPLEMENTED");
+    }
+  }
+}
+
 void script_compiler::compileDispatch(const dispatch_spec *ds)
 {
   if (os.verbosity >= 2) {
@@ -356,60 +401,103 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
   }
 }
 
-void script_compiler::compile()
+dispatch_command *script_compiler::compileDispatchArgs(
+  const dispatch_spec *ds)
 {
-  // Contruct contexts, command queues, programs, kernels, and whatnot
-  // Construct contexts and command queues (device_state) for all
-  // device_spec's that appear in the script and compile programs.
-  for (const statement_spec *st : s.statement_list.statements) {
-    if (st->kind == statement_spec::DISPATCH) {
-      compileDispatch((const dispatch_spec *)st);
-    }
+  dispatch_command &dc = csi->dispatches.get(ds);
+  kernel_object &ko = *dc.kernel;
+  const auto &ais = ko.kernel_info->args;
+  if (ais.size() != ds->arguments.size()) {
+    fatalAt(ds->defined_at, "wrong number of arguments to kernel");
   }
+  size_t ptr_size = ko.program->device->pointer_size;
+  for (cl_uint arg_index = 0;
+    arg_index < (cl_uint)ds->arguments.size();
+    arg_index++)
+  {
+    std::stringstream ss;
+    const arg_info &ai = ais[arg_index];
+    const refable<init_spec*> &ris = ds->arguments[arg_index];
+    const init_spec *is = ris;
+    if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
+      csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
+    } else if (ai.type.holds<type_ptr>()) {
+      csi->e->setKernelArgMemobj(
+        arg_index, dc, ss, ris.defined_at, ris, ai);
+    } else {
+      // A uniform argument
+      csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);
+    }
+    dc.evaluated_args.push_back(ss.str());
+  } // for kernel args
+  return &dc;
+}
 
-  // Loop through all let's and dispatch arguments
-  // Set arguments
-  for (const statement_spec *st : s.statement_list.statements) {
-    if (st->kind == statement_spec::DISPATCH) {
-      const dispatch_spec *ds = (const dispatch_spec *)st;
+diff_command *script_compiler::compileDiff(
+  size_t st_ix, const diff_spec *ds)
+{
+  surface_object *so = &csi->surfaces.get(ds->sut.value);
+  const type *element_type = ds->element_type;
+
+  if (!element_type) {
+    // infer the template type by using the last type where the surface
+    // is used
+    // e.g. if the surface was last used as: global int2 *buffer,
+    // then we use int2
+    element_type = inferSurfaceElementType(so, st_ix);
+  } // element_type != nullptr
+
+  return new diff_command(ds,so,element_type);
+}
+
+print_command *script_compiler::compilePrint(
+  size_t st_ix, const print_spec *ps)
+{
+  surface_object *so = &csi->surfaces.get(ps->arg.value);
+  const type *element_type = ps->element_type;
+
+  if (!element_type) {
+    // infer the template type by using the last type where the surface
+    // is used
+    // e.g. if the surface was last used as: global int2 *buffer,
+    // then we use "int2"
+    element_type = inferSurfaceElementType(so, st_ix);
+  } // element_type != nullptr
+
+  return new print_command(ps,so,element_type);
+}
+
+const type *script_compiler::inferSurfaceElementType(
+  surface_object *so, size_t from_st_ix)
+{
+  statement_spec *from_st = s.statement_list.statements[from_st_ix];
+  for (int ix = (int)from_st_ix - 1; ix >= 0; ix--) {
+    const statement_spec *st1 = s.statement_list.statements[ix];
+    if (st1->kind == statement_spec::DISPATCH) {
+      const dispatch_spec *ds = (const dispatch_spec *)st1;
       dispatch_command &dc = csi->dispatches.get(ds);
       kernel_object &ko = *dc.kernel;
       const auto &ais = ko.kernel_info->args;
-      if (ais.size() != ds->arguments.size()) {
-        fatalAt(ds->defined_at, "wrong number of arguments to kernel");
-      }
-      size_t ptr_size = ko.program->device->pointer_size;
       for (cl_uint arg_index = 0;
         arg_index < (cl_uint)ds->arguments.size();
         arg_index++)
       {
-        std::stringstream ss;
         const arg_info &ai = ais[arg_index];
         const refable<init_spec*> &ris = ds->arguments[arg_index];
         const init_spec *is = ris;
-        if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
-          csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
-        } else if (std::holds_alternative<type_ptr>(ai.type.var)) {
-
-          csi->e->setKernelArgMemobj(
-            arg_index, dc, ss, ris.defined_at, ris, ai);
-        } else {
-          // A uniform argument
-          csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);
+        if (is == so->spec) {
+          if (!ai.type.holds<type_ptr>()) {
+            // TODO: I am not sure if this check is needed
+            //       We could skip the error and continue on to the next
+            fatalAt(from_st->defined_at,
+              "INTERNAL ERROR: surface type used as non-pointer type");
+          }
+          return ai.type.as<type_ptr>().element_type;
         }
-        dc.evaluated_args.push_back(ss.str());
-      } // for kernel args
-      csi->instructions.emplace_back(&dc);
-    } else if (st->kind == statement_spec::DIFF) {
-      diff_spec *ds = (diff_spec *)st;
-      surface_object *so = &csi->surfaces.get(ds->sut.value);
-      diff_command *dc = new diff_command(ds,so);
-      csi->instructions.emplace_back(dc);
-//    } else if (st->kind == statement_spec::LET) {
-//      const let_spec *ls = (const let_spec *)st;
-//      // fatalAt(ls->defined_at, "NOT IMPLEMENTED");
+      }
     }
-  }
+  } // for arg
+  return nullptr;
 }
 
 compiled_script cls::compile(const opts &os, const script &s)

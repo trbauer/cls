@@ -695,16 +695,15 @@ const init_spec_uex::op_spec *init_spec_uex::lookup_op(const char *symbol)
 void init_spec_rng::str(std::ostream &os, format_opts fopts) const
 {
   os << "random";
-  if (seed != 0) {
+  if (has_seed)
     os << "<" << seed << ">";
-  }
-  if (e_lo) {
+  if (e_hi) {
     os << "(";
-    e_lo->str(os,fopts);
-    if (e_hi) {
+    if (e_lo) {
+      e_lo->str(os,fopts);
       os << ",";
-      e_hi->str(os,fopts);
     }
+    e_hi->str(os,fopts);
     os << ")";
   }
 }
@@ -791,5 +790,15 @@ void let_spec::str(std::ostream &os, format_opts fopts) const {
 }
 
 void diff_spec::str(std::ostream &os,format_opts fopts) const  {
-  os << "diff("; ref->str(os,fopts); os << ","; sut.str(os,fopts); os << ")";
+  os << "diff";
+  if (element_type)
+    os << "<" << element_type->syntax() << ">";
+  os << "("; ref->str(os,fopts); os << ","; sut.str(os,fopts); os << ")";
+}
+
+void print_spec::str(std::ostream &os,format_opts fopts) const  {
+  os << "print";
+  if (element_type)
+    os << "<" << element_type->syntax() << ">";
+  os << "("; arg.str(os,fopts); os << ")";
 }

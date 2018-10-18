@@ -10,7 +10,8 @@
 
 namespace cls
 {
-  using times = std::vector<std::tuple<const cls::dispatch_spec*,sampler>>;
+  using disp_times = std::vector<std::tuple<const dispatch_spec*,sampler>>;
+  using init_times = std::vector<std::tuple<const init_spec_mem*,sampler>>;
 
   struct compiled_script {
     // various CL objects
@@ -19,8 +20,9 @@ namespace cls
     // intializer buffer values from whatever backing store
     void execute(int iteration);
 
-    times get_wall_times() const;
-    times get_prof_times() const;
+    disp_times get_wall_times() const;
+    disp_times get_prof_times() const;
+    init_times get_init_times() const;
   };
 
   // compiles programs

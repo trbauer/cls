@@ -220,7 +220,6 @@ namespace cls
   };
 
   struct type {
-    // std::variant<type_num,type_builtin,type_struct,type_enum,type_ptr> var;
     std::variant<
         type_void
       , type_num
@@ -229,61 +228,46 @@ namespace cls
       , type_struct
       , type_union
       , type_ptr>   var;
-    // const char      *name;
-    // std::string      name;
 
     constexpr type() : var(VOID) { }
     constexpr type(const type_num &t) : var(t) { }
+    constexpr type(const type_builtin &t) : var(t) { }
     constexpr type(const type_struct &t) : var(t) { }
+    constexpr type(const type_union &t) : var(t) { }
     constexpr type(const type_ptr &t) : var(t) { }
 
-    // template <typename F,typename R,typename Ts...>
-    // R apply(Ts...ts) {
-    //   if (std::holds_alternative<type_num>(var)) {
-    //    return std::get<type_num>(var).F();
-    //   }
-    // }
-    // size_t size(ptr_size) {return apply<size,size_t>(ptr_size);}
+    constexpr size_t size() const {
+      if (holds<type_void>()) {
+        return as<type_void>().size();
+      } else if (holds<type_num>()) {
+        return as<type_num>().size();
+      } else if (holds<type_builtin>()) {
+        return as<type_builtin>().size();
+      } else if (holds<type_struct>()) {
+        return as<type_struct>().size();
+      } else if (holds<type_union>()) {
+        return as<type_union>().size();
+      } else if (holds<type_ptr>()) {
+        return as<type_ptr>().size();
+      } else {
+        throw "unreachable";
+      }
+    }
+    std::string syntax() const;
 
     // template <typename T>
-    // type(std::string _name, T t) : name(_name) {var = t;}
-    // constexpr type(const char *_name, type_num t) : name(_name), var(t) {}
-    // constexpr type(std::string _name, type_num t) : name(_name), var(t) {}
-    constexpr size_t size() const {
-      if (std::holds_alternative<type_void>(var)) {
-        return std::get<type_void>(var).size();
-      } else if (std::holds_alternative<type_num>(var)) {
-        return std::get<type_num>(var).size();
-      } else if (std::holds_alternative<type_builtin>(var)) {
-        return std::get<type_builtin>(var).size();
-      } else if (std::holds_alternative<type_struct>(var)) {
-        return std::get<type_struct>(var).size();
-      } else if (std::holds_alternative<type_union>(var)) {
-        return std::get<type_union>(var).size();
-      } else if (std::holds_alternative<type_ptr>(var)) {
-        return std::get<type_ptr>(var).size();
-      } else {
-        throw "unreachable";
-      }
+    // operator const T&() const {return std::get<T>(var);}
+
+    template <typename T>
+    constexpr bool holds() const noexcept {
+      return std::holds_alternative<T>(var);
     }
-    std::string syntax() const {
-      if (std::holds_alternative<type_void>(var)) {
-        return std::get<type_void>(var).syntax();
-      } else if (std::holds_alternative<type_num>(var)) {
-        return std::get<type_num>(var).syntax();
-      } else if (std::holds_alternative<type_builtin>(var)) {
-        return std::get<type_builtin>(var).syntax();
-      } else if (std::holds_alternative<type_struct>(var)) {
-        return std::get<type_struct>(var).syntax();
-      } else if (std::holds_alternative<type_union>(var)) {
-        return std::get<type_union>(var).syntax();
-      } else if (std::holds_alternative<type_ptr>(var)) {
-        return std::get<type_ptr>(var).syntax();
-      } else {
-        throw "unreachable";
-      }
+    template <typename T>
+    constexpr const T &as() const {
+      return std::get<T>(var);
     }
   }; // types
+
 
   static inline bool operator==(const type &t1,const type &t2) {
     return t1.var == t2.var;
@@ -317,12 +301,12 @@ namespace cls
 
   // generate: constexpr const type& INT(); etc...
  #define MAKE_TYPE_ACCESSORS(IDENT)\
-  const type_num &IDENT();\
-  const type_struct &CAT(IDENT,2)();\
-  const type_struct &CAT(IDENT,3)();\
-  const type_struct &CAT(IDENT,4)();\
-  const type_struct &CAT(IDENT,8)();\
-  const type_struct &CAT(IDENT,16)()
+  const type &IDENT();\
+  const type &CAT(IDENT,2)();\
+  const type &CAT(IDENT,3)();\
+  const type &CAT(IDENT,4)();\
+  const type &CAT(IDENT,8)();\
+  const type &CAT(IDENT,16)()
   //
   MAKE_TYPE_ACCESSORS(HALF);
   MAKE_TYPE_ACCESSORS(FLOAT);
@@ -339,11 +323,23 @@ namespace cls
 
   const type *lookupPrimtiveType(std::string name);
 
+  // works for buffer or scalar
+  void format(
+    std::ostream &os,
+    const void *memory,
+    size_t buffer_length_in_bytes,
+    const type &t);
   void formatBuffer(
     std::ostream &os,
     const void *buffer,
     size_t buffer_length_in_bytes,
-    const type &t);
+    const type &elem_type,
+    int elems_per_row);
+  void formatBufferElement(
+    std::ostream &os,
+    const type &t,
+    const void *ptr);
+
 } // cls::
 
 

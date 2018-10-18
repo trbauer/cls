@@ -82,22 +82,9 @@ struct kernel_object {
   kernel_object(const kernel_spec *_spec, program_object *_program)
     : spec(_spec), program(_program) { }
 };
-/*
-struct generator_state {
-  std::uniform_int_distribution<int64_t>                s_dist;
-  std::uniform_int_distribution<uint64_t>               u_dist;
-  std::uniform_real_distribution<double>                f_dist;
-  std::mt19937                                          gen;
 
-  std::fstream                                          file;
-  size_t                                                file_size = 0;
+struct dispatch_command;
 
-  // generator_state(std::random_device &_rd) : gen(_rd) { }
-  generator_state(int64_t seed) {gen.seed((unsigned)seed);}
-  generator_state(std::string _file)
-    : file(_file,std::ios_base::in|std::ios_base::binary) { }
-};
-*/
 struct surface_object {
   enum kind {
     SO_INVALID = 0,
@@ -105,11 +92,18 @@ struct surface_object {
     SO_IMAGE
   } kind;
 
-  const init_spec_mem   *spec;
+  const init_spec_mem      *spec;
   size_t                    size_in_bytes;
   cl_mem                    memobj = nullptr;
   int                       memobj_index;
   cl_command_queue          queue = nullptr;
+
+  // - command used in (same command can appear multiple times if reused)
+  // - arg index
+  using use = std::tuple<dispatch_command *,cl_uint,const arg_info &>;
+  std::vector<use>          dispatch_uses;
+
+  sampler                   init_times;
 
   surface_object(
     const init_spec_mem *_spec,
@@ -125,6 +119,12 @@ struct surface_object {
     , memobj_index(_memobj_index)
     , queue(_queue)
   { }
+  std::string str() const {
+    std::stringstream ss;
+    ss << "0x" << std::hex << std::uppercase << memobj <<
+      "  (" << std::dec << size_in_bytes << " B)";
+    return ss.str();
+  }
 };
 
 
@@ -136,16 +136,13 @@ struct dispatch_command {
   const dispatch_spec                             *ds;
   device_object                                   *dobj;
   kernel_object                                   *kernel;
-  using surf_arg =
-    std::tuple<
-      loc,
-      cls::type_ptr,
-      surface_object*>;
 
   // we replicate this because ds can be null and reqd size may be set
   ndr                                              global_size, local_size;
 
-  std::vector<surf_arg>                            inits; // the surfaces we have to re-initialize
+  using surface_use = std::tuple<surface_object *,const type&,const arg_info &,const loc &>;
+  std::vector<surface_use>                         surfaces;
+
   std::vector<std::string>                         evaluated_args;
 
   sampler                                          wall_times;
@@ -251,12 +248,12 @@ struct cl_fatal_handler : fatal_handler {
   } while(0)
 
   void withBufferMapRead(
-    loc at,
+    const loc &at,
     cl_command_queue cq,
     const surface_object *so,
     buffer_reader apply);
   void withBufferMapWrite(
-    loc at,
+    const loc &at,
     cl_command_queue cq,
     surface_object *so,
     buffer_writer apply);
@@ -283,22 +280,46 @@ struct interp_fatal_handler : cl_fatal_handler {
 };
 
 struct diff_command {
-  diff_spec                 *spec;
+  const diff_spec           *spec;
   surface_object            *so;
-  diff_command(diff_spec *_spec, surface_object *_so)
+  const type                *element_type;
+  diff_command(const diff_spec *_spec, surface_object *_so, const type *et)
+    : spec(_spec), so(_so), element_type(et)
+  {
+  }
+};
+
+struct print_command {
+  const print_spec           *spec;
+  surface_object             *so;
+  const type                 *element_type;
+  print_command(const print_spec *_spec, surface_object *_so, const type *et)
+    : spec(_spec), so(_so), element_type(et)
+  {
+  }
+};
+
+struct save_command {
+  const save_spec            *spec;
+  surface_object             *so;
+  save_command(const save_spec *_spec, surface_object *_so)
     : spec(_spec), so(_so)
   {
   }
 };
 
 struct script_instruction {
-  enum {DISPATCH,DIFF} kind;
+  enum {DISPATCH,DIFF,PRINT,SAVE} kind;
   union {
     dispatch_command *dsc;
     diff_command     *dfc;
+    print_command    *prc;
+    save_command     *svc;
   };
   script_instruction(dispatch_command *_dc) : dsc(_dc), kind(DISPATCH) { }
   script_instruction(diff_command *_dc) : dfc(_dc), kind(DIFF) { }
+  script_instruction(print_command *_prc) : prc(_prc), kind(PRINT) { }
+  script_instruction(save_command *_svc) : svc(_svc), kind(SAVE) { }
 };
 
 struct compiled_script_impl : interp_fatal_handler {
@@ -310,36 +331,43 @@ struct compiled_script_impl : interp_fatal_handler {
   mapped_objects<const program_spec*,program_object>      programs;
   mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
-  mapped_objects<const init_spec_mem*,surface_object>  surfaces;
+  mapped_objects<const init_spec_mem*,surface_object>     surfaces;
 
   std::vector<script_instruction>                         instructions;
 
   compiled_script_impl(const opts &_os,const script &_s);
 
-  void init_surfaces(dispatch_command &dc);
+  void init_surfaces();
+  void init_surface(
+    surface_object &so,
+    dispatch_command *dc,
+    const type *elem_type,
+    void *host_ptr);
   void execute(dispatch_command &dc);
-  void execute(diff_command &dc);
+  void execute(diff_command &dfc, const void *buf);
+  void execute(print_command &prc, const void *buf);
+  void execute(save_command &svc, const void *buf);
 };
 
 // A buffer that we can write values to for kernel arguments.
 // It is also used as the host side backing store to setup buffers.
 struct arg_buffer : fatal_handler {
-  loc                    arg_loc;
+  loc                    at;
   size_t                 capacity;
   uint8_t               *base, *curr;
   bool                   owns_memory;
 
-  arg_buffer(const fatal_handler *_fh, loc _arg_loc, size_t _len)
-    : fatal_handler(_fh->input()), arg_loc(_arg_loc), capacity(_len)
+  arg_buffer(const fatal_handler *_fh, loc _at, size_t _len)
+    : fatal_handler(_fh->input()), at(_at), capacity(_len)
   {
     curr = base = new uint8_t[capacity];
     owns_memory = true;
     memset(curr, 0, capacity);
   }
   // e.g. writing to a mapped buffer
-  arg_buffer(const fatal_handler *_fh, loc _arg_loc, void *ptr, size_t cap)
+  arg_buffer(const fatal_handler *_fh, loc _at, void *ptr, size_t cap)
     : fatal_handler(_fh->input())
-    , arg_loc(_arg_loc)
+    , at(_at)
     , base((uint8_t *)ptr)
     , capacity(cap)
   {
@@ -366,7 +394,7 @@ struct arg_buffer : fatal_handler {
   void write(const T &t) {write(&t,sizeof(t));}
   void write(const void *src, size_t len) {
     if (len > num_left()) {
-      fatalAt(arg_loc,"INTERNAL ERROR: buffer overflow");
+      fatalAt(at,"INTERNAL ERROR: buffer overflow");
     }
     memcpy(curr, src, len);
     curr += len;
@@ -374,6 +402,20 @@ struct arg_buffer : fatal_handler {
   void fill_with_zeros() {
     memset(curr, 0, num_left());
     curr += num_left();
+  }
+
+  template <typename T>
+  T    read() {
+    T t;
+    read(&t,sizeof(t));
+    return t;
+  }
+  void read(void *val, size_t len) {
+    if (len > num_left()) {
+      fatalAt(at,"INTERNAL ERROR: buffer underflow");
+    }
+    memcpy(val, curr, len);
+    curr += len;
   }
 }; // arg_buffer
 

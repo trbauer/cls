@@ -257,38 +257,33 @@ namespace cls {
       return false;
     }
 
-    int64_t consumeInt(const char *what = "int") {
-      if (!lookingAtInt()) {
-        fatal("expected ",what);
-      }
-      int64_t x = 0;
-      try {
-        int base =
-          lookingAt(INTLIT10) ? 10 :
-          lookingAt(INTLIT16) ? 16 :
-          lookingAt(INTLIT02) ? 2 :
-          0;
-        x = std::stoll(tokenString(),nullptr,base);
-      } catch (std::invalid_argument &) {
-        fatal("expected ",what);
-      } catch (std::out_of_range &) {
-        fatal("literal out of range");
-      }
-      skip();
-      return x;
+    template <typename T> T parseIntegralBody(int base) const;
+    template <> int64_t parseIntegralBody(int base) const {
+      return std::stoll(tokenString(),nullptr,base);
     }
-    uint64_t consumeUInt(const char *what = "int") {
-      if (!lookingAtInt()) {
-        fatal("expected ",what);
-      }
-      uint64_t x = 0;
+    template <> uint64_t parseIntegralBody(int base) const {
+      return std::stoull(tokenString(),nullptr,base);
+    }
+    template <> int32_t parseIntegralBody(int base) const {
+      return std::stol(tokenString(),nullptr,base);
+    }
+    template <> uint32_t parseIntegralBody(int base) const {
+      return std::stoul(tokenString(),nullptr,base);
+    }
+
+    template <typename T>
+    T consumeIntegral(const char *what = "int") {
+      T x = 0;
       try {
+        if (!lookingAtInt()) {
+          fatal("expected ",what);
+        }
         int base =
           lookingAt(INTLIT10) ? 10 :
           lookingAt(INTLIT16) ? 16 :
           lookingAt(INTLIT02) ? 2 :
-          0;
-        x = std::stoull(tokenString(),nullptr,base);
+          0; // lookingAtInt() => 0 unreachable
+        x = parseIntegralBody<T>(base);
       } catch (std::invalid_argument &) {
         fatal("expected ",what);
       } catch (std::out_of_range &) {

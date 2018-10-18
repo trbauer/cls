@@ -4,6 +4,7 @@
 #include "../cl_headers.hpp"
 #include "../cls_opts.hpp"
 #include "../half.hpp"
+#include "../ir/types.hpp"
 #include "../fatal.hpp"
 #include "../text.hpp"
 
@@ -272,8 +273,8 @@ namespace cls
     bool has_seed = false;
     init_spec_atom *e_lo = nullptr, *e_hi = nullptr;
 
-    init_spec_rng(loc loc, int64_t _seed = 0)
-      : init_spec_atom(loc, IS_RND), seed(_seed) { }
+    init_spec_rng(loc loc) : init_spec_atom(loc, IS_RND) { }
+    void set_seed(int64_t _seed) {seed = _seed; has_seed = true;}
     void str(std::ostream &os, format_opts fopts) const;
   };
   struct init_spec_seq : init_spec_atom {
@@ -310,7 +311,10 @@ namespace cls
     bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
     bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
 
+    // either :p# or :P#
     bool print_pre = false, print_post = false;
+    // e.g. :p16 means 16 elements per row
+    int print_pre_elems_per_row = 0, print_post_elems_per_row = 0;
 
     init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
 
@@ -460,34 +464,55 @@ namespace cls
     barrier_spec(loc loc) : statement_spec(loc, statement_spec::BARRIER) { }
     void str(std::ostream &os,format_opts fopts) const {os << "barrier";}
   };
-  // diff(REF,SUT) => exits the program non-zero if there is a difference
+  // diff(REF,SUT)       => exits the program non-zero if there is a difference
+  // diff<TYPE>(REF,SUT) => exits the program non-zero if there is a difference
   struct diff_spec : statement_spec {
     init_spec                    *ref;
     refable<init_spec_mem *>      sut;
-    diff_spec(loc loc, init_spec *_ref, refable<init_spec_mem *> &_sut)
-      : statement_spec(loc, statement_spec::DIFF), ref(_ref), sut(_sut) { }
+    const type                   *element_type;
+
+    diff_spec(
+      loc loc,
+      init_spec *_ref,
+      refable<init_spec_mem *> &_sut,
+      const type *__element_type = nullptr)
+      : statement_spec(loc, statement_spec::DIFF)
+      , ref(_ref)
+      , sut(_sut)
+      , element_type(__element_type) { }
     void str(std::ostream &os,format_opts fopts) const;
   };
   // print(X)
+  // print<TYPE>(X)
+  // print<INT>(X)
+  // print<TYPE,INT>(X)
   struct print_spec : statement_spec {
-    init_spec_symbol *arg;
-    print_spec(loc loc, init_spec_symbol *a)
-      : statement_spec(loc, statement_spec::PRINT), arg(a) { }
-    void str(std::ostream &os,format_opts fopts) const {
-      os << "print("; arg->str(os,fopts); os << ")";
-    }
+    refable<init_spec_mem *>      arg;
+    const type                   *element_type;
+    int                           elements_per_row;
+    print_spec(
+      loc at,
+      refable<init_spec_mem *> &_arg,
+      const type *_elem_type,
+      int _elems_per_row)
+      : statement_spec(at, statement_spec::PRINT)
+      , arg(_arg)
+      , element_type(_elem_type)
+      , elements_per_row(_elems_per_row)
+    { }
+    void str(std::ostream &os,format_opts fopts) const;
   };
   // save('foo.bmp',X)
   struct save_spec : statement_spec {
     // init_spec_symbol *file; // foo.bpm
-    std::string file;      // 'foo.bmp'
-    init_spec_symbol *arg; // X
-    save_spec(loc loc, std::string _file, init_spec_symbol *_arg)
+    std::string              file; // 'foo.bmp'
+    refable<init_spec_mem *> arg;  // X
+    save_spec(loc loc, std::string _file, const refable<init_spec_mem *> &_arg)
       : statement_spec(loc, statement_spec::SAVE), file(_file), arg(_arg) { }
     void str(std::ostream &os,format_opts fopts) const {
       os << "save(" <<
         fopts.str_lit("'" + file + "'") << ", ";
-        arg->str(os,fopts); os << ")";
+        arg.str(os,fopts); os << ")";
     }
   };
 
