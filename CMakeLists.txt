@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.0)
 
 project(cls)
 
+# TODO: valid build arguments with default values
+# https://stackoverflow.com/questions/6787371/how-do-i-specify-build-options-for-cmake-based-projects
+
 set(VERSION_STRING "0.9.0")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
@@ -57,6 +60,12 @@ add_executable("cls${TARGET_MODIFIER}"
   )
 #   cls.flex
 
+# parallel build
+# if (MSVC_GENERATOR)
+#   add_compile_options(/MP)
+# endif()
+
+# TODO: need to ensure it's a 2.0 version when we start using SVM
 find_package(OpenCL REQUIRED)
 include_directories(. ${OpenCL_INCLUDE_DIRS})
 target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})

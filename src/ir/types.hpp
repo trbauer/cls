@@ -38,7 +38,37 @@ namespace cls
     std::string          syntax() const {return name;}
     bool operator==(const type_num &t) const {return text::streq(name,t.name);}
     bool operator!=(const type_num &t) const {return !(*this == t);}
-  };
+
+    template <typename RET,typename FUNC,typename...Ts>
+    RET reify(FUNC f,Ts...ts) const {
+      switch (kind) {
+      case UNSIGNED:
+        switch (size) {
+        case 1: return f<uint8_t>(ts...);
+        case 2: return f<uint16_t>(ts...);
+        case 4: return f<uint32_t>(ts...);
+        case 8: return f<uint64_t>(ts...);
+        }
+        break;
+      case SIGNED:
+        switch (size) {
+        case 1: return f<int8_t>(ts...);
+        case 2: return f<int16_t>(ts...);
+        case 4: return f<int32_t>(ts...);
+        case 8: return f<int64_t>(ts...);
+        }
+        break;
+      case FLOAT:
+        switch (size) {
+        case 2: return f<half>(ts...);
+        case 4: return f<float>(ts...);
+        case 8: return f<double>(ts...);
+        }
+      default: throw "INTERNAL ERROR: corrupt type_num";
+      }
+    }
+  }; // type_num
+
   ///////////////////////////////////////////////////////////////////////////
   // enum foo{BAR,BAZ,QUX}
   struct type_enum {
@@ -162,17 +192,8 @@ namespace cls
     size_t size() const;
     std::string syntax() const {return name;}
 
-    bool is_uniform() const {
-      if (elements_length == 0) {
-        return false;
-      }
-      const type *t0 = elements[0];
-      for (size_t i = 1; i < elements_length; i++)
-        if (elements[i] != t0)
-          return false;
-      return true;
-    }
-
+    // e.g. cl_int4
+    bool is_uniform() const;
     bool operator==(const type_struct &t) const {return text::streq(name,t.name);}
     bool operator!=(const type_struct &t) const {return !(*this == t);}
   };
@@ -237,17 +258,17 @@ namespace cls
     constexpr type(const type_ptr &t) : var(t) { }
 
     constexpr size_t size() const {
-      if (holds<type_void>()) {
+      if (is<type_void>()) {
         return as<type_void>().size();
-      } else if (holds<type_num>()) {
+      } else if (is<type_num>()) {
         return as<type_num>().size();
-      } else if (holds<type_builtin>()) {
+      } else if (is<type_builtin>()) {
         return as<type_builtin>().size();
-      } else if (holds<type_struct>()) {
+      } else if (is<type_struct>()) {
         return as<type_struct>().size();
-      } else if (holds<type_union>()) {
+      } else if (is<type_union>()) {
         return as<type_union>().size();
-      } else if (holds<type_ptr>()) {
+      } else if (is<type_ptr>()) {
         return as<type_ptr>().size();
       } else {
         throw "unreachable";
@@ -259,7 +280,7 @@ namespace cls
     // operator const T&() const {return std::get<T>(var);}
 
     template <typename T>
-    constexpr bool holds() const noexcept {
+    constexpr bool is() const noexcept {
       return std::holds_alternative<T>(var);
     }
     template <typename T>
@@ -277,6 +298,15 @@ namespace cls
   }
   inline bool type_ptr::operator==(const type_ptr &t) const {
     return *element_type == *t.element_type;
+  }
+  inline bool type_struct::is_uniform() const {
+    const type *t0 = elements[0];
+    if (elements_length == 0 || !t0->is<type_num>())
+      return false;
+    for (size_t i = 1; i < elements_length; i++)
+      if (elements[i] != t0)
+        return false;
+    return true;
   }
   inline size_t type_struct::size() const {
     size_t sum = 0;

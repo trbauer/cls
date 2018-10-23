@@ -33,9 +33,10 @@ struct script_compiler : public interp_fatal_handler {
 private:
   void compileDispatch(const dispatch_spec *ds);
   dispatch_command *compileDispatchArgs(const dispatch_spec *ds);
-  diff_command *compileDiff(size_t st_ix, const diff_spec *ds);
-  print_command *compilePrint(size_t st_ix, const print_spec *ps);
-  const type *inferSurfaceElementType(surface_object *so, size_t from_st_ix);
+  diffu_command *compileDiffU(const diff_spec *ds);
+  diffs_command *compileDiffS(const diff_spec *ds);
+  print_command *compilePrint(const print_spec *ps);
+  const type *inferSurfaceElementType(const loc &at, surface_object *so);
 
   kernel_object &compileKernel(const kernel_spec *ks);
   program_object &compileProgram(const program_spec *ps);
@@ -360,22 +361,150 @@ void script_compiler::compile()
       dispatch_command *dc = compileDispatchArgs((const dispatch_spec *)st);
       csi->instructions.emplace_back(dc);
     } else if (st->kind == statement_spec::DIFF) {
-      diff_command *dc = compileDiff(st_ix,(const diff_spec *)st);
-      csi->instructions.emplace_back(dc);
+      const diff_spec *ds = (const diff_spec *)st;
+      if (ds->ref.value->is_atom()) {
+        diffu_command *dc = compileDiffU(ds);
+        csi->instructions.emplace_back(dc);
+      } else {
+        diffs_command *dc = compileDiffS(ds);
+        csi->instructions.emplace_back(dc);
+      }
     } else if (st->kind == statement_spec::PRINT) {
-      print_command *pc = compilePrint(st_ix,(const print_spec *)st);
+      print_command *pc = compilePrint((const print_spec *)st);
       csi->instructions.emplace_back(pc);
     } else if (st->kind == statement_spec::SAVE) {
       const save_spec *ss = (const save_spec *)st;
-      surface_object *so =  &csi->surfaces.get(ss->arg.value);
-      save_command *sc = new save_command(ss,so);
+      // surface_object *so =  &csi->surfaces.get(ss->arg.value);
+      save_command *sc = new save_command(ss,nullptr);
       csi->instructions.emplace_back(sc);
     } else if (st->kind == statement_spec::LET) {
       ; // nop
     } else {
-      fatalAt(st->defined_at, "NOT IMPLEMENTED");
+      internalAt(st->defined_at, "NOT IMPLEMENTED");
     }
-  }
+  } // for
+
+  // (e.g. print, diff, save) and bind surface_object*'s to their value.
+  // Loop through all memory object statements and link them to the surface
+  // objects they process.  We do this as a second pass because
+  // surface_objects are only created once they are used in a dispatch.
+  // E.g.
+  //    let X = random:w
+  //    print<int>(X)  <<<<<<<<<<<<< surface object used before dispatch
+  //    #0`foo.cl`kernel<...>(X);
+  for (script_instruction &si : csi->instructions) {
+    switch (si.kind)
+    {
+    case script_instruction::DIFFS: {
+      diffs_command *dfsc = si.dfsc;
+      // sut surface
+      dfsc->so_sut = &csi->surfaces.get(dfsc->spec->sut.value);
+      debug(dfsc->spec,"bound (SUT) surface to ",dfsc->so_sut->str());
+
+      // bind the element type if it's not explicitly set
+      if (!dfsc->element_type) {
+        dfsc->element_type =
+          inferSurfaceElementType(dfsc->spec->defined_at, dfsc->so_sut);
+        if (dfsc->element_type)
+          debug(dfsc->spec,"bound element type to ",
+            dfsc->element_type->syntax());
+      }
+
+      // reference surface
+      const init_spec_mem *ism_ref = (const init_spec_mem *)dfsc->spec->ref.value;
+      if (csi->surfaces.find(ism_ref) != csi->surfaces.find_end()) {
+        dfsc->so_ref = &csi->surfaces.get(ism_ref);
+        debug(dfsc->spec,"bound (REF) surface to ",dfsc->so_ref->str());
+        if (dfsc->so_sut->size_in_bytes != dfsc->so_ref->size_in_bytes) {
+          fatalAt(dfsc->spec->defined_at,"surface sizes mismatch");
+        }
+      } else {
+        // it's an immediate object, we have to create a dummy surface
+        // we use the SUT object properties for reference
+        //
+        // e.g. diff<int>(seq(4,2):r, SUT)
+        //
+        if (dfsc->so_sut->dispatch_uses.empty()) {
+          fatalAt(dfsc->spec->defined_at,
+            "cannot diff against unused memory object");
+        }
+        if (!dfsc->element_type) {
+          fatalAt(dfsc->spec->defined_at,
+            "explicit type required for reference surface initializer");
+        }
+        // use SUT to dtermine the buffer type etc...
+        dispatch_command *dc = std::get<0>(dfsc->so_sut->dispatch_uses.front());
+        const arg_info &ai = std::get<2>(dfsc->so_sut->dispatch_uses.front());
+        cl_mem_flags cl_mfs = CL_MEM_READ_ONLY;
+        cl_mem memobj = nullptr;
+        cl_context context = (*dc->kernel->program->device->context)();
+        CL_COMMAND_CREATE(memobj, ism_ref->defined_at,
+          clCreateBuffer,
+            context,
+            cl_mfs,
+            dfsc->so_sut->size_in_bytes,
+            nullptr);
+        dfsc->so_ref = csi->define_surface(
+          ism_ref,
+          surface_object::SO_BUFFER,
+          dfsc->so_sut->size_in_bytes,
+          memobj,
+          dfsc->so_sut->queue);
+        dfsc->so_ref->dummy_object = true; // only used for comparison
+        withBufferMapWrite(
+          ism_ref->defined_at,
+          dfsc->so_ref,
+          [&](void *host_ptr) {
+            evaluator::context ec(dc->global_size,dc->local_size);
+            const type *elem_type = dfsc->element_type;
+            if (!elem_type) {
+              // typeless diff needs the element from the SUT
+              // diff(22:r,SUT) needs to take the type from SUT
+              if (!dfsc->so_sut->dispatch_uses.empty()) {
+                fatalAt(dfsc->spec->defined_at,"cannot infer element type");
+              }
+              const type &t = std::get<2>(dfsc->so_sut->dispatch_uses.back()).type;
+              if (!t.is<type_ptr>()) {
+                fatalAt(dfsc->spec->defined_at,
+                  "inferred element type (from SUT) is not a pointer");
+              }
+              elem_type = t.as<type_ptr>().element_type;
+            }
+            csi->init_surface(*dfsc->so_ref,ec,elem_type,host_ptr);
+          });
+      }
+      break;
+    }
+    case script_instruction::DIFFU: {
+      diffu_command *dfuc = si.dfuc;
+      si.dfuc->so = &csi->surfaces.get(dfuc->spec->sut.value);
+      debug(si.dfuc->spec,"bound surface to ",dfuc->so->str());
+      if (!dfuc->element_type) {
+        dfuc->element_type =
+          inferSurfaceElementType(dfuc->spec->defined_at, dfuc->so);
+        if (dfuc->element_type)
+          debug(dfuc->spec,"bound element type to ",
+            dfuc->element_type->syntax());
+      }
+      break;
+    }
+    case script_instruction::PRINT:
+      si.prc->so = &csi->surfaces.get(si.prc->spec->arg.value);
+      debug(si.prc->spec,"bound surface to ",si.prc->so->str());
+      if (!si.prc->element_type) {
+        si.prc->element_type =
+          inferSurfaceElementType(si.prc->spec->defined_at, si.prc->so);
+        if (si.prc->element_type)
+          debug(si.prc->spec,"bound element type to ",
+            si.prc->element_type->syntax());
+      }
+      break;
+    case script_instruction::SAVE:
+      si.svc->so = &csi->surfaces.get(si.svc->spec->arg.value);
+      debug(si.svc->spec,"bound surface to ",si.svc->so->str());
+      break;
+    } // switch
+  } // for
 }
 
 void script_compiler::compileDispatch(const dispatch_spec *ds)
@@ -418,11 +547,11 @@ dispatch_command *script_compiler::compileDispatchArgs(
   {
     std::stringstream ss;
     const arg_info &ai = ais[arg_index];
-    const refable<init_spec*> &ris = ds->arguments[arg_index];
+    const refable<init_spec> &ris = ds->arguments[arg_index];
     const init_spec *is = ris;
     if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
       csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
-    } else if (ai.type.holds<type_ptr>()) {
+    } else if (ai.type.is<type_ptr>()) {
       csi->e->setKernelArgMemobj(
         arg_index, dc, ss, ris.defined_at, ris, ai);
     } else {
@@ -434,9 +563,9 @@ dispatch_command *script_compiler::compileDispatchArgs(
   return &dc;
 }
 
-diff_command *script_compiler::compileDiff(
-  size_t st_ix, const diff_spec *ds)
+diffu_command *script_compiler::compileDiffU(const diff_spec *ds)
 {
+#if 0
   surface_object *so = &csi->surfaces.get(ds->sut.value);
   const type *element_type = ds->element_type;
 
@@ -448,12 +577,18 @@ diff_command *script_compiler::compileDiff(
     element_type = inferSurfaceElementType(so, st_ix);
   } // element_type != nullptr
 
-  return new diff_command(ds,so,element_type);
+  return new diffu_command(ds,so,element_type);
+#endif
+  return new diffu_command(ds,nullptr,nullptr);
+}
+diffs_command *script_compiler::compileDiffS(const diff_spec *ds)
+{
+  return new diffs_command(ds,nullptr,nullptr,nullptr);
 }
 
-print_command *script_compiler::compilePrint(
-  size_t st_ix, const print_spec *ps)
+print_command *script_compiler::compilePrint(const print_spec *ps)
 {
+#if 0
   surface_object *so = &csi->surfaces.get(ps->arg.value);
   const type *element_type = ps->element_type;
 
@@ -466,8 +601,41 @@ print_command *script_compiler::compilePrint(
   } // element_type != nullptr
 
   return new print_command(ps,so,element_type);
+#endif
+  return new print_command(ps,nullptr,ps->element_type);
 }
 
+const type *script_compiler::inferSurfaceElementType(
+  const loc &at, surface_object *so)
+{
+  if (so->dispatch_uses.empty()) {
+    fatalAt(so->spec->defined_at,
+      "memory object never used in a dispatch (so we can't infer it's type)");
+  }
+  dispatch_command *dc = std::get<0>(so->dispatch_uses.front());
+  kernel_object &ko = *dc->kernel;
+  const auto &ais = ko.kernel_info->args;
+  for (cl_uint arg_index = 0;
+    arg_index < (cl_uint)dc->spec->arguments.size();
+    arg_index++)
+  {
+    const arg_info &ai = ais[arg_index];
+    const refable<init_spec> &ris = dc->spec->arguments[arg_index];
+    const init_spec *is = ris;
+    if (is == so->spec) {
+      if (!ai.type.is<type_ptr>()) {
+        // TODO: I am not sure if this check is needed
+        //       We could skip the error and try another dispatch command
+        fatalAt(at, "INTERNAL ERROR: surface type used as non-pointer type");
+      }
+      return ai.type.as<type_ptr>().element_type;
+    }
+  }
+  fatalAt(at, "INTERNAL ERROR: surface object mis-linked to dispatch");
+  return nullptr;
+}
+
+#if 0
 const type *script_compiler::inferSurfaceElementType(
   surface_object *so, size_t from_st_ix)
 {
@@ -484,10 +652,10 @@ const type *script_compiler::inferSurfaceElementType(
         arg_index++)
       {
         const arg_info &ai = ais[arg_index];
-        const refable<init_spec*> &ris = ds->arguments[arg_index];
+        const refable<init_spec> &ris = ds->arguments[arg_index];
         const init_spec *is = ris;
         if (is == so->spec) {
-          if (!ai.type.holds<type_ptr>()) {
+          if (!ai.type.is<type_ptr>()) {
             // TODO: I am not sure if this check is needed
             //       We could skip the error and continue on to the next
             fatalAt(from_st->defined_at,
@@ -500,6 +668,7 @@ const type *script_compiler::inferSurfaceElementType(
   } // for arg
   return nullptr;
 }
+#endif
 
 compiled_script cls::compile(const opts &os, const script &s)
 {

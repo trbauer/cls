@@ -48,17 +48,17 @@ constexpr bool holds(const std::variant<Types...>& v) noexcept {
 */
 
 std::string type::syntax() const {
-  if (holds<type_void>()) {
+  if (is<type_void>()) {
     return as<type_void>().syntax();
-  } else if (holds<type_num>()) {
+  } else if (is<type_num>()) {
     return as<type_num>().syntax();
-  } else if (holds<type_builtin>()) {
+  } else if (is<type_builtin>()) {
     return as<type_builtin>().syntax();
-  } else if (holds<type_struct>()) {
+  } else if (is<type_struct>()) {
     return as<type_struct>().syntax();
-  } else if (holds<type_union>()) {
+  } else if (is<type_union>()) {
     return as<type_union>().syntax();
-  } else if (holds<type_ptr>()) {
+  } else if (is<type_ptr>()) {
     return as<type_ptr>().syntax();
   } else {
     throw "unreachable";
@@ -110,7 +110,7 @@ const type *cls::lookupPrimtiveType(std::string name)
   MATCH_PRIM_TYPE(T_DOUBLE,"double");
   //
   MATCH_PRIM_TYPE(T_CHAR,"char");
-  MATCH_PRIM_TYPE(T_UINT,"uchar");
+  MATCH_PRIM_TYPE(T_UCHAR,"uchar");
   MATCH_PRIM_TYPE(T_SHORT,"short");
   MATCH_PRIM_TYPE(T_USHORT,"ushort");
   MATCH_PRIM_TYPE(T_INT,"int");
@@ -128,7 +128,7 @@ void cls::format(
   size_t memory_size,
   const type &memory_type)
 {
-  if (memory_type.holds<type_ptr>()) {
+  if (memory_type.is<type_ptr>()) {
     formatBuffer(
       os,
       memory,
@@ -198,7 +198,7 @@ void cls::formatBufferElement(
   const type &t,
   const void *ptr)
 {
-  if (t.holds<type_num>()) {
+  if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
     switch (tn.kind) {
     case type_num::FLOATING:
@@ -222,7 +222,7 @@ void cls::formatBufferElement(
       os << std::dec;
       switch (tn.size()) {
       case 1:
-        os << std::setw(4) << read_unaligned<int8_t>(ptr);
+        os << std::setw(4) << (int)read_unaligned<int8_t>(ptr);
         break;
       case 2:
         os << std::setw(6) << read_unaligned<int16_t>(ptr);
@@ -240,7 +240,7 @@ void cls::formatBufferElement(
       switch (tn.size()) {
       case 1:
         os << "0x" << std::setw(2) << std::setfill('0') <<
-          read_unaligned<uint8_t>(ptr);
+          (unsigned)read_unaligned<uint8_t>(ptr);
         break;
       case 2:
         os << "0x" << std::setw(4) << std::setfill('0') <<
@@ -260,7 +260,7 @@ void cls::formatBufferElement(
   // } else if (t.holds<type_enum>()) {
     // type_enum te = t.as<type_enum>();
     // ss << std::setw(12) << read_unaligned<int32_t>(ptr);
-  } else if (t.holds<type_builtin>()) {
+  } else if (t.is<type_builtin>()) {
     os << std::hex << std::uppercase;
     const type_builtin &tbi = t.as<type_builtin>();
     if (std::get<type_ptr>(t.var).size() == 4) {
@@ -270,7 +270,7 @@ void cls::formatBufferElement(
       os << "0x" << std::setw(16) << std::setfill('0') <<
         read_unaligned<uint64_t>(ptr);
     }
-  } else if (t.holds<type_struct>()) {
+  } else if (t.is<type_struct>()) {
     const type_struct &ts = t.as<type_struct>();
     os << "{";
     const uint8_t *struct_ptr = (const uint8_t *)ptr;
@@ -281,7 +281,7 @@ void cls::formatBufferElement(
       struct_ptr += ts.elements[i]->size();
     }
     os << "}";
-  } else if (t.holds<type_union>()) {
+  } else if (t.is<type_union>()) {
     const type_union &tu = t.as<type_union>();
     os << "{";
     for (size_t i = 0; i < tu.elements_length; i++) {
@@ -290,7 +290,7 @@ void cls::formatBufferElement(
       formatBufferElement(os, *tu.elements[i], ptr);
     }
     os << "}";
-  } else if (t.holds<type_ptr>()) {
+  } else if (t.is<type_ptr>()) {
     os << std::hex << std::uppercase;
     if (t.as<type_ptr>().size() == 4) {
       os << "0x" << std::setw(8) << std::setfill('0') <<

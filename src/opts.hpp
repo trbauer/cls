@@ -12,8 +12,8 @@
 
 #include "system.hpp"
 
-#define OPTS_INVALID_SPEC(M)                                                   \
-  FATAL("INTERNAL ERROR: INVALID SPEC given to "                               \
+#define OPTS_INVALID_SPEC(M)                                                  \
+  FATAL("INTERNAL ERROR: INVALID SPEC given to "                              \
         "opts.hpp\n" #M)
 
 namespace opts

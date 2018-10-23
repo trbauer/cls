@@ -19,6 +19,29 @@ compiled_script_impl::compiled_script_impl(const opts &_os,const script &_s)
   , s(_s)
   , e(new evaluator(this)) { }
 
+surface_object *compiled_script_impl::define_surface(
+  const init_spec_mem *_spec,
+  enum surface_object::kind _kind,
+  size_t _size_in_bytes,
+  cl_mem _mem,
+  cl_command_queue _queue)
+{
+  return &surfaces.emplace_back(
+    _spec,
+    _spec,
+    _kind,
+    _size_in_bytes,
+    _mem,
+    (int)surfaces.size(),
+    _queue);
+}
+
+evaluator::evaluator(compiled_script_impl *_csi)
+  : interp_fatal_handler(_csi->os,_csi->input()), csi(_csi)
+{
+}
+
+
 val evaluator::eval(
   context &ec,
   const init_spec_atom *e)
@@ -95,7 +118,7 @@ void evaluator::setKernelArgImmediate(
   cl_uint arg_index,
   dispatch_command &dc,
   std::stringstream &ss,
-  const refable<init_spec *> &ris,
+  const refable<init_spec> &ris,
   const arg_info &ai)
 {
   // non-surface
@@ -107,7 +130,7 @@ void evaluator::setKernelArgImmediate(
   evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, ai.type);
 
   if (ab.num_left() != 0) {
-    fatalAt(ris.defined_at, "INTERNAL ERROR: failed to set full argument");
+    internalAt(ris.defined_at, "failed to set full argument");
   }
 
   CL_COMMAND(
@@ -145,7 +168,7 @@ void evaluator::setKernelArgMemobj(
   dispatch_command &dc,
   std::stringstream &ss,
   const loc &at,
-  const refable<init_spec *> &ris,
+  const refable<init_spec> &ris,
   const arg_info &ai)
 {
   if (((const init_spec *)ris)->kind != init_spec::IS_MEM) {
@@ -153,7 +176,7 @@ void evaluator::setKernelArgMemobj(
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type.holds<type_ptr>()) {
+  if (!ai.type.is<type_ptr>()) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
   const type &elem_type = *ai.type.as<type_ptr>().element_type;
@@ -193,12 +216,11 @@ void evaluator::setKernelArgMemobj(
         cl_mfs,
         buffer_size,
         nullptr);
-    so = &csi->surfaces.emplace_back(ism,
+    so = csi->define_surface(
       ism,
       surface_object::SO_BUFFER,
       buffer_size,
       memobj,
-      (int)csi->surfaces.size(),
       (*dc.dobj->queue)());
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
@@ -219,7 +241,7 @@ void evaluator::setKernelArgSLM(
   cl_uint arg_index,
   dispatch_command &dc,
   std::stringstream &ss, // debug string for arg
-  const refable<init_spec *> &ris,
+  const refable<init_spec> &ris,
   const arg_info &ai)
 {
   const init_spec *is = ris;
@@ -230,7 +252,7 @@ void evaluator::setKernelArgSLM(
   //
   //  SPECIFY: do we allow the alternative?
   //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
-  if (!ai.type.holds<type_ptr>()) {
+  if (!ai.type.is<type_ptr>()) {
     fatalAt(
       ris.defined_at,
       "kernel argument in local address space must be pointer type");
@@ -260,11 +282,11 @@ void evaluator::evalInto(
   arg_buffer &ab,
   const type &t)
 {
-  if (t.holds<type_num>()) {
+  if (t.is<type_num>()) {
     evalInto(ec, at, is, ab, t.as<type_num>());
-  } else if (t.holds<type_struct>()) {
+  } else if (t.is<type_struct>()) {
     evalInto(ec, at, is, ab, t.as<type_struct>());
-  } else if (t.holds<type_ptr>()) {
+  } else if (t.is<type_ptr>()) {
     evalInto(ec, at, is, ab, t.as<type_ptr>());
   } else {
     fatalAt(is->defined_at,"unsupported argument type");
@@ -286,7 +308,7 @@ void evaluator::evalInto(
     case 2: evalIntoT<int16_t>(ec,at,is,ab); break;
     case 4: evalIntoT<int32_t>(ec,at,is,ab); break;
     case 8: evalIntoT<int64_t>(ec,at,is,ab); break;
-    default: fatalAt(at,"INTERNAL ERROR: unreachable");
+    default: internalAt(at,"unreachable");
     }
     break;
   case type_num::UNSIGNED:
@@ -295,7 +317,7 @@ void evaluator::evalInto(
     case 2: evalIntoT<uint16_t>(ec,at,is,ab); break;
     case 4: evalIntoT<uint32_t>(ec,at,is,ab); break;
     case 8: evalIntoT<uint64_t>(ec,at,is,ab); break;
-    default: fatalAt(at,"INTERNAL ERROR: unreachable");
+    default: internalAt(at,"unreachable");
     }
     break;
   case type_num::FLOATING:
@@ -303,11 +325,10 @@ void evaluator::evalInto(
     case 2: evalIntoT<half>(ec,at,is,ab); break;
     case 4: evalIntoT<float>(ec,at,is,ab); break;
     case 8: evalIntoT<double>(ec,at,is,ab); break;
-    default: fatalAt(at,"INTERNAL ERROR: unreachable");
+    default: internalAt(at,"unreachable");
     }
     break;
-  default:
-    fatalAt(at,"INTERNAL ERROR: unreachable");
+  default: internalAt(at,"unreachable");
   }
 }
 
@@ -329,10 +350,11 @@ void evaluator::evalIntoT(
     ec.evaluated(v.as<T>());
     break;
   }
-  case init_spec::IS_SYM:
-    fatalAt(at,"unbound symbol");
-  default:
-    fatalAt(at,"INTERNAL ERROR: unsupported expression for primitive");
+  case init_spec::IS_SYM: fatalAt(at,"unbound symbol");
+  case init_spec::IS_REC: fatalAt(at,"vector initializer passed to scalar");
+  case init_spec::IS_FIL:
+  case init_spec::IS_RND:
+  default: internalAt(at,"unreachable");
   }
 }
 

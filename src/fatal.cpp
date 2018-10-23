@@ -1,6 +1,11 @@
 #include "fatal.hpp"
 
-std::string cls::diagnostic::str() const
+#include <cstdlib>
+#include <iostream>
+
+using namespace cls;
+
+std::string diagnostic::str() const
 {
   std::stringstream ss;
   str(ss);
@@ -9,43 +14,52 @@ std::string cls::diagnostic::str() const
 
 void cls::formatMessageWithContextImpl(
   std::ostream &os,
-  cls::loc location,
+  const cls::loc &at,
   const text::ansi_literal *highlight,
   const std::string &input,
   const std::string &message)
 {
-  if (location.line > 0 && location.column > 0) {
-    os << location.line << "." << location.column << ": ";
+  if (at.line > 0 && at.column > 0) {
+    os << at.line << "." << at.column << ": ";
   }
   os << message << "\n";
 
-  if (location.line > 0 && location.column > 0) {
-    size_t off = location.offset - (location.column - 1);
+  if (at.line > 0 && at.column > 0) {
+    size_t off = at.offset - (at.column - 1);
     while (off < input.length() && input[off] != '\n' && input[off] != '\r') {
-      if (highlight && off == location.offset && location.extent > 0)
+      if (highlight && off == at.offset && at.extent > 0)
         os << *highlight;
       os << input[off++];
-      if (highlight && off == location.offset + location.extent)
+      if (highlight && off == at.offset + at.extent)
         os << text::ANSI_RESET;
     }
     os << "\n";
-    if (location.column > 0) {
-      for (size_t i = 0; i < location.column - 1; i++) {
+    if (at.column > 0) {
+      for (size_t i = 0; i < at.column - 1; i++) {
         os << ' ';
       }
     }
     os << "^";
-    for (size_t ext = 1; ext < location.extent; ext++)
+    for (size_t ext = 1; ext < at.extent; ext++)
       os << "^";
     os << "\n";
   }
 }
 
-void cls::diagnostic::str(std::ostream &os) const {
-  cls::formatMessageWithContextImpl(
+void diagnostic::str(std::ostream &os) const {
+  formatMessageWithContextImpl(
     os,
-    location,
+    at,
     &text::ANSI_RED,
     input,
     message);
+}
+
+void diagnostic::default_exit() const {
+  str(std::cerr);
+  if (internal_error) {
+    exit(EXIT_INTERNAL_ERROR);
+  } else {
+    exit(EXIT_FAILURE);
+  }
 }

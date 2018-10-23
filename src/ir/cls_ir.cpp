@@ -495,6 +495,20 @@ void init_spec_uex::str(std::ostream &os, format_opts fopts) const
   }
 }
 
+void init_spec_file::str(std::ostream &os, format_opts fopts) const
+{
+  os << "file<";
+  switch (flavor) {
+  case file_flavor::BIN: os << "bin"; break;
+  case file_flavor::TXT: os << "text"; break;
+  case file_flavor::TXT_COL:
+    os << "text_col" << "," << col << "," << sep;
+    break;
+  }
+  os << ">(\"" << path << "\")";
+}
+
+
 #define UNR_OP(F) \
   static val apply_ ## F (fatal_handler *,const loc &,const val &v) {\
     if (v.is_float()) {\
@@ -807,7 +821,7 @@ void diff_spec::str(std::ostream &os,format_opts fopts) const  {
   os << "diff";
   if (element_type)
     os << "<" << element_type->syntax() << ">";
-  os << "("; ref->str(os,fopts); os << ","; sut.str(os,fopts); os << ")";
+  os << "("; ref.str(os,fopts); os << ","; sut.str(os,fopts); os << ")";
 }
 
 void print_spec::str(std::ostream &os,format_opts fopts) const  {

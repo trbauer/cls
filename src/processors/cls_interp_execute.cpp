@@ -10,7 +10,7 @@ disp_times compiled_script::get_wall_times() const
   disp_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const dispatch_command *dc : csi->dispatches)
-    ts.emplace_back(dc->ds,dc->wall_times);
+    ts.emplace_back(dc->spec,dc->wall_times);
   return ts;
 }
 
@@ -19,7 +19,7 @@ disp_times compiled_script::get_prof_times() const
   disp_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const dispatch_command *dc : csi->dispatches)
-    ts.emplace_back(dc->ds,dc->prof_times);
+    ts.emplace_back(dc->spec,dc->prof_times);
   return ts;
 }
 
@@ -176,10 +176,11 @@ static void fill_buffer_rng(
     gen.seed((unsigned)isr->seed);
   } else {
     gen.seed(static_cast<unsigned>(
-            std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+      std::chrono::high_resolution_clock::now().
+        time_since_epoch().count()));
   }
 
-  if (t.holds<type_num>()) {
+  if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
     switch (tn.kind) {
     case type_num::SIGNED: {
@@ -207,9 +208,9 @@ static void fill_buffer_rng(
       }
       break;
     }
-  } else if (t.holds<type_struct>()) {
+  } else if (t.is<type_struct>()) {
     const type_struct &ts = t.as<type_struct>();
-    if (ts.is_uniform() && ts.elements[0]->holds<type_num>()) {
+    if (ts.is_uniform() && ts.elements[0]->is<type_num>()) {
       const type_num &tn = ts.elements[0]->as<type_num>();
       fill_buffer_rng(csi, ec, ab, isr, tn, at);
     } else {
@@ -252,7 +253,7 @@ static void fill_buffer_seq(
   const type &t,
   const loc &at)
 {
- if (t.holds<type_num>()) {
+ if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
     switch (tn.kind) {
     case type_num::SIGNED: {
@@ -280,9 +281,9 @@ static void fill_buffer_seq(
       }
       break;
     }
-  } else if (t.holds<type_struct>()) {
+  } else if (t.is<type_struct>()) {
     const type_struct &ts = t.as<type_struct>();
-    if (ts.is_uniform() && ts.elements[0]->holds<type_num>()) {
+    if (ts.is_uniform() && ts.elements[0]->is<type_num>()) {
       const type_num &tn = ts.elements[0]->as<type_num>();
       fill_buffer_seq(csi, ec, ab, iss, tn, at);
     } else {
@@ -318,7 +319,6 @@ void compiled_script_impl::execute(dispatch_command &dc)
 
         withBufferMapRead(
           at,
-          queue,
           so,
           [&] (const void *host_ptr) {
             formatBuffer(
@@ -378,16 +378,65 @@ void compiled_script_impl::execute(dispatch_command &dc)
     clFinish, queue);
 }
 
-void compiled_script_impl::execute(diff_command &dfc, const void *host_ptr)
+void compiled_script_impl::execute(
+  diffs_command &dfc,
+  const void *ref_host_ptr,
+  const void *sut_host_ptr)
+{
+  evaluator::context ec{ndr(),ndr()};
+  if (dfc.so_ref->size_in_bytes == 0)
+    return; // zero sized buffers always match
+  const type *elem_type = dfc.element_type;
+  if (elem_type == nullptr) {
+    elem_type = (dfc.so_ref->size_in_bytes > 4 &&
+      dfc.so_sut->size_in_bytes % 4 == 0) ?
+      &UINT() : &UCHAR();
+  } else if (elem_type->size() == 0 ||
+    dfc.so_sut->size_in_bytes % elem_type->size() != 0)
+  {
+    fatalAt(
+      dfc.spec->defined_at,
+      "buffer size is not a multiple of diff element type ",
+      elem_type->syntax());
+  }
+
+  size_t total_elems = dfc.so_sut->size_in_bytes / elem_type->size();
+  const uint8_t *ref_host_ptr8 = (const uint8_t*)ref_host_ptr;
+  const uint8_t *sut_host_ptr8 = (const uint8_t*)sut_host_ptr;
+  for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
+    if (memcmp(
+      ref_host_ptr8 + elem_ix*elem_type->size(),
+      sut_host_ptr8 + elem_ix*elem_type->size(),
+      elem_type->size()))
+    {
+      std::cout << "mismatch on element "
+        << elem_ix << " (type " << elem_type->syntax() << ")\n";
+      std::cout << "============== vs. (SUT) ==============\n";
+      formatBufferElement(
+        std::cout,
+        *elem_type,
+        sut_host_ptr8 + elem_ix*elem_type->size());
+      std::cout << "\n";
+      std::cout << "============== vs. (REF) ==============\n";
+      formatBufferElement(
+        std::cout,
+        *elem_type,
+        ref_host_ptr8 + elem_ix*elem_type->size());
+      std::cout << "\n";
+      fatalAt(
+        dfc.spec->defined_at,
+        "mismatch on element ",elem_ix," (type ",elem_type->syntax(),")");
+    } // if mismatch
+  }
+}
+
+void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 {
   evaluator::context ec{ndr(),ndr()};
   if (dfc.so->size_in_bytes == 0)
     return; // zero sized buffers always match
-  if (!dfc.spec->ref->is_atom()) {
-    fatalAt(dfc.spec->defined_at,
-      "only atoms supported as reference argument");
-  }
-
+  if (!dfc.spec->ref.value->is_atom())
+    fatalAt(dfc.spec->defined_at, "only atoms supported as reference argument");
   const type *elem_type = dfc.element_type;
   if (elem_type == nullptr) {
     elem_type = (dfc.so->size_in_bytes > 4 && dfc.so->size_in_bytes % 4 == 0) ?
@@ -398,15 +447,15 @@ void compiled_script_impl::execute(diff_command &dfc, const void *host_ptr)
   arg_buffer ab_ref(this, dfc.spec->defined_at, elem_type->size());
   e->evalInto(ec,
     dfc.spec->defined_at,
-    (const init_spec_atom *)dfc.spec->ref,
+    (const init_spec_atom *)dfc.spec->ref.value,
     ab_ref,
     *elem_type);
   if (ab_ref.num_left() != 0) {
     fatalAt(dfc.spec->defined_at, "reference scalar value is wrong size");
   }
 
-  if (elem_type->size() == 0 || dfc.so->size_in_bytes % elem_type->size() != 0)
-  {
+  if (elem_type->size() == 0 ||
+    dfc.so->size_in_bytes % elem_type->size() != 0) {
     fatalAt(
       dfc.spec->defined_at,
       "buffer size is not a multiple of diff element type ",
@@ -478,14 +527,13 @@ void compiled_script_impl::execute(save_command &svc, const void *host_ptr)
 
 void cl_fatal_handler::withBufferMapRead(
   const loc &at,
-  cl_command_queue cq,
   const surface_object *so,
   buffer_reader apply)
 {
   void *host_ptr = nullptr;
   CL_COMMAND_CREATE(host_ptr, at,
     clEnqueueMapBuffer,
-      cq,
+      so->queue,
       so->memobj,
       CL_BLOCKING,
       CL_MAP_READ,
@@ -498,7 +546,7 @@ void cl_fatal_handler::withBufferMapRead(
 
   CL_COMMAND(at,
     clEnqueueUnmapMemObject,
-      cq,
+      so->queue,
       so->memobj,
       host_ptr,
       0,
@@ -508,14 +556,13 @@ void cl_fatal_handler::withBufferMapRead(
 
 void cl_fatal_handler::withBufferMapWrite(
   const loc &at,
-  cl_command_queue cq,
   surface_object *so,
   buffer_writer apply)
 {
   void *host_ptr = nullptr;
   CL_COMMAND_CREATE(host_ptr, at,
     clEnqueueMapBuffer,
-      cq,
+      so->queue,
       so->memobj,
       CL_BLOCKING,
       CL_MAP_WRITE,
@@ -528,7 +575,7 @@ void cl_fatal_handler::withBufferMapWrite(
 
   CL_COMMAND(at,
     clEnqueueUnmapMemObject,
-      cq,
+      so->queue,
       so->memobj,
       host_ptr,
       0,
@@ -540,6 +587,9 @@ void cl_fatal_handler::withBufferMapWrite(
 void compiled_script_impl::init_surfaces()
 {
   for (surface_object *so : surfaces) {
+    if (so->dummy_object)
+      continue;
+
     auto t_start = std::chrono::high_resolution_clock::now();
 
     dispatch_command *dc = nullptr;
@@ -547,20 +597,22 @@ void compiled_script_impl::init_surfaces()
     if (!so->dispatch_uses.empty()) {
       const surface_object::use &u = so->dispatch_uses.front();
       dc = std::get<0>(u);
-      cl_uint arg_ix = std::get<1>(u);
-      if (dc->kernel->kernel_info->args.size() >= arg_ix) {
-        const auto &ai = dc->kernel->kernel_info->args[arg_ix];
-        if (ai.type.holds<type_ptr>()) {
-          elem_type = ai.type.as<type_ptr>().element_type;
-        }
+      const arg_info &ai = std::get<2>(u);
+      if (ai.type.is<type_ptr>()) {
+        elem_type = ai.type.as<type_ptr>().element_type;
       }
-    } // no valid uses found
+    } else if (!so->dummy_object) { // no valid uses found
+      fatalAt(so->spec->defined_at,"no uses of this surface found");
+    }
 
     withBufferMapWrite(
-          so->spec->defined_at,
-          so->queue,
-          so,
-          [&] (void *host_ptr) {init_surface(*so, dc, elem_type, host_ptr);});
+      so->spec->defined_at,
+      so,
+      [&] (void *host_ptr) {
+        evaluator::context ec(dc->global_size, dc->local_size);
+
+        init_surface(*so, ec, elem_type, host_ptr);
+      });
 
     auto t_duration =
       std::chrono::duration_cast<std::chrono::microseconds>(
@@ -571,18 +623,17 @@ void compiled_script_impl::init_surfaces()
 
 void compiled_script_impl::init_surface(
   surface_object &so,
-  dispatch_command *dc,
+  evaluator::context &ec,
   const type *elem_type,
   void *host_ptr)
 {
   arg_buffer ab(this, so.spec->defined_at, host_ptr, so.size_in_bytes);
-  evaluator::context ec(
-    dc ? dc->global_size : ndr(),
-    dc ? dc->local_size : ndr());
-
   switch (so.spec->root->kind) {
   case init_spec::IS_FIL: {
     const init_spec_file *isf = (const init_spec_file *)so.spec->root;
+    if (isf->flavor != init_spec_file::BIN) {
+      fatalAt(isf->defined_at,"only binary files supported at the moment");
+    }
     std::fstream fs(isf->path,std::ios_base::in|std::ios_base::binary);
     if (!fs.good()) {
       fatalAt(isf->defined_at,"unable to open file");
@@ -603,13 +654,13 @@ void compiled_script_impl::init_surface(
       fatalAt(so.spec->defined_at,
         "failed to read all binary input from file");
     }
+    ab.curr += file_size; // fake the advance
     break;
   }
   case init_spec::IS_RND: {
     if (elem_type == nullptr) {
-      fatalAt(so.spec->defined_at,
-        "no element type found ");
-    } else if (elem_type->holds<type_num>()) {
+      fatalAt(so.spec->defined_at, "unable to infer element type for rng init");
+    } else if (elem_type->is<type_num>()) {
       // generator_state &gs =
       //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
       fill_buffer_rng(
@@ -619,6 +670,17 @@ void compiled_script_impl::init_surface(
         (const init_spec_rng *)so.spec->root,
         *elem_type,
         so.spec->defined_at);
+    } else if (
+      elem_type->is<type_struct>() &&
+      elem_type->as<type_struct>().is_uniform())
+    {
+      fill_buffer_rng(
+        *this,
+        ec,
+        ab,
+        (const init_spec_rng *)so.spec->root,
+        *elem_type->as<type_struct>().elements[0],
+        so.spec->defined_at);
     } else {
       fatalAt(so.spec->defined_at,
         "random inits can only apply to numeric element types");
@@ -627,8 +689,8 @@ void compiled_script_impl::init_surface(
   }
   case init_spec::IS_SEQ: {
     if (elem_type == nullptr) {
-      fatalAt(so.spec->defined_at, "no element type found ");
-    } else if (elem_type->holds<type_num>()) {
+      fatalAt(so.spec->defined_at, "unable to infer element type for seq init");
+    } else if (elem_type->is<type_num>()) {
       // generator_state &gs =
       //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
       fill_buffer_seq(
@@ -663,7 +725,7 @@ void compiled_script_impl::init_surface(
   default: {
     if (elem_type == nullptr) {
       fatalAt(so.spec->defined_at,
-        "no element type found ");
+        "unable to infer element type for scalar init");
     }
     size_t elem_size = elem_type->size();
     if (elem_size == 0) {
@@ -680,8 +742,8 @@ void compiled_script_impl::init_surface(
       ab,
       *elem_type);
     if (ab.size() != elem_size) {
-      fatalAt(so.spec->defined_at,
-        "buffer element generated is wrong size");
+      internalAt(so.spec->defined_at,
+        "surface initializer generated wrong element size");
     }
     while (ab.num_left() > 0) {
       ab.write(ab.base,elem_size);
@@ -690,8 +752,8 @@ void compiled_script_impl::init_surface(
   } // default
   } // switch
   if (ab.num_left() != 0) {
-    fatalAt(so.spec->defined_at,
-      "wrong number of random elements written");
+    internalAt(so.spec->defined_at,
+      "wrong number of elements written by surface initializer");
   }
 }
 
@@ -706,19 +768,33 @@ void compiled_script::execute(int)
     switch (si.kind) {
     case script_instruction::DISPATCH: {
       dispatch_command *dc = si.dsc;
-      csi->os.verbose() << "EXECUTING  => " << dc->ds->spec::str() << "\n";
+      csi->os.verbose() << "EXECUTING  => " << dc->spec->spec::str() << "\n";
       csi->os.verbose() << "              " << dc->str() << "\n";
       csi->execute(*dc);
       break;
     }
-    case script_instruction::DIFF: {
-      diff_command *dfc = (diff_command *)si.dfc;
-      csi->os.verbose() << "EXECUTING  => " << dfc->spec->spec::str() << "\n";
+    case script_instruction::DIFFU: {
+      diffu_command *dfuc = (diffu_command *)si.dfuc;
+      csi->os.verbose() << "EXECUTING  => " << dfuc->spec->spec::str() << "\n";
       csi->withBufferMapRead(
-        dfc->spec->defined_at,
-        dfc->so->queue,
-        dfc->so,
-        [&] (const void *host_ptr) {csi->execute(*dfc, host_ptr);});
+        dfuc->spec->defined_at,
+        dfuc->so,
+        [&] (const void *host_ptr) {csi->execute(*dfuc, host_ptr);});
+      break;
+    }
+    case script_instruction::DIFFS: {
+      diffs_command *dfsc = (diffs_command *)si.dfsc;
+      csi->withBufferMapRead(
+        dfsc->spec->defined_at,
+        dfsc->so_ref,
+        [&] (const void *ref_host_ptr) {
+          csi->withBufferMapRead(
+            dfsc->spec->defined_at,
+            dfsc->so_sut,
+            [&] (const void *sut_host_ptr) {
+              csi->execute(*dfsc, ref_host_ptr, sut_host_ptr);
+            });
+        });
       break;
     }
     case script_instruction::PRINT: {
@@ -726,7 +802,6 @@ void compiled_script::execute(int)
       csi->os.verbose() << "EXECUTING  => " << prc->spec->spec::str() << "\n";
       csi->withBufferMapRead(
         prc->spec->defined_at,
-        prc->so->queue,
         prc->so,
         [&] (const void *host_ptr) {csi->execute(*prc, host_ptr);});
       break;
@@ -735,7 +810,6 @@ void compiled_script::execute(int)
       save_command *svc = (save_command *)si.svc;
       csi->withBufferMapRead(
         svc->spec->defined_at,
-        svc->so->queue,
         svc->so,
         [&] (const void *host_ptr) {csi->execute(*svc, host_ptr);});
       break;

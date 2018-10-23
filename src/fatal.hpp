@@ -11,6 +11,8 @@
 #include <tuple>
 #include <vector>
 
+#define EXIT_INTERNAL_ERROR 2
+
 namespace cls
 {
   struct loc {
@@ -35,7 +37,7 @@ namespace cls
 
   void formatMessageWithContextImpl(
     std::ostream &os,
-    loc at,
+    const loc &at,
     const text::ansi_literal *highlight,
     const std::string &input,
     const std::string &message);
@@ -43,7 +45,7 @@ namespace cls
   template <typename...Ts>
   void formatMessageWithContext(
     std::ostream &os,
-    loc at,
+    const loc &at,
     const text::ansi_literal *highlight,
     const std::string &input,
     Ts... ts)
@@ -54,15 +56,28 @@ namespace cls
   }
 
   struct diagnostic : std::exception {
-    loc           location;
+    loc           at;
     std::string   message;
     std::string   input;
+    bool          internal_error;
 
-    diagnostic(loc l, const std::string &m, const std::string &inp)
-      : location(l), message(m), input(inp) { }
+    diagnostic(
+      loc _at,
+      const std::string &m,
+      const std::string &inp,
+      bool _internal_error = false)
+      : at(_at)
+      , message(m)
+      , input(inp)
+      , internal_error(_internal_error)
+    { }
 
     void          str(std::ostream &os) const;
     std::string   str() const;
+
+    // default handler emits to std::cerr and exits with EXIT_INTERNAL_ERROR
+    [[noreturn]]
+    void          default_exit() const;
   }; // diagnostic
 
   using warning_list = std::vector<std::tuple<loc,std::string>>;
@@ -77,20 +92,28 @@ namespace cls
 
     template <typename...Ts>
     [[noreturn]]
-    void fatalAt(loc loc, Ts... ts) const {
+    void internalAt(const loc &at, Ts... ts) const {
       std::stringstream ss;
+      ss << "INTERNAL ERROR: ";
       text::format_to(ss, ts...);
-      throw diagnostic(loc, ss.str(), m_input);
+      throw diagnostic(at, ss.str(), m_input, true);
     }
     template <typename...Ts>
-    void warningAt(loc loc, Ts... ts) {
+    [[noreturn]]
+    void fatalAt(const loc &at, Ts... ts) const {
       std::stringstream ss;
       text::format_to(ss, ts...);
-      m_warnings.emplace_back(loc,ss.str());
+      throw diagnostic(at, ss.str(), m_input);
     }
     template <typename...Ts>
-    void debugAt(loc loc, Ts... ts) const {
-      formatMessageWithContext(std::cout, loc, input(), ts...);
+    void warningAt(const loc &at, Ts... ts) {
+      std::stringstream ss;
+      text::format_to(ss, ts...);
+      m_warnings.emplace_back(at,ss.str());
+    }
+    template <typename...Ts>
+    void debugAt(const loc &at, Ts... ts) const {
+      formatMessageWithContext(std::cout, at, input(), ts...);
     }
   }; // fatal_handler
 } // namespace cls

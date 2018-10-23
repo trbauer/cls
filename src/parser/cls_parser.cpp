@@ -33,15 +33,14 @@ static init_spec_atom *parseInitAtom(parser &p);
 
 static init_spec_atom *parseInitAtomPrim(parser &p)
 {
-  auto loc = p.nextLoc();
+  auto at = p.nextLoc();
   if (p.lookingAt(STRLIT)) {
-    auto s = p.tokenStringLiteral();
-    p.skip();
-    return new init_spec_file(loc, s);
+    p.fatal("bare strings not allowed for files anymore (use bin('...') and txt('...'))");
+    return nullptr;
   } else if (p.lookingAtFloat()) {
-    return new init_spec_float(loc, p.consumeFloat());
+    return new init_spec_float(at, p.consumeFloat());
   } else if (p.lookingAtInt()) {
-    return new init_spec_int(loc, p.consumeIntegral<int64_t>());
+    return new init_spec_int(at, p.consumeIntegral<int64_t>());
   } else if (p.lookingAtIdent()) {
     // e.g. "X" or "g.x" or "pow(...)"
     auto s = p.tokenString();
@@ -60,14 +59,14 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         biv++)
       {
         if (s == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
-          loc.extend_to(p.nextLoc());
-          return new init_spec_builtin(loc, (init_spec_builtin::biv_kind)biv);
+          at.extend_to(p.nextLoc());
+          return new init_spec_builtin(at, (init_spec_builtin::biv_kind)biv);
         }
       }
-      loc.extend_to(p.nextLoc());
-      return new init_spec_symbol(loc, s);
+      at.extend_to(p.nextLoc());
+      return new init_spec_symbol(at, s);
     } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
-      s == "random" || s == "seq")
+      s == "random" || s == "seq" || s == "file")
     {
       // foo<...  (e.g. random<12007>(...))
       // or
@@ -77,7 +76,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       //    F<...>(....)
       // then match by template arguments
       if (s == "random") {
-        auto func = new init_spec_rng(loc);
+        auto func = new init_spec_rng(at);
         int64_t seed = 0;
         bool has_seed = false;
         if (p.consumeIf(LANGLE)) {
@@ -104,6 +103,55 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
           func->set_seed(seed);
         func->defined_at.extend_to(p.nextLoc());
         return func;
+      } else if (s == "file") {
+        //
+        // file('foo.bin'):r
+        // file<bin>('foo.bin'):r
+        //
+        // file<text>('foo.txt'):r           // all tokens
+        //
+        //
+        // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
+        // file<text_col,0>('foo.txt'):r     // same as above
+        // file<text_col,1,','>('foo.txt'):r // col 1 use , as separator
+        auto flv = init_spec_file::BIN;
+        int col = 0;
+        std::string sep = " ";
+        if (p.consumeIf(LANGLE)) {
+          if (!p.lookingAt(RANGLE)) {
+            auto fmt_loc = p.nextLoc();
+            auto flv_str = p.consumeIdent("data format (identifier)");
+            if (flv_str == "bin") {
+              flv = init_spec_file::BIN;
+            } else if (flv_str == "text") {
+              flv = init_spec_file::TXT;
+            } else if (flv_str == "text_col") {
+              flv = init_spec_file::TXT_COL;
+              if (p.consumeIf(COMMA)) {
+                col = p.consumeIntegral<int>("column index (int)");
+                if (p.consumeIf(COMMA)) {
+                  if (!p.lookingAt(STRLIT)) {
+                    p.fatal("expected separator string (literal)");
+                  }
+                  sep = p.tokenStringLiteral();
+                  p.skip();
+                }
+              }
+            } else {
+              p.fatalAt(fmt_loc,"unsupported file flavor; should be: bin, text, ...");
+            }
+          }
+          p.consume(RANGLE);
+        }
+        p.skip();
+        if (!p.lookingAt(STRLIT)) {
+          p.fatalAt(at,"expected file path (string literal)");
+        }
+        auto s = p.tokenStringLiteral();
+        p.skip();
+        p.consume(RPAREN);
+        at.extend_to(p.nextLoc());
+        return new init_spec_file(at, s, flv, col, sep);
       } else {
         ///////////////////////////////////////////////////
         // generic function
@@ -121,10 +169,10 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         if (s == "seq") {
           init_spec_seq *iss = nullptr;
           switch (args.size()) {
-          case 0: iss = new init_spec_seq(loc,nullptr,nullptr); break;
-          case 1: iss = new init_spec_seq(loc,args[0],nullptr); break;
-          case 2: iss = new init_spec_seq(loc,args[0],args[1]); break;
-          default: p.fatalAt(loc,"wrong number of args to seq");
+          case 0: iss = new init_spec_seq(at,nullptr,nullptr); break;
+          case 1: iss = new init_spec_seq(at,args[0],nullptr); break;
+          case 2: iss = new init_spec_seq(at,args[0],args[1]); break;
+          default: p.fatalAt(at,"wrong number of args to seq");
           }
           iss->defined_at.extend_to(p.nextLoc());
           return iss;
@@ -134,46 +182,45 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         // regular arithmetic functions
         if (args.size() == 1) {
           if (s == "fabs")
-            p.fatalAt(loc,"use \"abs\" for the absolute value");
+            p.fatalAt(at,"use \"abs\" for the absolute value");
           else if (s == "sqt")
-            p.fatalAt(loc,"use \"sqrt\" for the square root");
+            p.fatalAt(at,"use \"sqrt\" for the square root");
 
           const auto *op = init_spec_uex::lookup_op(s.c_str());
           if (!op) {
             if (init_spec_bex::lookup_op(s.c_str())) {
-              p.fatalAt(loc, "function requires two arguments");
+              p.fatalAt(at, "function requires two arguments");
             } else {
-              p.fatalAt(loc, "not a unary function");
+              p.fatalAt(at, "not a unary function");
             }
           }
-          return new init_spec_uex(loc,*op,args[0]);
+          return new init_spec_uex(at,*op,args[0]);
         } else if (args.size() == 2) {
           const auto *op = init_spec_bex::lookup_op(s.c_str());
           if (!op) {
-            p.fatalAt(loc, "not a binary function");
+            p.fatalAt(at, "not a binary function");
           }
           auto *isbe = new init_spec_bex(*op,args[0],args[1]);
-          isbe->defined_at = loc; // reset start loc to function name
+          isbe->defined_at = at; // reset start loc to function name
           isbe->defined_at.extend_to(p.nextLoc());
           return isbe;
         } else {
-          p.fatalAt(loc,"undefined function");
+          p.fatalAt(at,"undefined function");
         }
-
         // fallback
         return nullptr; // unreachable
       } // end else not random
     } else {
       if (s == "E")
-        return new init_spec_float(loc, M_E);
+        return new init_spec_float(at, M_E);
       else if (s == "PI")
-        return new init_spec_float(loc, M_PI);
+        return new init_spec_float(at, M_PI);
       // some other symbol (may target a LET binding)
-      return new init_spec_symbol(loc, s);
+      return new init_spec_symbol(at, s);
     }
   } else if (p.consumeIf(LBRACE)) {
     // {...}
-    auto re = new init_spec_record(loc);
+    auto re = new init_spec_record(at);
     if (!p.lookingAt(RBRACE)) {
       re->children.push_back(parseInitAtom(p));
       while (p.consumeIf(COMMA))
@@ -383,7 +430,7 @@ static init_spec *parseInit(parser &p)
 }
 
 template <typename T>
-static refable<T*> dereferenceLet(
+static refable<T> dereferenceLet(
   parser &p,
   script &s,
   enum spec::spec_kind kind,
@@ -403,22 +450,22 @@ static refable<T*> dereferenceLet(
     ss << " (defined on line " << rs->defined_at.line << ")";
     p.fatalAt(loc,ss.str());
   }
-  return refable<T*>(loc,name,(T *)rs);
+  return refable<T>(loc,name,(T *)rs);
 }
 
-static refable<init_spec_mem*> dereferenceLetMem(
+static refable<init_spec_mem> dereferenceLetMem(
   parser &p,
   script &s)
 {
-  refable<init_spec*> rf =
+  refable<init_spec> rf =
     dereferenceLet<init_spec>(p, s, spec::INIT_SPEC, "memory object");
-  if (rf.value->kind != init_spec::IS_MEM) {
+  if ((*rf).kind != init_spec::IS_MEM) {
     p.fatalAt(rf.defined_at,"identifier does not reference a memory object");
   }
-  return refable<init_spec_mem*>(
+  return refable<init_spec_mem>(
     rf.defined_at,
     rf.identifier,
-    (init_spec_mem*)rf.value);
+    (init_spec_mem *)rf.value);
 }
 
 
@@ -726,11 +773,11 @@ static dispatch_spec *parseDispatchStatement(parser &p, script &s)
     } else if (p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
       // PROG`kernel<...>(...)
       // 000012222223...
-      refable<program_spec *> ps =
+      refable<program_spec> ps =
         dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"program");
       p.consume(BACKTICK);
       std::string kernel_name = p.consumeIdent("kernel name");
-      ds->kernel = refable<kernel_spec*>(new kernel_spec(ps));
+      ds->kernel = new kernel_spec(ps);
     } else {
       // FULLY immediate dispatch
       //
@@ -774,6 +821,32 @@ static init_spec_symbol *parseSymbol(parser &p)
   }
 }
 
+// Given an arugment; we resolve symbol the symbol to a let target (or fail)
+static refable<init_spec> parseInitResolved(parser &p, script &s)
+{
+  init_spec *is = parseInit(p);
+  if (is->kind == init_spec::IS_SYM) {
+    // make a reference argument
+    auto itr = s.let_bindings.find(((const init_spec_symbol *)is)->identifier);
+    if (itr == s.let_bindings.end()) {
+      p.fatalAt(is->defined_at,"unbound identifier");
+    } else if (itr->second->value->kind != spec::INIT_SPEC ||
+      ((init_spec *)itr->second->value)->kind != init_spec::IS_MEM)
+    {
+      p.fatalAt(is->defined_at,"identifier does not reference a memory object");
+    }
+    refable<init_spec> ris(
+      is->defined_at,
+      ((const init_spec_symbol *)is)->identifier,
+      (init_spec_mem *)itr->second->value);
+    delete is; // delete the old object
+    return ris;
+  } else {
+    // immediate value
+    return refable<init_spec>(is);
+  }
+}
+
 // template<typename T>
 // static bool parseBuiltIn(Parser &p, script &s) {
 //  s.statements.emplace_back(T,);
@@ -799,11 +872,11 @@ static bool parseBuiltIn(parser &p, script &s)
       p.consume(RANGLE);
     }
     p.consume(LPAREN);
-    auto *ref = parseInit(p);
+    auto ref = parseInitResolved(p,s);
     p.consume(COMMA);
     if (!p.lookingAt(IDENT))
       p.fatal("expected reference to memory object");
-    refable<init_spec_mem*> r_sut = dereferenceLetMem(p, s);
+    refable<init_spec_mem> r_sut = dereferenceLetMem(p, s);
     p.consume(RPAREN);
     loc.extend_to(p.nextLoc());
     s.statement_list.statements.push_back(
@@ -831,7 +904,7 @@ static bool parseBuiltIn(parser &p, script &s)
     p.consume(LPAREN);
     if (!p.lookingAt(IDENT))
       p.fatal("expected reference to memory object");
-    refable<init_spec_mem*> r_surf = dereferenceLetMem(p,s);
+    refable<init_spec_mem> r_surf = dereferenceLetMem(p,s);
     p.consume(RPAREN);
     loc.extend_to(p.nextLoc());
     s.statement_list.statements.push_back(
@@ -845,11 +918,10 @@ static bool parseBuiltIn(parser &p, script &s)
     std::string file = p.tokenStringLiteral();
     p.skip();
     p.consume(COMMA);
-    refable<init_spec_mem*> r_surf = dereferenceLetMem(p,s);
+    refable<init_spec_mem> r_surf = dereferenceLetMem(p,s);
     p.consume(RPAREN);
     loc.extend_to(p.nextLoc());
-    s.statement_list.statements.push_back(
-      new save_spec(loc, file, r_surf));
+    s.statement_list.statements.push_back(new save_spec(loc, file, r_surf));
     return true;
   } else {
     return false;
@@ -881,7 +953,14 @@ static void parseLetStatement(parser &p, script &s)
 
   spec *value = nullptr;
   loc value_loc = p.nextLoc();
-  if (p.lookingAtSeq(IDENT,LANGLE)) {
+  bool is_init_expr_start =
+    p.lookingAtFloat() ||
+    p.lookingAtInt() ||
+    p.lookingAt(LPAREN) ||
+    p.lookingAtIdentEq("seq") ||
+    p.lookingAtIdentEq("random") ||
+    p.lookingAtIdentEq("file");
+  if (!is_init_expr_start && p.lookingAtSeq(IDENT,LANGLE)) {
     // let D = K<1024>(....) where ...
     dispatch_spec *ds = new dispatch_spec(value_loc);
     ds->kernel = dereferenceLet<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
@@ -890,10 +969,10 @@ static void parseLetStatement(parser &p, script &s)
     parseDispatchStatementWhereClause(p,s,*ds,ls);
     ds->defined_at.extend_to(p.nextLoc());
     value = ds;
-  } else if (p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
+  } else if (!is_init_expr_start && p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
     // let D = P`kernel<...>(...) where ...
     dispatch_spec *ds = new dispatch_spec(value_loc);
-    refable<program_spec *> rps =
+    refable<program_spec> rps =
       dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"programs");
     p.consume(BACKTICK);
     ds->kernel = new kernel_spec(rps.value);
@@ -902,7 +981,7 @@ static void parseLetStatement(parser &p, script &s)
     parseDispatchStatementWhereClause(p,s,*ds,ls);
     ds->defined_at.extend_to(p.nextLoc());
     value = ds;
-  } else if (lookingAtImmediateDispatchStatement(p)) {
+  } else if (!is_init_expr_start && lookingAtImmediateDispatchStatement(p)) {
     // let P = #1`foo/bar.cl
     // let K = foo/bar.cl`kernel
     // let D = foo/bar.cl`kernel<...>(...) where ...

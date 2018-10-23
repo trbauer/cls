@@ -41,7 +41,7 @@ int main(int argc, const char **argv)
 {
   cls::opts os;
   opts::CmdlineSpec<cls::opts> cmdspec(
-    "CL Script",
+    "CL Script " VERSION_STRING " (" __DATE__ ")",
     EXE_NAME,
     "  % " EXE_NAME " -e \"matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\"\n"
     "  % " EXE_NAME " script.cls\n"
@@ -160,9 +160,8 @@ static void runFile(
       s.str(std::cout,fopts);
       exit(EXIT_SUCCESS);
     }
-  } catch (cls::diagnostic &d) {
-    d.str(std::cerr);
-    exit(EXIT_FAILURE);
+  } catch (const cls::diagnostic &d) {
+    d.default_exit();
   }
 
   cls::compiled_script cs;
@@ -170,8 +169,7 @@ static void runFile(
     os.verbose() << "============ compiling script\n";
     cs = cls::compile(os, s);
   } catch (const cls::diagnostic &d) {
-    d.str(std::cerr);
-    exit(EXIT_FAILURE);
+    d.default_exit();
   }
 
   sampler execute_times;
@@ -191,9 +189,8 @@ static void runFile(
         std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::high_resolution_clock::now() - start_execute);
       execute_times.add(duration_exec.count()/1000.0/1000.0);
-    } catch (cls::diagnostic &d) {
-      d.str(std::cerr);
-      exit(EXIT_FAILURE);
+    } catch (const cls::diagnostic &d) {
+      d.default_exit();
     }
   }
 

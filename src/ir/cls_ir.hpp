@@ -249,14 +249,26 @@ namespace cls
     static const op_spec *lookup_op(const char *symbol);
   };
 
-  // 'foo.bmp'
+  // file<bin>('foo.bin')
   struct init_spec_file : init_spec_atom {
     std::string path;
-    init_spec_file(loc loc, std::string _path)
-      : init_spec_atom(loc, IS_FIL), path(_path) { }
-    void str(std::ostream &os, format_opts fopts) const {
-      os << fopts.str_lit("'" + path + "'");
-    }
+    enum file_flavor {INVALID=0,BIN,TXT,TXT_COL} flavor;
+    int col = 0; // only for TXT_COL
+    std::string sep; // only for TXT_COL
+
+    init_spec_file(
+      loc loc,
+      std::string _path,
+      file_flavor flv,
+      int _col,
+      std::string _sep)
+      : init_spec_atom(loc, IS_FIL)
+      , path(_path)
+      , flavor(flv)
+      , col(_col)
+      , sep(_sep) { }
+
+    void str(std::ostream &os, format_opts fopts) const;
   };
   // struct init_spec_atom_function : init_spec_atom {
   //   std::vector<init_spec_atom> arguments;
@@ -370,23 +382,25 @@ namespace cls
   };
 
   // fills in for anything that can be referenced or defined immediately
-  // the type T must be a (spec* type) with a spec::defined_at loc
+  // the type T must be a (spec type) with a spec::defined_at loc
   template <typename T>
   struct refable {
     loc              defined_at;
     std::string      identifier;
-    T                value = nullptr;
+    T               *value = nullptr;
 
     refable() : defined_at(0,0,0,0) { }
-    refable(loc l, std::string ident, T _value = nullptr) // symbolic ref
+    refable(loc l, std::string ident, T *_value = nullptr) // symbolic ref
       : defined_at(l), identifier(ident), value(_value) { }
-    refable(T _value) // immediate ref
+    refable(T *_value) // immediate ref
       : defined_at(_value->defined_at), value(_value) { }
     bool is_resolved() const {return value != nullptr;}
     const T &operator->() const {return *value;}
           T &operator->()       {return *value;}
-             operator T() const {return value;}
-             operator T()       {return value;}
+             operator const T*() const {return value;}
+             operator T*()       {return value;}
+    //         operator const T&() const {return *value;}
+    //         operator T&()       {return *value;}
     void str(std::ostream &os, format_opts fopts) const {
       if (identifier.empty())
         if (value != nullptr)
@@ -406,7 +420,7 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
   struct kernel_spec : spec {
-    refable<program_spec*>    program;
+    refable<program_spec>     program;
     std::string               name;
 
     kernel_spec(program_spec *ps)
@@ -432,12 +446,12 @@ namespace cls
     void        str(std::ostream &os) const;
   };
   struct dispatch_spec : statement_spec {
-    refable<kernel_spec*>                               kernel;
+    refable<kernel_spec>                                kernel;
     ndr                                                 global_size;
     loc                                                 global_size_loc;
     ndr                                                 local_size;
     loc                                                 local_size_loc;
-    std::vector<refable<init_spec*>>                    arguments;
+    std::vector<refable<init_spec>>                     arguments;
     std::vector<std::tuple<std::string,init_spec*>>     where_bindings;
 
     dispatch_spec(loc loc) : statement_spec(loc, statement_spec::DISPATCH) { }
@@ -446,7 +460,7 @@ namespace cls
 
   // let X = ...
   struct let_spec : statement_spec {
-    using param_refs = std::vector<refable<init_spec*>*>;
+    using param_refs = std::vector<refable<init_spec>*>;
     using param_map = std::map<std::string,param_refs>;
 
     std::string                                         identifier;
@@ -472,14 +486,17 @@ namespace cls
   // diff(REF,SUT)       => exits the program non-zero if there is a difference
   // diff<TYPE>(REF,SUT) => exits the program non-zero if there is a difference
   struct diff_spec : statement_spec {
-    init_spec                    *ref;
-    refable<init_spec_mem *>      sut;
+    refable<init_spec>            ref;
+    refable<init_spec_mem>        sut;
     const type                   *element_type;
+
+    // double max_diff;
+    // int max_diff_ulps;
 
     diff_spec(
       loc loc,
-      init_spec *_ref,
-      refable<init_spec_mem *> &_sut,
+      refable<init_spec> &_ref,
+      refable<init_spec_mem> &_sut,
       const type *__element_type = nullptr)
       : statement_spec(loc, statement_spec::DIFF)
       , ref(_ref)
@@ -492,12 +509,12 @@ namespace cls
   // print<INT>(X)
   // print<TYPE,INT>(X)
   struct print_spec : statement_spec {
-    refable<init_spec_mem *>      arg;
+    refable<init_spec_mem>        arg;
     const type                   *element_type;
     int                           elements_per_row;
     print_spec(
       loc at,
-      refable<init_spec_mem *> &_arg,
+      refable<init_spec_mem> &_arg,
       const type *_elem_type,
       int _elems_per_row)
       : statement_spec(at, statement_spec::PRINT)
@@ -511,8 +528,8 @@ namespace cls
   struct save_spec : statement_spec {
     // init_spec_symbol *file; // foo.bpm
     std::string              file; // 'foo.bmp'
-    refable<init_spec_mem *> arg;  // X
-    save_spec(loc loc, std::string _file, const refable<init_spec_mem *> &_arg)
+    refable<init_spec_mem>   arg;  // X
+    save_spec(loc loc, std::string _file, const refable<init_spec_mem> &_arg)
       : statement_spec(loc, statement_spec::SAVE), file(_file), arg(_arg) { }
     void str(std::ostream &os,format_opts fopts) const {
       os << "save(" <<
@@ -520,7 +537,6 @@ namespace cls
         arg.str(os,fopts); os << ")";
     }
   };
-
 
   struct script {
     const std::string                 &source;

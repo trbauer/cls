@@ -98,6 +98,9 @@ struct surface_object {
   int                       memobj_index;
   cl_command_queue          queue = nullptr;
 
+  // e.g. if it's used in a diff command only diff(seq(1,2):w,...)
+  bool                      dummy_object = false;
+
   // - command used in (same command can appear multiple times if reused)
   // - arg index
   using use = std::tuple<dispatch_command *,cl_uint,const arg_info &>;
@@ -133,7 +136,7 @@ struct surface_object {
 // All dispatch_spec's are converted into these objects.
 // I.e. each one maps onto an NDRange enqueue
 struct dispatch_command {
-  const dispatch_spec                             *ds;
+  const dispatch_spec                             *spec;
   device_object                                   *dobj;
   kernel_object                                   *kernel;
 
@@ -149,11 +152,11 @@ struct dispatch_command {
   sampler                                          prof_times;
 
 
-  dispatch_command(const dispatch_spec *_ds, kernel_object *_kernel)
-    : ds(_ds), kernel(_kernel)
+  dispatch_command(const dispatch_spec *_spec, kernel_object *_kernel)
+    : spec(_spec), kernel(_kernel)
     , dobj(_kernel->program->device)
-    , global_size(ds->global_size)
-    , local_size(ds->local_size)
+    , global_size(spec->global_size)
+    , local_size(spec->local_size)
   {
   }
 
@@ -167,13 +170,14 @@ struct dispatch_command {
     cl_program p = (*kernel->program->program)();
     ss << p << "`" << (*kernel->kernel)();
     ss << "<";
-    if (ds) {
+    if (spec) {
       ss << global_size.str();
       if (local_size.rank() > 0) {
         ss << ",";
         ss << local_size.str();
       }
     } else {
+      ss << "<nullptr>";
     }
     ss << ">";
     ss << "(";
@@ -187,9 +191,6 @@ struct dispatch_command {
     return ss.str();
   }
 };
-
-
-
 
 template <typename K,typename V>
 struct mapped_objects {
@@ -249,12 +250,10 @@ struct cl_fatal_handler : fatal_handler {
 
   void withBufferMapRead(
     const loc &at,
-    cl_command_queue cq,
     const surface_object *so,
     buffer_reader apply);
   void withBufferMapWrite(
     const loc &at,
-    cl_command_queue cq,
     surface_object *so,
     buffer_writer apply);
 }; // cl_fatal_handler
@@ -279,16 +278,37 @@ struct interp_fatal_handler : cl_fatal_handler {
   }
 };
 
-struct diff_command {
+// uniform diff
+// e.g. diff<int>(44,S);
+struct diffu_command {
   const diff_spec           *spec;
   surface_object            *so;
   const type                *element_type;
-  diff_command(const diff_spec *_spec, surface_object *_so, const type *et)
+  diffu_command(const diff_spec *_spec, surface_object *_so, const type *et)
     : spec(_spec), so(_so), element_type(et)
   {
   }
 };
 
+// surface diff
+//  e.g. diff<int>(REF,SUT);
+//  e.g. diff(seq(1,2):w, SUT);
+struct diffs_command {
+  const diff_spec           *spec;
+  surface_object            *so_ref;
+  surface_object            *so_sut; // SUT means "subject under test"
+  const type                *element_type;
+  diffs_command(
+    const diff_spec *_spec,
+    surface_object *_so_ref,
+    surface_object *_so_sut,
+    const type *et)
+    : spec(_spec), so_ref(_so_ref), so_sut(_so_sut), element_type(et)
+  {
+  }
+};
+
+// print<int2,4>(SURF); // prints 4 x int2's per line
 struct print_command {
   const print_spec           *spec;
   surface_object             *so;
@@ -309,45 +329,21 @@ struct save_command {
 };
 
 struct script_instruction {
-  enum {DISPATCH,DIFF,PRINT,SAVE} kind;
+  enum {DISPATCH,DIFFS,DIFFU,PRINT,SAVE} kind;
   union {
     dispatch_command *dsc;
-    diff_command     *dfc;
+    diffs_command    *dfsc;
+    diffu_command    *dfuc;
     print_command    *prc;
     save_command     *svc;
   };
   script_instruction(dispatch_command *_dc) : dsc(_dc), kind(DISPATCH) { }
-  script_instruction(diff_command *_dc) : dfc(_dc), kind(DIFF) { }
+  script_instruction(diffs_command *_dc) : dfsc(_dc), kind(DIFFS) { }
+  script_instruction(diffu_command *_dc) : dfuc(_dc), kind(DIFFU) { }
   script_instruction(print_command *_prc) : prc(_prc), kind(PRINT) { }
   script_instruction(save_command *_svc) : svc(_svc), kind(SAVE) { }
 };
 
-struct compiled_script_impl : interp_fatal_handler {
-  const script                                           &s;
-  struct evaluator                                       *e;
-
-  mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
-  mapped_objects<const device_spec*,device_object>        devices;
-  mapped_objects<const program_spec*,program_object>      programs;
-  mapped_objects<const kernel_spec*,kernel_object>        kernels;
-
-  mapped_objects<const init_spec_mem*,surface_object>     surfaces;
-
-  std::vector<script_instruction>                         instructions;
-
-  compiled_script_impl(const opts &_os,const script &_s);
-
-  void init_surfaces();
-  void init_surface(
-    surface_object &so,
-    dispatch_command *dc,
-    const type *elem_type,
-    void *host_ptr);
-  void execute(dispatch_command &dc);
-  void execute(diff_command &dfc, const void *buf);
-  void execute(print_command &prc, const void *buf);
-  void execute(save_command &svc, const void *buf);
-};
 
 // A buffer that we can write values to for kernel arguments.
 // It is also used as the host side backing store to setup buffers.
@@ -394,7 +390,7 @@ struct arg_buffer : fatal_handler {
   void write(const T &t) {write(&t,sizeof(t));}
   void write(const void *src, size_t len) {
     if (len > num_left()) {
-      fatalAt(at,"INTERNAL ERROR: buffer overflow");
+      internalAt(at,"INTERNAL ERROR: buffer overflow");
     }
     memcpy(curr, src, len);
     curr += len;
@@ -412,7 +408,7 @@ struct arg_buffer : fatal_handler {
   }
   void read(void *val, size_t len) {
     if (len > num_left()) {
-      fatalAt(at,"INTERNAL ERROR: buffer underflow");
+      internalAt(at,"INTERNAL ERROR: buffer underflow");
     }
     memcpy(val, curr, len);
     curr += len;
@@ -438,10 +434,9 @@ struct evaluator : interp_fatal_handler {
   std::random_device                                          rd;
   std::mt19937                                                gen;
 
-  compiled_script_impl                                       *csi;
+  struct compiled_script_impl                                *csi;
 
-  evaluator(compiled_script_impl *_csi)
-    : interp_fatal_handler(_csi->os,_csi->input()), csi(_csi) { }
+  evaluator(compiled_script_impl *_csi);
 
   /////////////////////////////////////////////////////////////////////////////
   // primitive value evaluation
@@ -526,20 +521,20 @@ struct evaluator : interp_fatal_handler {
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss,
-    const refable<init_spec *> &ris,
+    const refable<init_spec> &ris,
     const arg_info &ai); // top-level
   void setKernelArgMemobj(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
     const loc &arg_loc,
-    const refable<init_spec *> &ris,
+    const refable<init_spec> &ris,
     const arg_info &ai);
   void setKernelArgSLM(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
-    const refable<init_spec *> &ris,
+    const refable<init_spec> &ris,
     const arg_info &ai);
 
   void evalInto(
@@ -572,5 +567,39 @@ struct evaluator : interp_fatal_handler {
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_ptr &tp); // for SVM?
-};
+}; // evaluator
 
+struct compiled_script_impl : interp_fatal_handler {
+  const script                                           &s;
+  struct evaluator                                       *e;
+
+  mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
+  mapped_objects<const device_spec*,device_object>        devices;
+  mapped_objects<const program_spec*,program_object>      programs;
+  mapped_objects<const kernel_spec*,kernel_object>        kernels;
+
+  mapped_objects<const init_spec_mem*,surface_object>     surfaces;
+
+  std::vector<script_instruction>                         instructions;
+
+  compiled_script_impl(const opts &_os,const script &_s);
+
+  surface_object *define_surface(
+    const init_spec_mem *_spec,
+    enum surface_object::kind _kind,
+    size_t _size_in_bytes,
+    cl_mem _mem,
+    cl_command_queue _queue);
+
+  void init_surfaces();
+  void init_surface(
+    surface_object &so,
+    evaluator::context &ec,
+    const type *elem_type,
+    void *host_ptr);
+  void execute(dispatch_command &dc);
+  void execute(diffu_command &dfc, const void *buf);
+  void execute(diffs_command &dfc, const void *buf_ref, const void *buf_sut);
+  void execute(print_command &prc, const void *buf);
+  void execute(save_command &svc, const void *buf);
+}; // compiled_script_impl
