@@ -61,7 +61,6 @@ namespace cls
 
       // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
       // e.g. __attribute__((reqd_work_group_size(X, Y, Z)))
-      // std::vector<std::string> attrs; // reqd_work_group_size(X,Y,Z)  [remove spaces]
       size_t                 reqd_word_group_size[3];
 
       // kernel void foo(...)
@@ -89,6 +88,12 @@ namespace cls
       const cls::program_source &src,
       size_t bytes_per_addr);
 
+    program_info parseProgramInfoFromAPI(
+      const cls::opts &os,
+      const cls::fatal_handler *fh, cls::loc at,
+      cl_program program,
+      cl_device_id dev_id,
+      size_t bytes_per_addr);
 
     // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
     // __attribute__((vec_type_hint(<type>)))

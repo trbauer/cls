@@ -1,6 +1,6 @@
-
 import Control.Monad
 import Data.Bits
+import Data.Char
 import Data.List
 import Data.Int
 import Data.Word
@@ -27,6 +27,13 @@ dft_opts = Opts 0 True
 cls64_exe :: FilePath
 cls64_exe = "builds/vs2017-64/Debug/cls64.exe"
 
+default_device_index :: String
+default_device_index = "0"
+
+default_arguments :: [String]
+default_arguments = []
+
+
 parseOpts :: [String] -> Opts -> IO Opts
 parseOpts []     os = return os
 parseOpts (a:as) os =
@@ -52,6 +59,13 @@ run as = do
   unless z $
     die $ cls64_exe ++ ": file not found"
   os <- parseOpts as dft_opts
+
+  -- MISC
+  runSyntaxErrorTestCL os
+  runSyntaxErrorTestCLS os
+  ---------------------
+  -- not a portable test
+  --   runProgramBinariesTest os
 
   --
   -- ATOM ARG SETTERS
@@ -97,6 +111,7 @@ run as = do
   --   mem init resize expression
   --   more print() tests (int2 formatter)
   return ()
+
 
 
 -- tests evaluators (kernel arg evaluates)
@@ -160,7 +175,7 @@ runArgTest os arg_desc arg_type arg_expr show_expect_value = do
       script =
         "let R=0:w\n" ++
         "let V=0:w\n" ++
-        "#0`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
+        "#" ++ default_device_index ++ "`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
         "diff<" ++ arg_type ++ ">(" ++ show_expect_value ++ ",V)\n"
         -- "diff<" ++ arg_type ++ ">(0,R)\n"
   runScript os arg_desc (mShouldExit 0) script
@@ -173,7 +188,7 @@ runDiffUniformTestMatch os = do
   let script :: String
       script =
         "let B=44:rw\n" ++
-        "#0`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
   runScript os "diff uniform match" (mShouldExit 0) script
@@ -183,10 +198,10 @@ runDiffUniformTestMismatch os = do
   let script :: String
       script =
         "let B=44:rw\n" ++
-        "#0`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
-  runScript os "diff uniform mismatch" (mShouldExit 1 .&&. mContainsString "element 7") script
+  runScript os "diff uniform mismatch" (mShouldExit 1 .&&. mStderrContains "element 7") script
 
 runDiffSurfaceTestMatchImm :: Opts -> IO ()
 runDiffSurfaceTestMatchImm os = do
@@ -194,8 +209,8 @@ runDiffSurfaceTestMatchImm os = do
       script =
         "let A=seq(120):rw\n" ++ -- 120-127
         "let B=seq(122):rw\n" ++ -- 122-129
-        "#0`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#0`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
         "diff(seq(121):rw,A)\n" ++ -- immediate reference value
         ""
   runScript os "diff surface matching imm" (mShouldExit 0) script
@@ -207,8 +222,8 @@ runDiffSurfaceTestMatchVar os = do
         "let A=seq(120):rw\n" ++ -- 120-127
         "let B=seq(122):rw\n" ++ -- 122-129
         "let C=seq(121):r\n" ++ -- 121-128
-        "#0`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#0`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
         "diff(A,A)\n" ++ -- identity compare
         "diff(A,B)\n" ++ -- transitive compare
         "diff(C,A)\n" ++ -- immediate reference value (indirect)
@@ -221,60 +236,60 @@ runDiffSurfaceTestMismatchVar os = do
       script =
         "let A=seq(0):rw\n" ++
         "let B=seq(0):rw\n" ++
-        "#0`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#0`tests/add_buggy.cl[-DT=int]`add<8>(B,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,1)\n" ++
         "diff(A,B)\n" ++
         ""
-  runScript os "diff surface mismatching var" (mShouldExit 1 .&&. mContainsString "element 7") script
+  runScript os "diff surface mismatching var" (mShouldExit 1 .&&. mStderrContains "element 7") script
 runDiffSurfaceTestMismatchImm :: Opts -> IO ()
 runDiffSurfaceTestMismatchImm os = do
   let script :: String
       script =
         "let A=seq(0):rw\n" ++
-        "#0`tests/add_buggy.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(A,1)\n" ++
         "diff(seq(1):r,A)\n" ++
         ""
-  runScript os "diff surface mismatching imm" (mShouldExit 1 .&&. mContainsString "element 7") script
+  runScript os "diff surface mismatching imm" (mShouldExit 1 .&&. mStderrContains "element 7") script
 
 -------------------------------------------------------------------------------
 --
 runPrintCommandTests :: Opts -> IO ()
 runPrintCommandTests os = do
-  let script :: String
-      script =
+  let script_s :: String
+      script_s =
         "let B=seq():rw\n" ++
-        "#0`tests/add.cl[-DT=uint]`add<8>(B,16)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint]`add<8>(B,16)\n" ++
         "print(B)\n" ++
         "print<int>(B)\n" ++
         "print<int,4>(B)\n" ++
         ""
-  let has_lines = mHasAllLines $
+  let has_lines_s = mHasAllLines $
         "00000:  0x00000010  0x00000011  0x00000012  0x00000013  0x00000014  0x00000015  0x00000016  0x00000017\n" ++
         "00000:            16            17            18            19            20            21            22            23\n" ++
         "00000:            16            17            18            19\n" ++
         "00010:            20            21            22            23\n" ++
         ""
-  runScript os "print command test (int)" (mShouldExit 0 .&&. has_lines) script
-
-  let script2 :: String
-      script2 =
+  runScript os "print command test (int)" (mShouldExit 0 .&&. has_lines_s) script_s
+  -----------------------------------------------------------------------------
+  let script_v :: String
+      script_v =
         "let B={1,2}:rw\n" ++
-        "#0`tests/add.cl[-DT=uint2]`add<8>(B,{1,2})\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint2]`add<8>(B,{1,2})\n" ++
         "print(B)\n" ++
         "print<int2,4>(B)\n" ++
         ""
-  let has_lines2 = mHasAllLines $
+  let has_lines_v = mHasAllLines $
         "00000:  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}\n" ++
         "00000:  {           2,           4}  {           2,           4}  {           2,           4}  {           2,           4}\n" ++
         "00020:  {           2,           4}  {           2,           4}  {           2,           4}  {           2,           4}\n" ++
         ""
-  runScript os "print command test (int2)" (mShouldExit 0 .&&. has_lines2) script2
+  runScript os "print command test (int2)" (mShouldExit 0 .&&. has_lines_v) script_v
 
 runPrintAttributeTests :: Opts -> IO ()
 runPrintAttributeTests os = do
   let script :: String
       script =
-        "#0`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
   let has_lines = mHasAllLines $
         "00000:  0x00000002  0x00000004  0x00000006  0x00000008  0x0000000A  0x0000000C  0x0000000E  0x00000010\n" ++
         "00000:  0x00000012  0x00000014  0x00000016  0x00000018\n" ++
@@ -290,7 +305,7 @@ runSequentialAddTest os arg_type args result = do
   let script :: String
       script =
         "let B=0:rw\n" ++
-        concatMap (\a -> "#0`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
+        concatMap (\a -> "#" ++ default_device_index ++ "`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
         "diff<" ++ arg_type ++ ">(" ++ result ++ ",B)\n"
   runScript os "sequential add test" (mShouldExit 0) script
 
@@ -304,7 +319,7 @@ runSaveTest os = do
       script :: String
       script =
         "let B=seq():rw\n" ++
-        "#0`tests/add.cl[-DT=uchar]`add<8>(B,16)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(B,16)\n" ++
         "save(" ++ show output_binary ++ ",B)\n" ++
         ""
 
@@ -336,16 +351,16 @@ runInitConstWithDim os = do
       script =
         "let A=0:[4*8*2]w\n" ++
         -- first call writes to the first half only
-        "#0`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
         -- second call writes to the second half only
-        "#0`tests/add.cl[-DT=int2]`add<8>(A,{1,2})\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int2]`add<8>(A,{1,2})\n" ++
         "print<int,8>(A)\n" ++
         "\n"
   let buffer_matches = mHasAllLines $
         "00000:             4             5             4             5             4             5             4             5\n" ++
         "00020:             1             2             1             2             1             2             1             2\n" ++
         ""
-  runScript os "init by binary file" (mShouldExit 0 .&&. buffer_matches) script
+  runScript os "init surface with explicit size" (mShouldExit 0 .&&. buffer_matches) script
 
 -- let A=file.bin
 runInitFileBinTest :: Opts -> IO ()
@@ -359,38 +374,123 @@ runInitFileBinTest os = do
         "let B=file<>('" ++ bin_file ++ "'):rw\n" ++
         "let C=file<bin>('" ++ bin_file ++ "'):rw\n" ++
         --
-        "#0`tests/add.cl[-DT=uchar]`add<8>(A,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(A,1)\n" ++
         "diff(seq(13):r,A)\n" ++
-        "#0`tests/add.cl[-DT=uchar]`add<8>(B,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(B,1)\n" ++
         "diff(seq(13):r,B)\n" ++
-        "#0`tests/add.cl[-DT=uchar]`add<8>(C,1)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(C,1)\n" ++
         "diff(seq(13):r,C)\n" ++
         "\n" ++
         -- with the initializer inline
         "let D=2:rw\n" ++
-        "#0`tests/add.cl[-DT=uchar]`addv<8>(D,file<bin>(" ++ show bin_file ++ "):r)\n" ++
+        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`addv<8>(D,file<bin>(" ++ show bin_file ++ "):r)\n" ++
         "diff(seq(14):r,D)\n" ++
         ""
   runScript os "init by binary file" (mShouldExit 0) script
   removeFile bin_file
 
+-------------------------------------------------------------------------------
+--
+runSyntaxErrorTestCL :: Opts -> IO ()
+runSyntaxErrorTestCL os = do
+  let script =
+        "let A=0:rw\n" ++
+        -- don't set the -T
+        "#" ++ default_device_index ++ "`tests/add.cl`add<8>(A,2)\n" ++
+        "print<int,8>(A)\n" ++
+        ""
+  runScript
+    os
+    "syntax error OpenCL source text"
+    ((mShouldExit 1 .&&. mStderrContains "failed to build source"))
+    script
+--
+runSyntaxErrorTestCLS :: Opts -> IO ()
+runSyntaxErrorTestCLS os = do
+  let script =
+        "lt A=0:rw\n" ++
+        -- don't set the -T
+        "#" ++ default_device_index ++ "`tests/add.cl`add<8>(A,2)\n" ++
+        "print<int,8>(A)\n" ++
+        ""
+  runScript
+    os
+    "syntax error CLS source text"
+    (mShouldExit 1)
+    script
+
+runProgramBinariesTest :: Opts -> IO ()
+runProgramBinariesTest os = do
+  dev_out <- readProcess cls64_exe ["-l"] ""
+  let dev_info_line = filter (("DEVICE[" ++ default_device_index ++ "]")`isPrefixOf`) (lines dev_out)
+
+  when (null dev_info_line) $
+    die "runProgramBinariesTest: failed to infer devices -l"
+
+  let nv_tokens = map (map toUpper) ["GeForce","GTX","RTX","NVidia"]
+
+      non_nv_tokens = map (map toUpper) ["Intel"]
+
+      dev_upper = map toUpper (head dev_info_line)
+
+      is_nv =
+        any (`isInfixOf`dev_upper) nv_tokens &&
+        all (not . (`isInfixOf`dev_upper)) non_nv_tokens
+      bin_ext
+        | is_nv = ".ptx"
+        | otherwise = ".bin"
+
+  let script_sv =
+        "let A=0:rw\n" ++
+        -- don't set the -T
+        "#" ++ default_device_index ++ "`tests/add.cl[-D T=float]`add<8>(A,2)\n" ++
+        "print<float,4>(A)\n" ++
+        ""
+  --
+  let program_binary = "add" ++ bin_ext
+  removeIfExists program_binary
+  --
+  runScriptWith
+    cls64_exe
+    ["-B"]
+    os
+    ("dump program binaries (" ++ program_binary ++ ")")
+    (mShouldExit 0 .&&. mFileExists program_binary)
+    script_sv
+  --
+  --
+  let script_ld =
+        "let A=seq(0):rw\n" ++
+        -- don't set the -T
+        "#" ++ default_device_index ++ "`" ++ program_binary ++ "`add<8>(A,1)\n" ++
+        "diff(seq(1):r,A)\n" ++
+        ""
+  --
+  runScript os
+    ("load from program binary (" ++ program_binary ++ ")")
+    (mShouldExit 0)
+    script_ld
+  --
+  removeIfExists program_binary
+
 
 -------------------------------------------------------------------------------
 --
+removeIfExists :: FilePath -> IO ()
+removeIfExists fp = do
+  z <- doesFileExist fp
+  when z $ removeFile fp
+
 runScript :: Opts -> String -> Matcher -> String -> IO ()
-runScript os tag match script = do
+runScript = runScriptWith cls64_exe []
+
+runScriptWith :: FilePath -> [String] -> Opts -> String -> Matcher -> String -> IO ()
+runScriptWith exe extra_opts os tag match script = do
   putStr $ printf "%-64s" (tag ++ ":  ")
-  (ec,out,err) <- readProcessWithExitCode cls64_exe ["-e",script] ""
+  let args = default_arguments ++ ["-e",script] ++ extra_opts
+  (ec,out,err) <- readProcessWithExitCode exe args ""
   r <- match ec out err
-  case r of
-    Nothing -> do
-      putStrLn $ "  PASSED"
-      when (oDebug os) $
-        putStrLn $ out ++ err
-    Just msg -> do
-      putStrLn "  FAILED"
-      putStrLn $ msg
-      when (oVerbose os) $
+  let emitOutput =
         putStrLn $
           "\n\n" ++
           "******************************************\n" ++
@@ -399,6 +499,16 @@ runScript os tag match script = do
           "***ERR***:\n" ++
           err ++ "\n" ++
           "******************************************"
+
+  case r of
+    Nothing -> do
+      putStrLn $ "  PASSED"
+      when (oDebug os) $
+        emitOutput
+    Just msg -> do
+      putStrLn "  FAILED"
+      putStrLn $ msg
+      emitOutput
       hFlush stdout
       let failed_cls = "failed.cls"
       writeFile failed_cls script
@@ -447,9 +557,9 @@ mHasLine ln _ out _
   | words ln `elem` map words (lines out) = mSuccess
   | otherwise = mFail $ "failed to find line with words: " ++ ln
 
-mContainsString :: String -> Matcher
-mContainsString ss _ out _ =
-  if ss `isInfixOf` out then mSuccess
+mStderrContains :: String -> Matcher
+mStderrContains ss _ _ err =
+  if ss `isInfixOf` err then mSuccess
     else mFail ("expected " ++ show ss ++ " in output")
 
 mShouldExit :: Int ->  Matcher
@@ -460,3 +570,9 @@ mShouldExit expected_ec = \ec out err ->
   where exited ec
           | ec == expected_ec = mSuccess
           | otherwise = mFail $ "test didn't exit " ++ show expected_ec ++ " (exited " ++ printf "0x%X" (fromIntegral ec :: Word32) ++ ")"
+
+mFileExists :: FilePath -> Matcher
+mFileExists path = \_ _ _ -> do
+  z <- doesFileExist path
+  if z then mSuccess
+    else mFail (path ++ ": file not found after run")

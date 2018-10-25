@@ -69,7 +69,7 @@ struct device_object {
 struct program_object {
   const program_spec     *spec;
   device_object          *device;
-  cl::Program            *program = nullptr;
+  cl_program              program = nullptr;
   cls::k::program_info    program_info;
   program_object(const program_spec *_spec, device_object *_device)
     : spec(_spec), device(_device) { }
@@ -167,7 +167,7 @@ struct dispatch_command {
     ss << "#" <<
       kernel->program->device->device.getInfo<CL_DEVICE_NAME>().c_str();
     ss << "`";
-    cl_program p = (*kernel->program->program)();
+    cl_program p = kernel->program->program;
     ss << p << "`" << (*kernel->kernel)();
     ss << "<";
     if (spec) {
@@ -238,10 +238,10 @@ struct cl_fatal_handler : fatal_handler {
         " (",cls::status_to_symbol(_err),")"); \
     } \
   } while(0)
-#define CL_COMMAND_CREATE(ASSIGN,LOC,CL_FUNCTION,...) \
+#define CL_COMMAND_CREATE(ASSIGN_TO,LOC,CL_FUNCTION,...) \
   do { \
     cl_int _err = 0; \
-    ASSIGN = CL_FUNCTION(__VA_ARGS__,&_err); \
+    ASSIGN_TO = CL_FUNCTION(__VA_ARGS__,&_err); \
     if (_err != CL_SUCCESS) { \
       fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
         " (",cls::status_to_symbol(_err),")"); \
@@ -481,7 +481,7 @@ struct evaluator : interp_fatal_handler {
           return; // unordered values are fine
         if (v.f64 < low || v.f64 > hi) {
           fatalAt(e->defined_at,"value out of range");
-        } else if (std::abs(v.f64) < min) {
+        } else if (v.f64 != 0.0 && std::abs(v.f64) < min) {
           fatalAt(e->defined_at,"value out of range");
         }
       };

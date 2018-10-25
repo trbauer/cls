@@ -94,7 +94,6 @@ namespace sys
 
   ///////////////////////////////////////////////////////////////////////////////
   // FILE SYSTEM
-
   static
   const char         path_separator =
 #ifdef _WIN32
@@ -117,7 +116,6 @@ namespace sys
   // gets the main exe filename of this program
   std::string        get_main_executable();
 
-
   // searches $PATH for an executable name
   // returns "" if not found
   //
@@ -130,6 +128,13 @@ namespace sys
   std::string        char_file_to_str(const bits &cs);
 
   void               write_bin_file(std::string fname, const void *buf, size_t buflen);
+
+  /////////////////////////////////////////////////////////////////////////////
+  // DYNAMIC LINKING
+  void              *load_library(const char *name);
+  void               close_library(void *lib);
+  void              *get_loaded_library(const char *name);
+  void              *get_symbol_address(void *lib,const char *name);
 
   /////////////////////////////////////////////////////////////////////////////
   // PROCESS CREATION
@@ -190,26 +195,5 @@ namespace sys
   // returns a string of all the display devices
   // E.g "[\\.\DISPLAY1] ... (active, pruned)"
   std::string        display_device();
-
-/*
-#ifdef _WIN32
-  struct cursor_info {
-    CONSOLE_CURSOR_INFO info;
-    cursor_info() {
-      memset(&info, 0, sizeof(info));
-    }
-  };
-#else
-  // use termios.h?
-  struct cursor_info {
-    struct int dummy;
-    cursor_info() {
-    }
-  };
-#endif
-
-  void               hide_cursor(struct cursor_info &ci);
-  void               restore_cursor(const struct cursor_info &ci);
-*/
 } // sys::
 #endif

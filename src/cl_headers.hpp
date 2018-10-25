@@ -11,7 +11,7 @@
 #define CL_HPP_TARGET_OPENCL_VERSION 200
 // cl2.hpp rejects higher values than 200
 #include "CL/cl2.hpp"
-
+#include "cl_exts.hpp"
 
 
 // define an ostream operator
@@ -19,8 +19,6 @@
 namespace cls
 {
   std::string     status_to_symbol(cl_int error);
-
-  std::string     fmtNDRange(const cl::NDRange &ndr);
 } // namespace cls
 
 #endif

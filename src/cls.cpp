@@ -69,22 +69,14 @@ std::string cls::status_to_symbol(cl_int error)
   CASE(CL_INVALID_DEVICE_QUEUE);
   CASE(CL_INVALID_SPEC_ID);
   CASE(CL_MAX_SIZE_RESTRICTION_EXCEEDED);
+  // from extensions
+  CASE(CL_INVALID_ACCELERATOR_INTEL);
+  CASE(CL_INVALID_ACCELERATOR_TYPE_INTEL);
+  CASE(CL_INVALID_ACCELERATOR_DESCRIPTOR_INTEL);
+  CASE(CL_ACCELERATOR_TYPE_NOT_SUPPORTED_INTEL);
   default:
     std::stringstream ss;
     ss << error << "?";
     return ss.str();
   }
-}
-
-
-std::string cls::fmtNDRange(const cl::NDRange &ndr) {
-  if (ndr == cl::NullRange || ndr.dimensions() == 0) {
-    return std::string("NULL");
-  }
-  std::stringstream ss;
-  for (size_t i = 0; i < ndr.dimensions(); i++) {
-    if (i != 0) ss << 'x';
-    ss << ndr.get()[i];
-  }
-  return ss.str();
 }

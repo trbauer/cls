@@ -94,7 +94,7 @@ namespace cls
   // e.g. image2d_t
   struct type_builtin {
     // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/otherDataTypes.html
-    enum kind {
+    enum bi_kind {
       IMAGE1D,        // image1d_t
       IMAGE1D_ARRAY,  // image1d_array_t
       IMAGE1D_BUFFER, // image1d_buffer_t
@@ -116,8 +116,11 @@ namespace cls
       CL_MEM_FENCE_FLAGS, // cl_mem_fence_flags
     } kind;
     size_t pointer_size;
-    constexpr type_builtin(enum kind _kind, size_t ptr_size)
+
+    constexpr type_builtin(const type_builtin &tb) = default;
+    constexpr type_builtin(bi_kind _kind, size_t ptr_size)
       : kind(_kind), pointer_size(ptr_size) { }
+
     size_t size() const {return pointer_size;}
     std::string syntax() const {
       switch (kind) {
@@ -139,6 +142,7 @@ namespace cls
       case CLK_EVENT:                 return "clk_event_t";
       case RESERVE_ID:                return "reserve_id_t";
       case EVENT:                     return "event_t";
+      // could be an enum
       case CL_MEM_FENCE_FLAGS:        return "cl_mem_fence_flags";
       default:                        return "???";
       }
@@ -159,6 +163,18 @@ namespace cls
     const type                 *elements_memory[16];
     const type                **elements = elements_memory;
     size_t                      elements_length = 0;
+
+/*
+    constexpr type_struct(const type_struct &ts) = default;
+      : name(ts.name)
+      , packed(ts.packed)
+      , alignment(ts.alignment)
+      , elements_length(ts.elements_length)
+    {
+      memcpy(elements_memory, ts.elements_memory, sizeof(elements_memory));
+    }
+    */
+
     constexpr type_struct(
       const char *_name,
       bool _packed,
@@ -197,6 +213,7 @@ namespace cls
     bool operator==(const type_struct &t) const {return text::streq(name,t.name);}
     bool operator!=(const type_struct &t) const {return !(*this == t);}
   };
+
   struct type_union {
     const char                 *name;
     int                         aligned = 0; // __attribute__ ((aligned (8))); (technically this can work on other types too, but we don't support it)
@@ -232,8 +249,12 @@ namespace cls
     } attrs = EMPTY_ATTRS;
     const type *element_type;
     size_t pointer_size = 0;
-    constexpr type_ptr(const type *t,size_t ptr_size)
+
+    constexpr type_ptr(const type_ptr &t)
+      : element_type(t.element_type), pointer_size(t.pointer_size) { }
+    constexpr type_ptr(const type *t, size_t ptr_size)
       : element_type(t), pointer_size(ptr_size) { }
+
     constexpr size_t size() const {return pointer_size;}
     std::string syntax() const;
     bool operator==(const type_ptr &t) const;
@@ -251,11 +272,13 @@ namespace cls
       , type_ptr>   var;
 
     constexpr type() : var(VOID) { }
-    constexpr type(const type_num &t) : var(t) { }
-    constexpr type(const type_builtin &t) : var(t) { }
-    constexpr type(const type_struct &t) : var(t) { }
-    constexpr type(const type_union &t) : var(t) { }
-    constexpr type(const type_ptr &t) : var(t) { }
+//    constexpr type(const type &t) : var(t.var) { }
+    constexpr type(const type &) = default;
+    constexpr type(type_num t) : var(t) { }
+    constexpr type(type_builtin t) : var(t) { }
+    constexpr type(type_struct t) : var(t) { }
+    constexpr type(type_union t) : var(t) { }
+    constexpr type(type_ptr t) : var(t) { }
 
     constexpr size_t size() const {
       if (is<type_void>()) {

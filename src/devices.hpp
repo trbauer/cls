@@ -9,7 +9,7 @@ bool              getDeviceByIndex(const cls::opts &opts, int dev_ix, cl::Device
 cl::Device        getDeviceByIndex(const cls::opts &opts, int dev_ix);
 cl::Device        getDeviceDefault(const cls::opts &opts);
 void              listDeviceInfo(const cls::opts &opts);
-
+bool              hasExtension(cl_device_id dev,const char *ext);
 
 enum class cl_spec {
   CL_1_0 = 100,
@@ -24,7 +24,7 @@ cl_spec           getDeviceSpec(const cl::Device &dev);
 enum class cl_vendor {
   CL_AMD    = 0x2222,
   CL_INTEL  = 0x8086,
-  CL_NVIDIA = 0x4444,
+  CL_NVIDIA = 0x10DE,
   CL_OTHER  = 0xFFFF,
 };
 cl_vendor        getDeviceVendor(const cl::Device &dev);

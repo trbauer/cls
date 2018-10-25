@@ -1,8 +1,7 @@
 #include "cls_interp_internal.hpp"
 #include "../devices.hpp"
 #include "../system.hpp"
-
-
+#include "../text.hpp"
 
 #include <cmath>
 #if __has_include(<filesystem>)
@@ -41,7 +40,130 @@ private:
   kernel_object &compileKernel(const kernel_spec *ks);
   program_object &compileProgram(const program_spec *ps);
   device_object &createDeviceObject(const device_spec *ds);
+
+  std::string getLabeledBuildLog(
+    const loc &at, cl_program p, cl_device_id dev_id);
 };
+
+// a dummy type for size_t[3]
+// cannot use cls::ndr since that uses the constructor to infer rank and
+// has the extra field
+struct ndr_temp {
+  size_t dims[3];
+  ndr_temp() {dims[0] = dims[1] = dims[2] = 0;}
+
+  // HACK: unreachable for ndr_temp,
+  // but suffices the template for emitCompiledKernelProperty
+  ndr_temp operator%(size_t) {return *this;}
+  ndr_temp operator/(size_t) {return *this;}
+  bool operator==(size_t) {return false;}
+};
+
+std::ostream &operator <<(std::ostream &os, ndr_temp t) {
+  os << t.dims[0] << " x " << t.dims[1] << " x " << t.dims[2];
+  return os;
+}
+
+// dummy type to represent size_t[3] and emit to an ostream
+template <typename T>
+static void emitCompiledKernelProperty(
+  cl_kernel kernel,
+  cl_device_id device,
+  cl_int param,
+  const char *param_name,
+  bool is_mem,
+  const char *units = nullptr)
+{
+  std::cout << std::setw(48) << param_name << ": ";
+  T val;
+  auto err =
+    clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
+  if (err != CL_SUCCESS) {
+    std::cout << text::spans::RED(status_to_symbol(err));
+  } else {
+    if (is_mem && !units) {
+      if (val % 1024 == 0)
+        std::cout << text::spans::YELLOW(val/1024) << " K";
+      else
+        std::cout << text::spans::YELLOW(val) << " B";
+    } else {
+      std::cout << text::spans::YELLOW(val);
+      if (units)
+        std::cout << units;
+    }
+  }
+  std::cout << "\n";
+}
+
+typedef cl_int (*clGetKernelSubGroupInfo_TYPE) (
+  cl_kernel,
+ 	cl_device_id,
+ 	cl_kernel_sub_group_info,
+ 	size_t, const void *,
+ 	size_t, void * , size_t *);
+
+clGetKernelSubGroupInfo_TYPE findSubgroupFunction()
+{
+  static clGetKernelSubGroupInfo_TYPE function;
+  if (function == nullptr) {
+    void *lib = sys::load_library("OpenCL");
+    function = (clGetKernelSubGroupInfo_TYPE)
+      sys::get_symbol_address(lib,"clGetKernelSubGroupInfo");
+    if (function == nullptr)
+      function = (clGetKernelSubGroupInfo_TYPE)
+        sys::get_symbol_address(lib,"clGetKernelSubGroupInfoKHR");
+    if (function == nullptr)
+      function = (clGetKernelSubGroupInfo_TYPE)
+        sys::get_symbol_address(lib,"clGetKernelSubGroupInfoIntel");
+  }
+  return function;
+}
+
+static void emitCompiledKernelProperties(
+  fatal_handler *fh, kernel_object &ko)
+{
+  cl_kernel kernel = (*ko.kernel)();
+  cl_device_id device = ko.program->device->device();
+  cl_spec spec = getDeviceSpec(ko.program->device->device);
+
+  // units are an optional last parameter
+#define KERNEL_PROPERTY(MINSPEC,PARAM,TYPE,...) \
+  if (spec >= (MINSPEC)) \
+    emitCompiledKernelProperty<TYPE>(kernel, device, PARAM, #PARAM, false, __VA_ARGS__)
+#define KERNEL_PROPERTY_MEM(MINSPEC,PARAM) \
+  if (spec >= (MINSPEC)) \
+    emitCompiledKernelProperty<cl_ulong>(kernel, device, PARAM, #PARAM, true, nullptr)
+
+  KERNEL_PROPERTY(cl_spec::CL_1_2, CL_KERNEL_GLOBAL_WORK_SIZE, ndr_temp);
+  KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
+  KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
+  KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
+  KERNEL_PROPERTY(cl_spec::CL_1_1, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, size_t);
+  KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
+  KERNEL_PROPERTY_MEM(cl_spec::CL_1_1, CL_KERNEL_PRIVATE_MEM_SIZE);
+  if (hasExtension(device,"cl_intel_required_subgroup_size")) {
+    KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
+    //
+    std::cout << std::setw(48) << "CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL: ";
+    size_t sbsi = 0;
+    auto cl_subgroup_function = findSubgroupFunction();
+    if (cl_subgroup_function == nullptr) {
+      std::cout << text::spans::RED("unable to load clGetKernelSubGroupInfo*");
+    } else {
+      auto sbsi_err =
+        (*cl_subgroup_function)(kernel, device,
+          CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL,
+          0, nullptr,
+          sizeof(size_t), &sbsi, nullptr);
+      if (sbsi_err == CL_SUCCESS) {
+        std::cout << text::spans::YELLOW(sbsi);
+      } else {
+        std::cout << text::spans::RED(status_to_symbol(sbsi_err));
+      }
+    }
+    std::cout << "\n";
+  }
+}
 
 kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
 {
@@ -57,16 +179,17 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   //////////////////////////////////////////////
   // call createKernel on parent object
   //
-  cl_program p = (*ko.program->program)();
+  // NOTE: avoid CL_COMMAND_CREATE macro because we want error code
   cl_int err_ck = 0;
-  auto k = clCreateKernel(p,ks->name.c_str(),&err_ck);
+  auto k = clCreateKernel(ko.program->program,ks->name.c_str(),&err_ck);
   if (err_ck == CL_SUCCESS) {
     ko.kernel = new cl::Kernel(k);
   } else if (err_ck == CL_INVALID_KERNEL_NAME) {
     std::stringstream ss;
     try {
       std::vector<cl::Kernel> all_kernels;
-      po->program->createKernels(&all_kernels);
+      cl::Program p(po->program);
+      p.createKernels(&all_kernels);
       ss << "\n" << "valid kernels in the program are:\n";
       for (const cl::Kernel &k : all_kernels) {
         ss << " * " << k.getInfo<CL_KERNEL_FUNCTION_NAME>().c_str() << "\n";
@@ -77,25 +200,15 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
     fatalAt(ks->defined_at,"error creating kernel",status_to_symbol(err_ck));
   }
 
-  // parse the args (or use parent args)
-  if (os.use_kernel_arg_info) {
-    po->program_info.kernels.emplace_back();
-    kernel_info &ki = po->program_info.kernels.back();
-    ki.name = ks->name;
-    memset(ki.reqd_word_group_size,0,sizeof(ki.reqd_word_group_size));
-    ko.kernel_info = &ki;
-    // TODO: walk arg_info.
-    fatalAt(ks->defined_at,"--use-kernel-args not supported yet");
-  } else {
-    for (kernel_info &ki : po->program_info.kernels) {
-      if (ki.name == ko.spec->name) {
-        ko.kernel_info = &ki;
-        break;
-      }
+  // find the kernel info from the program info
+  for (kernel_info &ki : po->program_info.kernels) {
+    if (ki.name == ko.spec->name) {
+      ko.kernel_info = &ki;
+      break;
     }
-    if (ko.kernel_info == nullptr) {
-      fatalAt(ks->defined_at,"unable to find kernel info in source file");
-    }
+  }
+  if (ko.kernel_info == nullptr) {
+    fatalAt(ks->defined_at,"unable to find kernel info in source file");
   }
 
   // Fetch the required workgroup size
@@ -110,17 +223,39 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
       ko.kernel_info->reqd_word_group_size,
       nullptr);
 
+  if (os.verbosity > 1) {
+    formatMessageWithContext(
+      std::cout,
+      ks->defined_at,
+      &text::ANSI_YELLOW,
+      input(),
+      "========== clGetKernelWorkGroupInfo ==========");
+    std::cout << "\n";
+    emitCompiledKernelProperties(this, ko);
+  }
+
   return ko;
 }
 
+std::string script_compiler::getLabeledBuildLog(
+  const loc &at, cl_program p, cl_device_id dev_id)
+{
+  size_t len = 0;
+  CL_COMMAND(at,
+    clGetProgramBuildInfo,
+      p, dev_id, CL_PROGRAM_BUILD_LOG, 0, nullptr, &len);
+  char *log_buf = (char *)alloca(len + 1);
 
-static std::string getLabeledBuildLog(loc at, cl::Program &prog) {
-  auto logs = prog.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
+  CL_COMMAND(at,
+    clGetProgramBuildInfo,
+      p, dev_id, CL_PROGRAM_BUILD_LOG, len, log_buf, nullptr);
+  log_buf[len] = 0;
+
   std::stringstream ss;
   ss << "[" << at.str() << "]: ";
   return text::prefix_lines(
     ss.str(),
-    logs.front().second.c_str());
+    log_buf);
 }
 
 program_object &script_compiler::compileProgram(const program_spec *ps)
@@ -193,76 +328,95 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   src.build_opts = build_opts;
   src.is_binary = is_bin;
 
-  if (is_bin) {
-    std::vector<cl::Device> devs{po.device->device};
-    cl::Program::Binaries bins{sys::read_file_binary(ps->path)};
-    try {
-      po.program = new cl::Program(
-        *po.device->context,
-        devs,
-        bins); // clCreateProgramWithBinary
-    } catch (const cl::Error &err) {
-      fatalHere("create","binary",err.err());
-    }
+  cl_context ctx = (*po.device->context)();
+  cl_device_id dev = po.device->device();
 
-    try {
-      if (!build_opts.empty()) {
-        os.warning() <<
-          "non-empty options to clBuildProgram with binary program";
-      }
-      po.program->build( // clBuildProgram (yep, it's still required for binary)
-        build_opts.empty() ?
-        nullptr : build_opts.c_str());
-    } catch (const cl::Error &err) {
-      fatalHere("build","binary",err.err());
-    }
+  if (is_bin) {
+    auto bits = sys::read_file_binary(ps->path);
+    size_t len = bits.size();
+    const unsigned char *bins = bits.data();
+    cl_int bs_errs = 0;
+    CL_COMMAND_CREATE(po.program, ps->defined_at,
+      clCreateProgramWithBinary,
+        ctx,
+        1,
+        &dev,
+        &len,
+        &bins,
+        &bs_errs);
+    CL_COMMAND(ps->defined_at,
+      clBuildProgram,
+        po.program,
+        1,
+        &dev,
+        build_opts.empty() ? nullptr : build_opts.c_str(),
+        nullptr,
+        nullptr);
   } else { // is_clc (text)
     std::string inp = sys::read_file_text(ps->path);
-    try {
-      po.program = new cl::Program(*po.device->context, inp); // clCreateProgramWithSource
-    } catch (const cl::Error &err) {
-      fatalHere("create","source",err.err());
+    const char *src = inp.c_str();
+    size_t len = inp.size();
+    CL_COMMAND_CREATE(po.program, ps->defined_at,
+      clCreateProgramWithSource,
+        ctx,1,&src,&len);
+
+    cl_int bp_err =
+      clBuildProgram(po.program, 1, &dev, build_opts.c_str(), nullptr, nullptr);
+    if (bp_err == CL_BUILD_PROGRAM_FAILURE) {
+      std::stringstream ss;
+      ss << "failed to build source:\n";
+      ss << getLabeledBuildLog(ps->defined_at, po.program, dev) << "\n";
+      fatalAt(ps->defined_at,ss.str());
+    } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
+      os.debug() << getLabeledBuildLog(ps->defined_at, po.program, dev);
+    } else if (bp_err != CL_SUCCESS) {
+      fatalAt(
+        ps->defined_at, "failed to biuld program ", status_to_symbol(bp_err));
     }
-    try {
-      po.program->build(build_opts_with_arg_info.c_str()); // clBuildProgram
-      if (os.verbosity >= 2) {
-        os.debug() <<
-          getLabeledBuildLog(ps->defined_at, *po.program);
-      }
-      if (os.save_binaries) {
-        std::string bin_ext;
-        if (vend == cl_vendor::CL_NVIDIA)
-          bin_ext = ".ptx";
-        else
-          bin_ext = ".bin";
-        auto bin_path =
-          fs::path(".") / fs::path(ps->path).filename().replace_extension(bin_ext);
-        auto bin = po.program->getInfo<CL_PROGRAM_BINARIES>().front();
-        os.verbose() << "dumping binary " << bin_path << "\n";
-        sys::write_bin_file(bin_path.string(),bin.data(),bin.size());
-      }
-    } catch (const cl::Error &err) {
-      if (err.err() == CL_BUILD_PROGRAM_FAILURE) {
-        std::stringstream ss;
-        ss << "failed to build source:\n";
-        ss << getLabeledBuildLog(
-          ps->defined_at, *po.program) << "\n";
-        fatalAt(ps->defined_at,ss.str());
-      } else {
-        fatalHere("build","source",err.err());
-      }
-    } // catch
+    if (os.save_binaries) {
+      std::string bin_ext;
+      if (vend == cl_vendor::CL_NVIDIA)
+        bin_ext = ".ptx";
+      else // INTC AMD are usually ELF format
+        bin_ext = ".bin";
+      auto bin_path =
+        fs::path(".") / fs::path(ps->path).filename().replace_extension(bin_ext);
+
+      size_t bits_len = 0;
+      CL_COMMAND(ps->defined_at,
+        clGetProgramInfo,
+          po.program,
+          CL_PROGRAM_BINARY_SIZES,
+          sizeof(bits_len),
+          &bits_len,
+          nullptr);
+      unsigned char *bits = (unsigned char *)alloca(bits_len);
+      // unsigned char **bits_array = &bits;
+      CL_COMMAND(ps->defined_at,
+        clGetProgramInfo,
+          po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
+      // auto bin = po.program->getInfo<CL_PROGRAM_BINARIES>().front();
+      os.verbose() << "dumping binary " << bin_path << "\n";
+      // sys::write_bin_file(bin_path.string(),bin.data(),bin.size());
+      sys::write_bin_file(bin_path.string(),bits,bits_len);
+    }
   } // endif text
 
   ////////////////////////////////////////////////
-  // TODO: kernel args
+  // kernel info
+  size_t bytes_per_addr =
+    po.device->device.getInfo<CL_DEVICE_ADDRESS_BITS>() / 8;
   if (os.use_kernel_arg_info) {
-    // create all the kernels
-    // parse each kernel arg
-    fatalAt(ps->defined_at, "--use-kernel-args not supported yet");
+    // use clGetKernelArgInfo* for types etc...
+    po.program_info = parseProgramInfoFromAPI(
+      os,
+      this,
+      ps->defined_at,
+      po.program,
+      po.device->device(),
+      bytes_per_addr);
   } else {
     // use kargs library
-    size_t bytes_per_addr = po.device->device.getInfo<CL_DEVICE_ADDRESS_BITS>() / 8;
     po.program_info = cls::k::parseProgramInfo(
       os,
       this,

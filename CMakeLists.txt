@@ -65,10 +65,36 @@ add_executable("cls${TARGET_MODIFIER}"
 #   add_compile_options(/MP)
 # endif()
 
+#########################################################
 # TODO: need to ensure it's a 2.0 version when we start using SVM
-find_package(OpenCL REQUIRED)
-include_directories(. ${OpenCL_INCLUDE_DIRS})
-target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})
+# find_package(OpenCL REQUIRED)
+# include_directories(. ${OpenCL_INCLUDE_DIRS})
+# target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})
+#
+# NOTE: the above aren't because find_package(OpenCL ...) does not seem
+# to find a OpenCL 2.0 version of the library
+# (c.f. $CMAKE_ROOT/share/cmake-3.11/Modules/FindOpenCL.cmake)
+# This could be because Intel moved their SDK paths around recently
+# (I did have env $INTELOCLSDKROOT set).
+# For now we just set the paths explicitly.
+#
+# Maybe it makes sense to not use find_package(...) because this tool has
+# such sensitive needs (e.g. needs binding points for SVM and KHR stubs).
+# Some SDKs do not have new enough libraries and miss some of these.
+#
+set(OpenCL_INCLUDE_DIRS "C:\\Intel\\OpenCL\\sdk\\include")
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+set(OpenCL_LIBRARY_STUB "C:\\Intel\\OpenCL\\sdk\\lib\\x86\\OpenCL.lib")
+else()
+set(OpenCL_LIBRARY_STUB "C:\\Intel\\OpenCL\\sdk\\lib\\x64\\OpenCL.lib")
+endif()
+
+# ./CL is not working out
+# include_directories(.)
+
+include_directories(${OpenCL_INCLUDE_DIRS})
+
+target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARY_STUB})
 
 set_target_properties("cls${TARGET_MODIFIER}" PROPERTIES
   CXX_STANDARD 17

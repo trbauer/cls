@@ -14,6 +14,7 @@ namespace fs = std::experimental::filesystem;
 #define IS_STDERR_TTY (_isatty(_fileno(stderr)) != 0)
 #define IS_STDOUT_TTY (_isatty(_fileno(stdout)) != 0)
 #else
+#include <dlfcn.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #define IS_STDERR_TTY (isatty(STDERR_FILENO) != 0)
@@ -337,6 +338,41 @@ void sys::write_bin_file(
         FATAL("%s: error writing file", fname.c_str());
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// DYNAMIC LINKIN
+void *sys::load_library(const char *name) {
+#ifdef _WIN32
+  return (void *)LoadLibraryA(name);
+#else
+  return dlopen(name, RTLD_LAZY); // RTLD_NOW
+#endif
+}
+
+void sys::close_library(void *lib)
+{
+#ifdef _WIN32
+  (void)FreeLibrary((HMODULE)lib);
+#else
+  (void)dlclose(lib);
+#endif
+}
+
+void *sys::get_loaded_library(const char *name) {
+#ifdef _WIN32
+  return (void *)GetModuleHandleA(name);
+#else
+  // TODO: dl???()
+  return nullptr;
+#endif
+}
+
+void *sys::get_symbol_address(void *lib, const char *name) {
+#ifdef _WIN32
+  return (void *)GetProcAddress((HMODULE)lib, name);
+#else
+  return dlsym(lib,name);
+#endif
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // PROCESS CREATION

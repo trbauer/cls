@@ -150,6 +150,14 @@ cl_vendor           getDeviceVendor(const cl::Device &dev)
   }
 }
 
+bool              hasExtension(cl_device_id dev, const char *ext)
+{
+  cl::Device devobj(dev);
+  std::string s = devobj.getInfo<CL_DEVICE_EXTENSIONS>().c_str();
+  return s.find(ext) != std::string::npos;
+}
+
+
 // We use the old 1.0 style command queue creation since the host running
 // this might not be 1.2+.
 #ifdef _MSC_VER

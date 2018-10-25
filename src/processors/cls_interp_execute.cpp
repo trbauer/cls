@@ -32,7 +32,8 @@ init_times compiled_script::get_init_times() const
   return ts;
 }
 
-
+///////////////////////////////////////////////////////////////////////////////
+// Constant initialization
 template <typename T>
 static void fill_buffer_with_const_loop(
   evaluator *e,
@@ -82,41 +83,8 @@ static void fill_buffer_with_const(
   }
 }
 
-/*
-
-template <typename T>
-static std::uniform_int_distribution<T> make_dist(
-  const val &v_lo, const val &v_hi)
-{
-  return std::uniform_int_distribution<T>(
-    v_lo.as<T>(), v_hi.as<T>());
-}
-template <> static std::uniform_int_distribution<int64_t> make_dist(
-  const val &v_lo, const val &v_hi)
-{
-  return std::uniform_int_distribution<int64_t>(
-    v_lo.as<int64_t>(), v_hi.as<int64_t>());
-}
-template <> static std::uniform_int_distribution<int32_t> make_dist(
-  const val &v_lo, const val &v_hi)
-{
-  return std::uniform_int_distribution<int64_t>(
-    v_lo.as<int64_t>(), v_hi.as<int64_t>());
-}
-template <> static std::uniform_int_distribution<int16_t> make_dist(
-  const val &v_lo, const val &v_hi)
-{
-  return std::uniform_int_distribution<int64_t>(
-    v_lo.as<int64_t>(), v_hi.as<int64_t>());
-}
-template <> static std::uniform_int_distribution<int8_t> make_dist(
-  const val &v_lo, const val &v_hi)
-{
-  return std::uniform_int_distribution<int8_t>(
-    v_lo.as<int8_t>(), v_hi.as<int8_t>());
-}
-*/
-
+///////////////////////////////////////////////////////////////////////////////
+// Random number generation
 template <typename T, typename R = T>
 static void fill_buffer_rng_loop_int(
   evaluator *e,
@@ -221,7 +189,8 @@ static void fill_buffer_rng(
   }
 }
 
-
+///////////////////////////////////////////////////////////////////////////////
+// Sequence
 template <typename T, typename R = T>
 static void fill_buffer_seq_loop(
   evaluator *e,
@@ -409,20 +378,20 @@ void compiled_script_impl::execute(
       sut_host_ptr8 + elem_ix*elem_type->size(),
       elem_type->size()))
     {
-      std::cout << "mismatch on element "
+      std::cerr << "mismatch on element "
         << elem_ix << " (type " << elem_type->syntax() << ")\n";
-      std::cout << "============== vs. (SUT) ==============\n";
+      std::cerr << "============== vs. (SUT) ==============\n";
       formatBufferElement(
-        std::cout,
+        std::cerr,
         *elem_type,
         sut_host_ptr8 + elem_ix*elem_type->size());
-      std::cout << "\n";
-      std::cout << "============== vs. (REF) ==============\n";
+      std::cerr << "\n";
+      std::cerr << "============== vs. (REF) ==============\n";
       formatBufferElement(
-        std::cout,
+        std::cerr,
         *elem_type,
         ref_host_ptr8 + elem_ix*elem_type->size());
-      std::cout << "\n";
+      std::cerr << "\n";
       fatalAt(
         dfc.spec->defined_at,
         "mismatch on element ",elem_ix," (type ",elem_type->syntax(),")");
@@ -469,20 +438,20 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
       ab_ref.base,
       elem_type->size()))
     {
-      std::cout << "mismatch on element "
+      std::cerr << "mismatch on element "
         << elem_ix << " (type " << elem_type->syntax() << ")\n";
-      std::cout << "============== vs. (SUT) ==============\n";
+      std::cerr << "============== vs. (SUT) ==============\n";
       formatBufferElement(
-        std::cout,
+        std::cerr,
         *elem_type,
         host_ptr8 + elem_ix*elem_type->size());
-      std::cout << "\n";
-      std::cout << "============== vs. (REF) ==============\n";
+      std::cerr << "\n";
+      std::cerr << "============== vs. (REF) ==============\n";
       formatBufferElement(
-        std::cout,
+        std::cerr,
         *elem_type,
         ab_ref.base);
-      std::cout << "\n";
+      std::cerr << "\n";
       fatalAt(
         dfc.spec->defined_at,
         "mismatch on element ",elem_ix," (type ",elem_type->syntax(),")");
