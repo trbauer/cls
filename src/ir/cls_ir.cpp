@@ -24,10 +24,10 @@ static format_opts::color_span make_colored(
 
 std::string spec::name() const
 {
-  switch (kind) {
+  switch (skind) {
   case spec::STATEMENT_LIST_SPEC:  return "statement list";
   case spec::STATEMENT_SPEC:
-    switch (((const statement_spec *)this)->kind) {
+    switch (((const statement_spec *)this)->skind) {
     case statement_spec::DISPATCH: return "dispatch";
     case statement_spec::LET:      return "let";
     case statement_spec::BARRIER:  return "barrier";
@@ -37,7 +37,7 @@ std::string spec::name() const
     default:                       return "unknown statement";
     }
   case spec::INIT_SPEC:
-    switch (((const init_spec *)this)->kind) {
+    switch (((const init_spec *)this)->skind) {
     case init_spec::IS_INT: return "integral initializer";
     case init_spec::IS_FLT: return "floating-point initializer";
     case init_spec::IS_REC: return "record initializer";
@@ -81,7 +81,7 @@ static void fmt(std::ostream &os, format_opts fopts, const S *s) {
 };
 
 void spec::str(std::ostream &os, format_opts fopts) const {
-  switch (kind) {
+  switch (skind) {
   case spec::STATEMENT_SPEC: ((const statement_spec*)this)->str(os,fopts); break;
   case spec::STATEMENT_LIST_SPEC: ((const statement_list_spec*)this)->str(os,fopts); break;
   //
@@ -136,7 +136,7 @@ void statement_list_spec::str(std::ostream &os, format_opts fopts) const {
 }
 
 void statement_spec::str(std::ostream &os, format_opts fopts) const {
-  switch (kind) {
+  switch (skind) {
   case DISPATCH: ((const dispatch_spec*)this)->str(os,fopts); break;
   case LET:      ((const let_spec     *)this)->str(os,fopts); break;
   case BARRIER:  ((const barrier_spec *)this)->str(os,fopts); break;
@@ -149,19 +149,21 @@ void statement_spec::str(std::ostream &os, format_opts fopts) const {
 
 void device_spec::setSource(std::string name) {
   by_name_value = name;
-  kind = kind::BY_NAME;
+  skind = skind::BY_NAME;
 }
 void device_spec::setSource(int index) {
   by_index_value = index;
-  kind = kind::BY_INDEX;
+  skind = skind::BY_INDEX;
 }
 void device_spec::str(std::ostream &os, format_opts fopts) const {
-  switch (kind) {
-  case device_spec::BY_DEFAULT: return;
-  case device_spec::BY_INDEX: os << "#" << by_index_value; return;
-  case device_spec::BY_NAME: os << "#" << by_name_value; return;
+  switch (skind) {
+  case device_spec::BY_DEFAULT: break;
+  case device_spec::BY_INDEX: os << "#" << by_index_value; break;
+  case device_spec::BY_NAME: os << "#" << by_name_value; break;
   default: os << "device_spec??"; break;
   }
+  if (!instance.empty())
+    os << "#" << instance;
 }
 
 void program_spec::str(std::ostream &os, format_opts fopts) const {
@@ -198,10 +200,11 @@ void init_spec_mem::str(std::ostream &os, format_opts fopts) const {
 
 void init_spec::str(std::ostream &os, format_opts fopts) const
 {
-  switch (kind) {
+  switch (skind) {
   case IS_SYM: fmt(os, fopts, (const init_spec_symbol        *)this); break;
   case IS_INT: fmt(os, fopts, (const init_spec_int           *)this); break;
   case IS_FLT: fmt(os, fopts, (const init_spec_float         *)this); break;
+  case IS_SZO: fmt(os, fopts, (const init_spec_sizeof        *)this); break;
   case IS_BIV: fmt(os, fopts, (const init_spec_builtin       *)this); break;
   case IS_REC: fmt(os, fopts, (const init_spec_record        *)this); break;
   case IS_BEX: fmt(os, fopts, (const init_spec_bex           *)this); break;
@@ -215,12 +218,12 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
 }
 
 void init_spec_builtin::str(std::ostream &os, format_opts fopts) const {
-  os << syntax_for(kind);
+  os << syntax_for(skind);
 }
 
-const char *init_spec_builtin::syntax_for(biv_kind kind)
+const char *init_spec_builtin::syntax_for(biv_kind skind)
 {
-  switch (kind) {
+  switch (skind) {
   case BIV_GX:   return "g.x";
   case BIV_GY:   return "g.y";
   case BIV_GZ:   return "g.z";
@@ -248,6 +251,15 @@ void init_spec_record::str(std::ostream &os, format_opts fopts) const {
   os << "}";
 }
 
+void init_spec_sizeof::str(std::ostream &os, format_opts fopts) const {
+  os << fopts.keyword("sizeof") << "(";
+  if (!type_name.empty()) {
+    os << type_name;
+  } else {
+    mem_object.str(os, fopts);
+  }
+  os << ")";
+}
 
 #if 0
 static
@@ -466,7 +478,7 @@ void init_spec_bex::str(std::ostream &os, format_opts fopts) const
   } else {
     auto fmtWithPrec =
       [&](const init_spec *e) {
-        if (e->kind == init_spec::IS_BEX &&
+        if (e->skind == init_spec::IS_BEX &&
           ((const init_spec_bex *)e)->e_op.precedence > e_op.precedence)
         {
           os << "(";
@@ -485,7 +497,7 @@ void init_spec_bex::str(std::ostream &os, format_opts fopts) const
 
 void init_spec_uex::str(std::ostream &os, format_opts fopts) const
 {
-  if (e_op.precedence == 0 || e->kind == init_spec::IS_BEX) {
+  if (e_op.precedence == 0 || e->skind == init_spec::IS_BEX) {
     os << e_op.symbol << "(";
     fmt(os, fopts, e);
     os << ")";

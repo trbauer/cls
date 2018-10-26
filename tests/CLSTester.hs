@@ -3,6 +3,7 @@ import Data.Bits
 import Data.Char
 import Data.List
 import Data.Int
+import Data.IORef
 import Data.Word
 import System.Environment
 import System.Exit
@@ -16,23 +17,32 @@ data Opts =
   Opts {
     oVerbosity :: !Int
   , oFailFast :: !Bool
-  } deriving Show
+  , oDeviceIndex :: !Int
+  , oResults :: !(IORef (Int,Int))
+  }
 oVerbose :: Opts -> Bool
 oVerbose = (>0) . oVerbosity
 oDebug :: Opts -> Bool
 oDebug = (>1) . oVerbosity
-dft_opts :: Opts
-dft_opts = Opts 0 True
+
+mkDftOpts :: IO Opts
+mkDftOpts = do
+  ior <- newIORef (0,0)
+  return $
+    Opts {
+      oVerbosity = 0
+    , oFailFast = True
+    , oDeviceIndex = 0
+    , oResults = ior
+    }
 
 cls64_exe :: FilePath
 cls64_exe = "builds/vs2017-64/Debug/cls64.exe"
 
-default_device_index :: String
-default_device_index = "0"
+
 
 default_arguments :: [String]
 default_arguments = []
-
 
 parseOpts :: [String] -> Opts -> IO Opts
 parseOpts []     os = return os
@@ -41,9 +51,18 @@ parseOpts (a:as) os =
       "-q" -> continue $ os{oVerbosity = -1}
       "-v" -> continue $ os{oVerbosity = 1}
       "-v2" -> continue $ os{oVerbosity = 2}
+      "-F" -> continue $ os{oFailFast = False}
+      _
+        | "-d=" `isPrefixOf` a ->
+          case reads val_str of
+            [(val,"")] -> continue $ os{oDeviceIndex = val}
+            _ -> badOpt "malformed device index"
       ('-':_) -> badOpt "unrecongized option"
       _ -> badOpt "unrecongized argument"
-  where continue :: Opts -> IO Opts
+  where val_str :: String
+        val_str = drop 1 (dropWhile (/='=') a)
+
+        continue :: Opts -> IO Opts
         continue os = parseOpts as os
 
         badOpt :: String -> IO a
@@ -58,59 +77,89 @@ run as = do
   z <- doesFileExist cls64_exe
   unless z $
     die $ cls64_exe ++ ": file not found"
-  os <- parseOpts as dft_opts
+  dft_opts <- mkDftOpts
+  parseOpts as dft_opts >>= runWithOpts
 
-  -- MISC
-  runSyntaxErrorTestCL os
-  runSyntaxErrorTestCLS os
-  ---------------------
-  -- not a portable test
-  --   runProgramBinariesTest os
 
-  --
-  -- ATOM ARG SETTERS
-  runInitAtomTests os
-  --
-  --
-  -- MUTABILITY
-  runSequentialAddTest os "int" ["1","3","-2"] "2"
-  --
-  -- PRINT
-  runPrintCommandTests os
-  runPrintAttributeTests os
-  --
-  -- SAVE
-  runSaveTest os
-  --
-  -- DIFF(U)
-  runDiffUniformTestMatch os
-  runDiffUniformTestMismatch os
-  -- DIFF(S)
-  runDiffSurfaceTestMatchVar os
-  runDiffSurfaceTestMatchImm os
-  runDiffSurfaceTestMismatchVar os
-  runDiffSurfaceTestMismatchImm os
-  --
-  -- MEM INITIALIZERS
-  --   EXPLICIT DIMENSION
-  runInitConstWithDim os
+runWithOpts :: Opts -> IO ()
+runWithOpts os = run_tests >> print_summary >> exit
+  where run_tests = do
+          -- MISC
+          runSyntaxErrorTestCL os
+          runSyntaxErrorTestCLS os
+          ---------------------
+          -- not a portable test
+          --   runProgramBinariesTest os
 
-  --   BINARY FILE MEM INITIALIZERS
-  runInitFileBinTest os
-  -- runInitFileTextTest os
-  -- runInitFileTextColTests os
-  --
-  -- TODO: random<> init
-  -- TODO:   IMAGE FILE INITIALIZER
+          --
+          -- ATOM ARG SETTERS
+          runInitAtomTests os
+          --
+          --
+          -- MUTABILITY
+          runSequentialAddTest os "int" ["1","3","-2"] "2"
+          --
+          -- PRINT
+          runPrintCommandTests os
+          runPrintAttributeTests os
+          --
+          -- SAVE
+          runSaveTest os
+          --
+          -- DIFF(U)
+          runDiffUniformTestMatch os
+          runDiffUniformTestMismatch os
+          -- DIFF(S)
+          runDiffSurfaceTestMatchVar os
+          runDiffSurfaceTestMatchImm os
+          runDiffSurfaceTestMismatchVar os
+          runDiffSurfaceTestMismatchImm os
+          --
+          -- MULTIPLE CONTEXTS
+          runContextIdentifierTest os
+          runContextIdentifierNegativeTest os
+          --
+          -- MEM INITIALIZERS
+          --   EXPLICIT DIMENSION
+          runInitConstWithDim os
+          --   RANDOM VARIABLES
+          runInitRandomTests os
+          --   SEQUENCE VARIABLES
+          runInitSequenceTests os
+          --
+          --   BINARY FILE MEM INITIALIZERS
+          runInitFileBinTest os
+          -- runInitFileTextTest os
+          -- runInitFileTextColTests os
+          --
+          -- SLM
+          runSlmDynamicTest os
+          runSlmStaticTest os
 
-  -- TODO:
-  -- tests that use:
-  --   mem init random
-  --   mem init file
-  --   mem init file (with padding / dimension slicer)
-  --   mem init resize expression
-  --   more print() tests (int2 formatter)
-  return ()
+          --
+          -- TODO: random<> init
+          -- TODO:   IMAGE FILE INITIALIZER
+
+          -- TODO:
+          -- tests that use:
+          --   mem init random
+          --   mem init file
+          --   mem init file (with padding / dimension slicer)
+          --   mem init resize expression
+          --   more print() tests (int2 formatter)
+          return ()
+
+        print_summary :: IO ()
+        print_summary = do
+          putStrLn "==============================================="
+          (total,passed) <- readIORef (oResults os)
+          putStrLn $ "passed " ++ show passed ++ " of " ++ show total
+
+        exit :: IO ()
+        exit = do
+          (total,passed) <- readIORef (oResults os)
+          if total == passed then exitSuccess
+            else exitFailure
 
 
 
@@ -175,7 +224,7 @@ runArgTest os arg_desc arg_type arg_expr show_expect_value = do
       script =
         "let R=0:w\n" ++
         "let V=0:w\n" ++
-        "#" ++ default_device_index ++ "`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
         "diff<" ++ arg_type ++ ">(" ++ show_expect_value ++ ",V)\n"
         -- "diff<" ++ arg_type ++ ">(0,R)\n"
   runScript os arg_desc (mShouldExit 0) script
@@ -188,7 +237,7 @@ runDiffUniformTestMatch os = do
   let script :: String
       script =
         "let B=44:rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
   runScript os "diff uniform match" (mShouldExit 0) script
@@ -198,7 +247,7 @@ runDiffUniformTestMismatch os = do
   let script :: String
       script =
         "let B=44:rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
   runScript os "diff uniform mismatch" (mShouldExit 1 .&&. mStderrContains "element 7") script
@@ -209,8 +258,8 @@ runDiffSurfaceTestMatchImm os = do
       script =
         "let A=seq(120):rw\n" ++ -- 120-127
         "let B=seq(122):rw\n" ++ -- 122-129
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
         "diff(seq(121):rw,A)\n" ++ -- immediate reference value
         ""
   runScript os "diff surface matching imm" (mShouldExit 0) script
@@ -222,8 +271,8 @@ runDiffSurfaceTestMatchVar os = do
         "let A=seq(120):rw\n" ++ -- 120-127
         "let B=seq(122):rw\n" ++ -- 122-129
         "let C=seq(121):r\n" ++ -- 121-128
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
         "diff(A,A)\n" ++ -- identity compare
         "diff(A,B)\n" ++ -- transitive compare
         "diff(C,A)\n" ++ -- immediate reference value (indirect)
@@ -236,8 +285,8 @@ runDiffSurfaceTestMismatchVar os = do
       script =
         "let A=seq(0):rw\n" ++
         "let B=seq(0):rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
-        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,1)\n" ++
         "diff(A,B)\n" ++
         ""
   runScript os "diff surface mismatching var" (mShouldExit 1 .&&. mStderrContains "element 7") script
@@ -246,7 +295,7 @@ runDiffSurfaceTestMismatchImm os = do
   let script :: String
       script =
         "let A=seq(0):rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add_buggy.cl[-DT=int]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(A,1)\n" ++
         "diff(seq(1):r,A)\n" ++
         ""
   runScript os "diff surface mismatching imm" (mShouldExit 1 .&&. mStderrContains "element 7") script
@@ -258,7 +307,7 @@ runPrintCommandTests os = do
   let script_s :: String
       script_s =
         "let B=seq():rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint]`add<8>(B,16)\n" ++
         "print(B)\n" ++
         "print<int>(B)\n" ++
         "print<int,4>(B)\n" ++
@@ -274,7 +323,7 @@ runPrintCommandTests os = do
   let script_v :: String
       script_v =
         "let B={1,2}:rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint2]`add<8>(B,{1,2})\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint2]`add<8>(B,{1,2})\n" ++
         "print(B)\n" ++
         "print<int2,4>(B)\n" ++
         ""
@@ -289,7 +338,7 @@ runPrintAttributeTests :: Opts -> IO ()
 runPrintAttributeTests os = do
   let script :: String
       script =
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
   let has_lines = mHasAllLines $
         "00000:  0x00000002  0x00000004  0x00000006  0x00000008  0x0000000A  0x0000000C  0x0000000E  0x00000010\n" ++
         "00000:  0x00000012  0x00000014  0x00000016  0x00000018\n" ++
@@ -305,7 +354,7 @@ runSequentialAddTest os arg_type args result = do
   let script :: String
       script =
         "let B=0:rw\n" ++
-        concatMap (\a -> "#" ++ default_device_index ++ "`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
+        concatMap (\a -> "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
         "diff<" ++ arg_type ++ ">(" ++ result ++ ",B)\n"
   runScript os "sequential add test" (mShouldExit 0) script
 
@@ -319,7 +368,7 @@ runSaveTest os = do
       script :: String
       script =
         "let B=seq():rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(B,16)\n" ++
         "save(" ++ show output_binary ++ ",B)\n" ++
         ""
 
@@ -351,9 +400,9 @@ runInitConstWithDim os = do
       script =
         "let A=0:[4*8*2]w\n" ++
         -- first call writes to the first half only
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
         -- second call writes to the second half only
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=int2]`add<8>(A,{1,2})\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int2]`add<8>(A,{1,2})\n" ++
         "print<int,8>(A)\n" ++
         "\n"
   let buffer_matches = mHasAllLines $
@@ -361,6 +410,113 @@ runInitConstWithDim os = do
         "00020:             1             2             1             2             1             2             1             2\n" ++
         ""
   runScript os "init surface with explicit size" (mShouldExit 0 .&&. buffer_matches) script
+
+-------------------------------------------------------------------------------
+--
+runInitRandomTests :: Opts -> IO ()
+runInitRandomTests os = do
+  let script_g :: String
+      script_g =
+        "let A=random<>:rw\n" ++ -- ensure <> empty works
+        "let B=random<44>:rw\n" ++ -- ensure same seed generates same sequences
+        "let C=random<44>:rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(B,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(C,1)\n" ++
+        "diff(B,C)\n" ++
+        ""
+  -- general testing
+  runScript os "init random general tests" (mShouldExit 0) script_g
+
+  let randTypeTest :: (Show n,Ord n,Read n) => String -> n -> n -> IO ()
+      randTypeTest type_name lo hi = do
+        let dispatch buf = "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ fp_enable_opt ++ "]`add<8>(" ++ buf ++ ",0)\n"
+              where fp_enable_opt
+                      | type_name == "half"   = " -DENABLE_FP16"
+                      | type_name == "double" = " -DENABLE_FP64"
+                      | otherwise = ""
+
+            script_t =
+              "let B1=random<33>:rw\n" ++
+              "let B2=random<33>(" ++ show hi ++ "):rw\n" ++
+              "let B3=random<33>(" ++ show lo ++ "," ++ show hi ++ "):rw\n" ++
+              dispatch "B1" ++
+              dispatch "B2" ++
+              dispatch "B3" ++
+              "print(B2)\n" ++
+              "print(B3)\n" ++
+              ""
+
+            valid_output :: Matcher
+            valid_output _ out _ = proc 0 (lines out)
+              where proc i (ln0:ln1:lns)
+                      | "PRINT<" `isPrefixOf` ln0 = allSuffice (drop 1 (words ln1))
+                      | otherwise = proc i lns
+                      where allSuffice [] = if i == 1 then mSuccess else proc (i+1) lns
+                            allSuffice (w:ws) =
+                              case reads w of
+                                [(x,"")]
+                                  | predicate x -> allSuffice ws
+                                  | otherwise -> mFail (w ++ ": buffer output violates predicate (" ++ predicate_name ++ ")")
+                                _ -> mFail (w ++ ": failed to parse buffer output (" ++ predicate_name ++ ")")
+                            predicate = if i == 0 then (<=hi) else (\x -> (x >= lo && x <= hi))
+                            predicate_name = if i == 0 then ("(<"++show hi++")") else ("(>=" ++ show lo ++ " && <=" ++ show hi ++ ")")
+                    proc i _ = mFail $ "didn't find buffer (" ++ show i ++ ")"
+
+        runScript os ("init random " ++ type_name) (mShouldExit 0 .&&. valid_output) script_t
+
+  randTypeTest "char" (-10) (10 :: Int)
+  randTypeTest "uchar" (10) (20 :: Int)
+  randTypeTest "short" (-10) (10 :: Int)
+  randTypeTest "ushort" (256) (276 :: Int)
+  randTypeTest "int" (-10) (10 :: Int)
+  randTypeTest "uint" (2^16 + 1) (2^16 + 20 :: Int)
+  randTypeTest "long" (-10) (10 :: Int)
+  randTypeTest "ulong" (2^32 + 1) (2^32 + 10 :: Integer)
+  oup <- readProcess cls64_exe ["-l="++show (oDeviceIndex os),"-v"] ""
+  let has_fp16 = "cl_khr_fp16" `isInfixOf` oup
+  when has_fp16 $
+    randTypeTest "half" (-2.0 :: Float) (2.0 :: Float)
+  randTypeTest "float" (-2.0 :: Float) (2.0 :: Float)
+  let has_fp64 = "cl_khr_fp64" `isInfixOf` oup
+  when has_fp64 $
+    randTypeTest "double" (-2.0 :: Double) (2.0 :: Double)
+
+  let runNegativeTestLowGtHigh type_name expr = do
+        let script_n :: String
+            script_n =
+              "let A=" ++ expr ++ ":rw\n" ++ -- ensure <> empty works
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<8>(A,1)\n" ++
+              ""
+        runScript os
+          ("init random negative test " ++ type_name ++ " " ++ expr)
+          (mShouldExit 1 .&&. mStderrContains "low bound > high bound") script_n
+
+  runNegativeTestLowGtHigh "int"   "random(0,-1)"
+  runNegativeTestLowGtHigh "int"   "random(-1)"
+  runNegativeTestLowGtHigh "float" "random(0,-1)"
+  runNegativeTestLowGtHigh "float" "random(-1)"
+
+-------------------------------------------------------------------------------
+--
+runInitSequenceTests :: Opts -> IO ()
+runInitSequenceTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<4>(A,0)\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
+  -- general testing
+  runTest "int"    "seq()"     [0,1,2,3]
+  runTest "int"    "seq(0,4)"  [0,4,8,12]
+  runTest "int"    "seq(0,-1)" [0,-1,-2,-3]
+  runTest "float"  "seq()"     [0,1,2,3 :: Float]
+
 
 -- let A=file.bin
 runInitFileBinTest :: Opts -> IO ()
@@ -374,19 +530,19 @@ runInitFileBinTest os = do
         "let B=file<>('" ++ bin_file ++ "'):rw\n" ++
         "let C=file<bin>('" ++ bin_file ++ "'):rw\n" ++
         --
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(A,1)\n" ++
         "diff(seq(13):r,A)\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(B,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(B,1)\n" ++
         "diff(seq(13):r,B)\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`add<8>(C,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(C,1)\n" ++
         "diff(seq(13):r,C)\n" ++
         "\n" ++
         -- with the initializer inline
         "let D=2:rw\n" ++
-        "#" ++ default_device_index ++ "`tests/add.cl[-DT=uchar]`addv<8>(D,file<bin>(" ++ show bin_file ++ "):r)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`addv<8>(D,file<bin>(" ++ show bin_file ++ "):r)\n" ++
         "diff(seq(14):r,D)\n" ++
         ""
-  runScript os "init by binary file" (mShouldExit 0) script
+  runScript os "init by file binary" (mShouldExit 0) script
   removeFile bin_file
 
 -------------------------------------------------------------------------------
@@ -396,7 +552,7 @@ runSyntaxErrorTestCL os = do
   let script =
         "let A=0:rw\n" ++
         -- don't set the -T
-        "#" ++ default_device_index ++ "`tests/add.cl`add<8>(A,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl`add<8>(A,2)\n" ++
         "print<int,8>(A)\n" ++
         ""
   runScript
@@ -410,7 +566,7 @@ runSyntaxErrorTestCLS os = do
   let script =
         "lt A=0:rw\n" ++
         -- don't set the -T
-        "#" ++ default_device_index ++ "`tests/add.cl`add<8>(A,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl`add<8>(A,2)\n" ++
         "print<int,8>(A)\n" ++
         ""
   runScript
@@ -419,10 +575,12 @@ runSyntaxErrorTestCLS os = do
     (mShouldExit 1)
     script
 
+-------------------------------------------------------------------------------
+--
 runProgramBinariesTest :: Opts -> IO ()
 runProgramBinariesTest os = do
   dev_out <- readProcess cls64_exe ["-l"] ""
-  let dev_info_line = filter (("DEVICE[" ++ default_device_index ++ "]")`isPrefixOf`) (lines dev_out)
+  let dev_info_line = filter (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isPrefixOf`) (lines dev_out)
 
   when (null dev_info_line) $
     die "runProgramBinariesTest: failed to infer devices -l"
@@ -443,7 +601,7 @@ runProgramBinariesTest os = do
   let script_sv =
         "let A=0:rw\n" ++
         -- don't set the -T
-        "#" ++ default_device_index ++ "`tests/add.cl[-D T=float]`add<8>(A,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-D T=float]`add<8>(A,2)\n" ++
         "print<float,4>(A)\n" ++
         ""
   --
@@ -462,7 +620,7 @@ runProgramBinariesTest os = do
   let script_ld =
         "let A=seq(0):rw\n" ++
         -- don't set the -T
-        "#" ++ default_device_index ++ "`" ++ program_binary ++ "`add<8>(A,1)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`" ++ program_binary ++ "`add<8>(A,1)\n" ++
         "diff(seq(1):r,A)\n" ++
         ""
   --
@@ -472,6 +630,68 @@ runProgramBinariesTest os = do
     script_ld
   --
   removeIfExists program_binary
+
+-------------------------------------------------------------------------------
+--
+runSlmStaticTest :: Opts -> IO ()
+runSlmStaticTest os = do
+  let script_s :: String
+      script_s =
+        "let I=random<33>(0,15):[16]rw // 16 uchar's\n" ++
+        "let H3=0:[3*4]rw // 3 integers\n" ++
+        "print<char>(I)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/histogram.cl[-DHIST_SIZE=3]`histogram_s<16,4>(I,H3)\n" ++
+        "print<int>(H3)\n" ++
+        ""
+      passed = mShouldExit 0
+  runScript os "slm dynamic allocation" passed script_s
+
+
+runSlmDynamicTest :: Opts -> IO ()
+runSlmDynamicTest os = do
+  let script_d :: String
+      script_d =
+        "let I=random<33>(0,15):[16]rw // 16 uchar's\n" ++
+        "let H3=0:[3*4]rw // 3 integers\n" ++
+        "print<char>(I)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/histogram.cl`histogram_d<16,4>(I,H3,(3*sizeof(int)),3)\n" ++
+        "print<int>(H3)\n" ++
+        ""
+      passed = mShouldExit 0
+  runScript os "slm dynamic allocation" passed script_d
+
+-------------------------------------------------------------------------------
+--
+
+-------------------------------------------------------------------------------
+--
+runContextIdentifierTest :: Opts -> IO ()
+runContextIdentifierTest os = do
+  let script :: String
+      script =
+        "let A=1:rw\n" ++
+        "let B=1:rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(A,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,3)\n" ++
+        "diff(6,A)\n" ++
+        "diff(6,B)\n" ++
+        "diff(A,B)\n" ++
+        ""
+  runScript os "context identifiers" (mShouldExit 0) script
+
+runContextIdentifierNegativeTest :: Opts -> IO ()
+runContextIdentifierNegativeTest os = do
+  let script :: String
+      script =
+        "let B=44:rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "diff(44+16,B)\n" ++
+        ""
+      passed = mShouldExit 1 .&&. mStderrContains "memory object used across cl_context"
+  runScript os "context identifiers negative test" passed script
 
 
 -------------------------------------------------------------------------------
@@ -505,6 +725,7 @@ runScriptWith exe extra_opts os tag match script = do
       putStrLn $ "  PASSED"
       when (oDebug os) $
         emitOutput
+      modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed + 1)
     Just msg -> do
       putStrLn "  FAILED"
       putStrLn $ msg
@@ -514,6 +735,7 @@ runScriptWith exe extra_opts os tag match script = do
       writeFile failed_cls script
       when (oFailFast os) $
         die $ "test failed (run " ++ failed_cls ++ ")"
+      modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed)
 
 
 
@@ -576,3 +798,21 @@ mFileExists path = \_ _ _ -> do
   z <- doesFileExist path
   if z then mSuccess
     else mFail (path ++ ": file not found after run")
+
+mPrintMatchesValues :: (Show n,Read n,Eq n) => Int -> [n] -> Matcher
+mPrintMatchesValues pr_ix ns _ out _ = proc 0 (lines out)
+  where proc ix (ln0:ln1:lns)
+          | "PRINT<" `isPrefixOf` ln0 =
+          if ix  < pr_ix then proc (ix+1) lns -- skip it
+            else match ns (drop 1 (words ln1))
+        proc ix [] = mFail ("failed to find PRINT<..> instance " ++ show pr_ix ++ " in output")
+
+        match (n:ns) (w:ws) =
+          case reads w of
+            [(x,"")] ->
+              if x /= n then mFail (w ++ ": mismatch on element (expected " ++ show n ++ ")")
+                else match ns ws
+            _ -> mFail (w ++ ": parse error in PRINT elements")
+        match [] [] = mSuccess
+        match _  _ = mFail "wrong number of elements in output"
+

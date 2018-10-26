@@ -93,6 +93,38 @@ namespace cls
   }; // val
 
   /////////////////////////////////////////////////////////////////////////////
+  // fills in for anything that can be referenced or defined immediately
+  // the type T must be a (spec type) with a spec::defined_at loc
+  template <typename T>
+  struct refable {
+    loc              defined_at;
+    std::string      identifier;
+    T               *value = nullptr;
+
+    refable() : defined_at(0,0,0,0) { }
+    refable(loc at, std::string _identifier, T *_value = nullptr) // symbolic ref
+      : defined_at(at), identifier(_identifier), value(_value) { }
+    refable(T *_value) // immediate ref
+      : defined_at(_value->defined_at), value(_value) { }
+    bool is_resolved() const {return value != nullptr;}
+    const T &operator->() const {return *value;}
+          T &operator->()       {return *value;}
+             operator const T*() const {return value;}
+             operator T*()       {return value;}
+    //         operator const T&() const {return *value;}
+    //         operator T&()       {return *value;}
+    void str(std::ostream &os, format_opts fopts) const {
+      if (identifier.empty())
+        if (value != nullptr)
+          value->str(os,fopts);
+        else
+          os << fopts.error("<nullptr>");
+      else
+        os << fopts.let_var(identifier);
+    }
+  };
+
+  /////////////////////////////////////////////////////////////////////////////
   // specification of some syntactic form
   struct spec {
     enum spec_kind {
@@ -105,9 +137,12 @@ namespace cls
     , DEVICE_SPEC
     , PROGRAM_SPEC
     , KERNEL_SPEC
-    } kind;
+    } skind;
+
     loc defined_at;
-    spec(loc _loc, spec_kind _kind) : defined_at(_loc), kind(_kind) { }
+
+    spec(loc at, spec_kind _kind) : defined_at(at), skind(_kind) { }
+
     void            str(std::ostream &os, format_opts fopts) const;
     std::string     str() const;
 
@@ -124,6 +159,7 @@ namespace cls
       //
       IS_INT,  // "0", "0:w", "0x123:w", "-34:r"
       IS_FLT,  // "1.2", "1.2:rw"
+      IS_SZO,  // sizeof(...)
       IS_REC,  // {c1, c2, ...} children hold c1, c2, ... (includes vectors)
       IS_BIV,  // built-in variable
       IS_SYM,  // a symbol (a reference to a let binding)
@@ -142,15 +178,18 @@ namespace cls
       // buffer initializers
       //
       IS_MEM,
-    } kind = IS_INVALID;
-    init_spec(loc loc, init_spec::init_spec_kind k)
-      : spec(loc, INIT_SPEC), kind(k) { }
+    } skind = IS_INVALID;
+
+    init_spec(loc at, init_spec::init_spec_kind k)
+      : spec(at, INIT_SPEC), skind(k) { }
+
     void str(std::ostream &os, format_opts fopts) const;
 
     bool is_atom() const {
-      switch (kind) {
+      switch (skind) {
       case IS_INT:
       case IS_FLT:
+      case IS_SZO:
       case IS_REC:
       case IS_BIV:
       case IS_BEX:
@@ -166,33 +205,86 @@ namespace cls
   struct init_spec_atom : init_spec {
     init_spec_atom(loc loc, init_spec_kind k) : init_spec(loc, k) { }
   };
+
+  /////////////////////////////////////////////////////////////////////////////
+  // memory initializers (buffers and images)
+  //
+  // e.g. "0:w", "file.bmp:rw", or "binary.buf:r"
+  struct init_spec_mem : init_spec {
+    init_spec_atom    *root = nullptr; // 0x44
+
+    init_spec_atom *dimension = nullptr; // optional dimension expression: e.g. [g.x]
+
+    enum access {
+      INIT_SPEC_MEM_NONE = 0,
+      INIT_SPEC_MEM_READ  = (1 << 0), // :r
+      INIT_SPEC_MEM_WRITE = (1 << 1), // :w
+    } access_properties = INIT_SPEC_MEM_NONE;
+
+    enum transfer {
+      TX_INVALID = 0,
+      TX_DEFAULT, // probably mapped or copied, but up to the implementation
+      TX_MAP,  // :m -> mirror memory/ALLOC_HOST_POINTER clEnqueueMapBuffer
+      TX_COPY, // :c -> mirror memory and clEnqueue{Write,Read}Buffer
+      TX_SVM_COARSE, // :sc -> clSVMAlloc (or :sf for fine grained)
+      TX_SVM_FINE,  // :sf -> clSVMAlloc
+    } transfer_properties = TX_DEFAULT;
+
+    bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
+    bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
+
+    // either :p# or :P#
+    bool print_pre = false, print_post = false;
+    // e.g. :p16 means 16 elements per row
+    int print_pre_elems_per_row = 0, print_post_elems_per_row = 0;
+
+    init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
+
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
   // e.g. "0x114", "-124"
   struct init_spec_int : init_spec_atom {
     int64_t value;
-    init_spec_int(loc loc, int64_t _value = 0)
-      : init_spec_atom(loc, IS_INT), value(_value) { }
+    init_spec_int(loc at, int64_t _value = 0)
+      : init_spec_atom(at, IS_INT), value(_value) { }
     void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
+
   // e.g. "3.141"
   struct init_spec_float : init_spec_atom {
     double value = 0.0;
-    init_spec_float(loc loc, double _value)
-      : init_spec_atom(loc, IS_FLT), value(_value) { }
+    init_spec_float(loc at, double _value)
+      : init_spec_atom(at, IS_FLT), value(_value) { }
     void str(std::ostream &os, format_opts fopts) const {os << value;}
   };
+
   // e.g. {1,2,4,8}
   struct init_spec_record : init_spec_atom {
     std::vector<init_spec_atom *> children;
-    init_spec_record(loc loc) : init_spec_atom(loc, IS_REC) { }
+    init_spec_record(loc at) : init_spec_atom(at, IS_REC) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
+
   // a variable reference (e.g. to a let)
   struct init_spec_symbol : init_spec_atom {
     std::string identifier;
-    init_spec_symbol(loc loc, std::string _identifier) :
-      init_spec_atom(loc, IS_SYM), identifier(_identifier) { }
+    init_spec_symbol(loc at, std::string _identifier) :
+      init_spec_atom(at, IS_SYM), identifier(_identifier) { }
     void str(std::ostream &os, format_opts fopts) const {fopts.let_var(identifier);}
   };
+
+  // sizeof(int2) or sizeof(BUF)
+  struct init_spec_sizeof : init_spec_atom {
+    std::string               type_name;
+    refable<init_spec_mem>    mem_object;
+    init_spec_sizeof(loc at, std::string _type_name)
+      : init_spec_atom(at, IS_SZO), type_name(_type_name) { }
+    init_spec_sizeof(loc at, const refable<init_spec_mem> &_mem_object)
+      : init_spec_atom(at, IS_SZO), mem_object(_mem_object) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
   // a built-in variable (e.g. disapatch parameter)
   struct init_spec_builtin : init_spec_atom {
     enum biv_kind {
@@ -204,12 +296,13 @@ namespace cls
       BIV_LY,
       BIV_LZ,
       BIV_LAST = BIV_LZ
-    } kind = BIV_INVALID;
+    } skind = BIV_INVALID;
     init_spec_builtin(loc loc, biv_kind _kind) :
-      init_spec_atom(loc, IS_BIV), kind(_kind) { }
+      init_spec_atom(loc, IS_BIV), skind(_kind) { }
     void str(std::ostream &os, format_opts fopts) const;
-    static const char *syntax_for(biv_kind kind);
+    static const char *syntax_for(biv_kind skind);
   };
+
   struct init_spec_bex : init_spec_atom {
     struct op_spec {
       const char              *symbol;
@@ -301,42 +394,7 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
 
-  /////////////////////////////////////////////////////////////////////////////
-  // memory initializers (buffers and images)
-  //
-  // e.g. "0:w", "file.bmp:rw", or "binary.buf:r"
-  struct init_spec_mem : init_spec {
-    init_spec_atom    *root = nullptr; // 0x44
 
-    init_spec_atom *dimension = nullptr; // optional dimension expression: e.g. [g.x]
-
-    enum access {
-      INIT_SPEC_MEM_NONE = 0,
-      INIT_SPEC_MEM_READ  = (1 << 0), // :r
-      INIT_SPEC_MEM_WRITE = (1 << 1), // :w
-    } access_properties = INIT_SPEC_MEM_NONE;
-
-    enum transfer {
-      TX_INVALID = 0,
-      TX_DEFAULT, // probably mapped or copied, but up to the implementation
-      TX_MAP,  // :m -> mirror memory/ALLOC_HOST_POINTER clEnqueueMapBuffer
-      TX_COPY, // :c -> mirror memory and clEnqueue{Write,Read}Buffer
-      TX_SVM_COARSE, // :sc -> clSVMAlloc (or :sf for fine grained)
-      TX_SVM_FINE,  // :sf -> clSVMAlloc
-    } transfer_properties = TX_DEFAULT;
-
-    bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
-    bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
-
-    // either :p# or :P#
-    bool print_pre = false, print_post = false;
-    // e.g. :p16 means 16 elements per row
-    int print_pre_elems_per_row = 0, print_post_elems_per_row = 0;
-
-    init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
-
-    void str(std::ostream &os, format_opts fopts) const;
-  };
 
   struct statement_spec : spec {
     enum statement_type {
@@ -347,10 +405,10 @@ namespace cls
       DIFF,      // diff
       SAVE,      // save('foo.bin',buffer)
       PRINT,     // print(buffer)
-    } kind = INVALID_STATEMENT;
+    } skind = INVALID_STATEMENT;
 
     statement_spec(loc loc, enum statement_type k)
-      : spec(loc,spec::STATEMENT_SPEC), kind(k) { }
+      : spec(loc,spec::STATEMENT_SPEC), skind(k) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 
@@ -362,16 +420,18 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
 
-  // #1 or #GTX
+  // #1, #GTX, #1#FOO, #1#BAR
   struct device_spec : spec {
-    enum kind {
+    enum skind {
       INVALID_DEVICE,
       BY_DEFAULT,
       BY_INDEX,
       BY_NAME
-    } kind = kind::BY_DEFAULT;
+    } skind = skind::BY_DEFAULT;
     int           by_index_value = -1;
     std::string   by_name_value;
+
+    std::string   instance; // :BAR
 
     device_spec(loc loc) : spec(loc,spec::DEVICE_SPEC) { }
 
@@ -381,36 +441,6 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
 
-  // fills in for anything that can be referenced or defined immediately
-  // the type T must be a (spec type) with a spec::defined_at loc
-  template <typename T>
-  struct refable {
-    loc              defined_at;
-    std::string      identifier;
-    T               *value = nullptr;
-
-    refable() : defined_at(0,0,0,0) { }
-    refable(loc l, std::string ident, T *_value = nullptr) // symbolic ref
-      : defined_at(l), identifier(ident), value(_value) { }
-    refable(T *_value) // immediate ref
-      : defined_at(_value->defined_at), value(_value) { }
-    bool is_resolved() const {return value != nullptr;}
-    const T &operator->() const {return *value;}
-          T &operator->()       {return *value;}
-             operator const T*() const {return value;}
-             operator T*()       {return value;}
-    //         operator const T&() const {return *value;}
-    //         operator T&()       {return *value;}
-    void str(std::ostream &os, format_opts fopts) const {
-      if (identifier.empty())
-        if (value != nullptr)
-          value->str(os,fopts);
-        else
-          os << fopts.error("<nullptr>");
-      else
-        os << fopts.let_var(identifier);
-    }
-  };
   struct program_spec : spec {
     device_spec     device;
     std::string     path;

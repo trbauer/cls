@@ -21,26 +21,6 @@ namespace fs = std::experimental::filesystem;
 using namespace cls::k;
 using namespace cls;
 
-/*
-struct child_a {
-  int x;
-//  child_a(int _x) : x(_x) { }
-};
-struct child_b {
-  int x;
-  const char *str;
-  constexpr child_b(const char *_str, int _x) : x(_x), str(_str) { }
-};
-struct example {
-  const char *name;
-  std::variant<child_a,child_b> v;
-//  constexpr example(int x) : v(x) { }
-//  constexpr example(const char *_name, child_a a) : name(_name), v(a) { }
-  constexpr example(const char *_name, child_b b) : name(_name), v(b) { }
-};
-constexpr static example X{"foo",child_b("foo",3)};
-*/
-
 
 struct karg_parser : cls::parser
 {

@@ -21,7 +21,7 @@ compiled_script_impl::compiled_script_impl(const opts &_os,const script &_s)
 
 surface_object *compiled_script_impl::define_surface(
   const init_spec_mem *_spec,
-  enum surface_object::kind _kind,
+  enum surface_object::skind _kind,
   size_t _size_in_bytes,
   cl_mem _mem,
   cl_command_queue _queue)
@@ -41,17 +41,30 @@ evaluator::evaluator(compiled_script_impl *_csi)
 {
 }
 
-
 val evaluator::eval(
   context &ec,
   const init_spec_atom *e)
 {
   // TODO: merge with evalInto<type_num>
-  switch (e->kind) {
+  switch (e->skind) {
   case init_spec::IS_INT:
     return val(((const init_spec_int *)e)->value);
   case init_spec::IS_FLT:
     return val(((const init_spec_float *)e)->value);
+  case init_spec::IS_SZO: {
+    const init_spec_sizeof *isz = (const init_spec_sizeof *)e;
+    if (isz->type_name.empty()) {
+      auto itr = csi->surfaces.find(isz->mem_object);
+      if (itr == csi->surfaces.find_end()) {
+        internalAt(isz->mem_object.defined_at,"undefined memory object");
+      }
+      const surface_object *so = itr->second;
+      return val(so->size_in_bytes);
+    } else {
+      const type *t = lookupPrimtiveType(isz->type_name);
+      return val(t->size());
+    }
+  }
   case init_spec::IS_BEX: {
     const init_spec_bex *be = ((const init_spec_bex *)e);
     val vl = eval(ec, be->e_l),
@@ -72,7 +85,7 @@ val evaluator::eval(
             " dimension size is out of bounds for this dispatch");
         return ndr.get()[dim_ix];
       };
-    switch (((const init_spec_builtin *)e)->kind) {
+    switch (((const init_spec_builtin *)e)->skind) {
     case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0);
     case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1);
     case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2);
@@ -121,7 +134,12 @@ void evaluator::setKernelArgImmediate(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  // non-surface
+  if (os.verbosity >= 2) {
+    debug(ris.defined_at, "setting immediate argument for ",
+      ai.type.syntax()," ",ai.name);
+  }
+
+    // non-surface
   context ec(dc.global_size,dc.local_size, &ss);
   const init_spec *is = ris;
 
@@ -142,8 +160,7 @@ void evaluator::setKernelArgImmediate(
       (const void *)ab.ptr());
 
   if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting immediate argument for ",
-      ai.type.syntax()," ",ai.name," to");
+    std::cout << " ==> ARG " << ai.type.syntax() << " "  << ai.name << " = ";
     format(std::cout, ab.base, ab.capacity, ai.type);
     std::cout << "\n";
   }
@@ -171,7 +188,12 @@ void evaluator::setKernelArgMemobj(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  if (((const init_spec *)ris)->kind != init_spec::IS_MEM) {
+  if (os.verbosity >= 2) {
+    debug(ris.defined_at, "setting memory object argument for ",
+      ai.type.syntax()," ",ai.name);
+  }
+
+  if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at, "expected surface initializer");
   }
   const init_spec_mem *ism =
@@ -235,6 +257,9 @@ void evaluator::setKernelArgMemobj(
       arg_index,
       sizeof(cl_mem),
       (const void *)&so->memobj);
+  if (os.verbosity >= 2) {
+    std::cout << " ==> ARG " << ai.type.syntax() << " "  << ai.name << " = " << so->str() << "\n";
+  }
 }
 
 void evaluator::setKernelArgSLM(
@@ -244,6 +269,11 @@ void evaluator::setKernelArgSLM(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
+  if (os.verbosity >= 2) {
+    debug(ris.defined_at, "setting SLM size for ",
+      ai.type.syntax()," ",ai.name);
+  }
+
   const init_spec *is = ris;
   // Special treatment of local * arguments
   // e.g. kernel void foo(..., local int2 *buffer)
@@ -273,6 +303,9 @@ void evaluator::setKernelArgSLM(
       local_bytes,
       nullptr);
   ss << "SLM[" << local_bytes << " B]";
+  if (os.verbosity >= 2) {
+    std::cout << " ==> ARG local " << ai.type.syntax() << " " << ai.name << " = " << local_bytes << " B\n";
+  }
 }
 
 void evaluator::evalInto(
@@ -301,7 +334,7 @@ void evaluator::evalInto(
   const type_num &tn)
 {
   // is could be 4, 4*g.x, or other stuff
-  switch (tn.kind) {
+  switch (tn.skind) {
   case type_num::SIGNED:
     switch (tn.size_in_bytes) {
     case 1: evalIntoT<int8_t>(ec,at,is,ab); break;
@@ -339,7 +372,7 @@ void evaluator::evalIntoT(
   const init_spec_atom *is,
   arg_buffer &ab)
 {
-  switch (is->kind) {
+  switch (is->skind) {
   case init_spec::IS_INT:
   case init_spec::IS_FLT:
   case init_spec::IS_BEX:
@@ -365,7 +398,7 @@ void evaluator::evalInto(
   arg_buffer &ab,
   const type_struct &ts)
 {
-  if (is->kind == init_spec::IS_REC) {
+  if (is->skind == init_spec::IS_REC) {
     const init_spec_record *isr = (const init_spec_record *)is;
     if (isr->children.size() != ts.elements_length) {
       fatalAt(at, "structure initializer has wrong number of elements");

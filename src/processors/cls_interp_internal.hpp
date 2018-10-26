@@ -86,11 +86,11 @@ struct kernel_object {
 struct dispatch_command;
 
 struct surface_object {
-  enum kind {
+  enum skind {
     SO_INVALID = 0,
     SO_BUFFER,
     SO_IMAGE
-  } kind;
+  } skind;
 
   const init_spec_mem      *spec;
   size_t                    size_in_bytes;
@@ -110,12 +110,12 @@ struct surface_object {
 
   surface_object(
     const init_spec_mem *_spec,
-    enum surface_object::kind _kind,
+    enum surface_object::skind _kind,
     size_t _size_in_bytes,
     cl_mem _mem,
     int _memobj_index,
     cl_command_queue _queue)
-    : kind(_kind)
+    : skind(_kind)
     , spec(_spec)
     , size_in_bytes(_size_in_bytes)
     , memobj(_mem)
@@ -150,7 +150,6 @@ struct dispatch_command {
 
   sampler                                          wall_times;
   sampler                                          prof_times;
-
 
   dispatch_command(const dispatch_spec *_spec, kernel_object *_kernel)
     : spec(_spec), kernel(_kernel)
@@ -329,7 +328,7 @@ struct save_command {
 };
 
 struct script_instruction {
-  enum {DISPATCH,DIFFS,DIFFU,PRINT,SAVE} kind;
+  enum {DISPATCH,DIFFS,DIFFU,PRINT,SAVE} skind;
   union {
     dispatch_command *dsc;
     diffs_command    *dfsc;
@@ -337,11 +336,11 @@ struct script_instruction {
     print_command    *prc;
     save_command     *svc;
   };
-  script_instruction(dispatch_command *_dc) : dsc(_dc), kind(DISPATCH) { }
-  script_instruction(diffs_command *_dc) : dfsc(_dc), kind(DIFFS) { }
-  script_instruction(diffu_command *_dc) : dfuc(_dc), kind(DIFFU) { }
-  script_instruction(print_command *_prc) : prc(_prc), kind(PRINT) { }
-  script_instruction(save_command *_svc) : svc(_svc), kind(SAVE) { }
+  script_instruction(dispatch_command *_dc) : dsc(_dc), skind(DISPATCH) { }
+  script_instruction(diffs_command *_dc) : dfsc(_dc), skind(DIFFS) { }
+  script_instruction(diffu_command *_dc) : dfuc(_dc), skind(DIFFU) { }
+  script_instruction(print_command *_prc) : prc(_prc), skind(PRINT) { }
+  script_instruction(save_command *_svc) : svc(_svc), skind(SAVE) { }
 };
 
 
@@ -447,7 +446,7 @@ struct evaluator : interp_fatal_handler {
   val evalToI(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     if (v.is_float())
-      fatalAt(e->defined_at,"cannot convert float to int");
+      fatalAt(e->defined_at,"cannot implicitly convert float to int");
     if (v.is_signed()) {
       if ((T)v.s64 < std::numeric_limits<T>::min() ||
         (T)v.s64 > std::numeric_limits<T>::max())
@@ -497,19 +496,21 @@ struct evaluator : interp_fatal_handler {
         std::numeric_limits<float>::min());
     } else { // half
       checkBounds(
-        SFLT_MIN,
+        -SFLT_MAX,
         SFLT_MAX,
-        -SFLT_MAX);
+        SFLT_MIN);
     }
     return v;
   }
 
   template <typename T>
   val evalTo(context &ec,const init_spec_atom *e) {
-    if (std::is_floating_point<T>()) {
-      return evalToF<T>(ec,e);
-    } else {
+    // we have to be careful about evaluating in this order
+    // std::is_floating_point fails on half
+    if (std::is_integral<T>()) {
       return evalToI<T>(ec,e);
+    } else { // std::is_floating_point<T>()
+      return evalToF<T>(ec,e);
     }
   }
   val evalF(context &ec,const init_spec_atom *e);
@@ -569,12 +570,14 @@ struct evaluator : interp_fatal_handler {
     const type_ptr &tp); // for SVM?
 }; // evaluator
 
+using device_key = std::tuple<cl_device_id,std::string>;
 struct compiled_script_impl : interp_fatal_handler {
   const script                                           &s;
   struct evaluator                                       *e;
 
   mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
-  mapped_objects<const device_spec*,device_object>        devices;
+  // mapped_objects<const device_spec*,device_object>        devices;
+  mapped_objects<device_key,device_object>                devices;
   mapped_objects<const program_spec*,program_object>      programs;
   mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
@@ -586,7 +589,7 @@ struct compiled_script_impl : interp_fatal_handler {
 
   surface_object *define_surface(
     const init_spec_mem *_spec,
-    enum surface_object::kind _kind,
+    enum surface_object::skind _kind,
     size_t _size_in_bytes,
     cl_mem _mem,
     cl_command_queue _queue);

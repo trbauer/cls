@@ -29,13 +29,14 @@ static std::string consumeToChar(parser &p, const char *set)
   return s.substr(start, len);
 }
 
-static init_spec_atom *parseInitAtom(parser &p);
+static init_spec_atom *parseInitAtom(parser &p,script &s);
 
-static init_spec_atom *parseInitAtomPrim(parser &p)
+static init_spec_atom *parseInitAtomPrim(parser &p,script &s)
 {
   auto at = p.nextLoc();
   if (p.lookingAt(STRLIT)) {
-    p.fatal("bare strings not allowed for files anymore (use bin('...') and txt('...'))");
+    p.fatal("bare strings not allowed for files anymore "
+      "(use bin('...') and txt('...'))");
     return nullptr;
   } else if (p.lookingAtFloat()) {
     return new init_spec_float(at, p.consumeFloat());
@@ -43,30 +44,30 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
     return new init_spec_int(at, p.consumeIntegral<int64_t>());
   } else if (p.lookingAtIdent()) {
     // e.g. "X" or "g.x" or "pow(...)"
-    auto s = p.tokenString();
+    auto id = p.tokenString();
     p.skip();
     if (p.lookingAt(DOT)) {
       // e.g. "g.x"
       while (p.consumeIf(DOT)) {
-        s += '.';
+        id += '.';
         if (!p.lookingAt(IDENT))
           p.fatal("syntax error in initializer expression field access");
-        s += p.tokenString();
+        id += p.tokenString();
         p.skip();
       }
       for (int biv = init_spec_builtin::BIV_FIRST;
         biv <= init_spec_builtin::BIV_LAST;
         biv++)
       {
-        if (s == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
+        if (id == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
           at.extend_to(p.nextLoc());
           return new init_spec_builtin(at, (init_spec_builtin::biv_kind)biv);
         }
       }
       at.extend_to(p.nextLoc());
-      return new init_spec_symbol(at, s);
+      return new init_spec_symbol(at, id);
     } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
-      s == "random" || s == "seq" || s == "file")
+      id == "sizeof" || id == "random" || id == "seq" || id == "file")
     {
       // foo<...  (e.g. random<12007>(...))
       // or
@@ -75,7 +76,33 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
       // TODO: generalize function parsing to
       //    F<...>(....)
       // then match by template arguments
-      if (s == "random") {
+      if (id == "sizeof") {
+        bool has_parens = p.consumeIf(LPAREN);
+        if (!p.lookingAtIdent())
+          p.fatal("expected type name");
+        loc nm_at = p.nextLoc();
+        std::string sizeof_arg = p.tokenString();
+        p.skip();
+        if (has_parens)
+          p.consume(RPAREN);
+        at.extend_to(p.nextLoc());
+        // manual dereference memobject
+        auto itr = s.let_bindings.find(sizeof_arg);
+        if (itr == s.let_bindings.end()) {
+          // assume it's a type
+          return new init_spec_sizeof(at, sizeof_arg);
+        } else {
+          let_spec *ls = itr->second;
+          spec *rs = ls->value;
+          if (rs->skind != spec::INIT_SPEC)
+            p.fatal("symbol refers to non-memory object");
+          init_spec *is = (init_spec *)rs;
+          if (is->skind != init_spec::IS_MEM)
+            p.fatal("symbol refers to non-memory object");
+          return new init_spec_sizeof(at,
+            refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
+        }
+      } else if (id == "random") {
         auto func = new init_spec_rng(at);
         int64_t seed = 0;
         bool has_seed = false;
@@ -88,9 +115,9 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         }
         if (p.consumeIf(LPAREN)) {
           if (!p.lookingAt(RPAREN)) {
-            auto *arg1 = parseInitAtom(p);
+            auto *arg1 = parseInitAtom(p,s);
             if (p.consumeIf(COMMA)) {
-              auto *arg2 = parseInitAtom(p);
+              auto *arg2 = parseInitAtom(p,s);
               func->e_lo = arg1;
               func->e_hi = arg2;
             } else {
@@ -103,7 +130,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
           func->set_seed(seed);
         func->defined_at.extend_to(p.nextLoc());
         return func;
-      } else if (s == "file") {
+      } else if (id == "file") {
         //
         // file('foo.bin'):r
         // file<bin>('foo.bin'):r
@@ -158,7 +185,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         std::vector<init_spec_atom *> args;
         p.consume(LPAREN);
         while (!p.lookingAt(RPAREN)) {
-          args.push_back(parseInitAtom(p));
+          args.push_back(parseInitAtom(p,s));
           if (!p.consumeIf(COMMA))
             break;
         }
@@ -166,7 +193,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
 
         ///////////////////////////////////////////////////
         // special functions (pseudo functions)
-        if (s == "seq") {
+        if (id == "seq") {
           init_spec_seq *iss = nullptr;
           switch (args.size()) {
           case 0: iss = new init_spec_seq(at,nullptr,nullptr); break;
@@ -181,14 +208,14 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         ///////////////////////////////////////////////////
         // regular arithmetic functions
         if (args.size() == 1) {
-          if (s == "fabs")
+          if (id == "fabs")
             p.fatalAt(at,"use \"abs\" for the absolute value");
-          else if (s == "sqt")
+          else if (id == "sqt")
             p.fatalAt(at,"use \"sqrt\" for the square root");
 
-          const auto *op = init_spec_uex::lookup_op(s.c_str());
+          const auto *op = init_spec_uex::lookup_op(id.c_str());
           if (!op) {
-            if (init_spec_bex::lookup_op(s.c_str())) {
+            if (init_spec_bex::lookup_op(id.c_str())) {
               p.fatalAt(at, "function requires two arguments");
             } else {
               p.fatalAt(at, "not a unary function");
@@ -196,7 +223,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
           }
           return new init_spec_uex(at,*op,args[0]);
         } else if (args.size() == 2) {
-          const auto *op = init_spec_bex::lookup_op(s.c_str());
+          const auto *op = init_spec_bex::lookup_op(id.c_str());
           if (!op) {
             p.fatalAt(at, "not a binary function");
           }
@@ -211,26 +238,26 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
         return nullptr; // unreachable
       } // end else not random
     } else {
-      if (s == "E")
+      if (id == "E")
         return new init_spec_float(at, M_E);
-      else if (s == "PI")
+      else if (id == "PI")
         return new init_spec_float(at, M_PI);
       // some other symbol (may target a LET binding)
-      return new init_spec_symbol(at, s);
+      return new init_spec_symbol(at, id);
     }
   } else if (p.consumeIf(LBRACE)) {
     // {...}
     auto re = new init_spec_record(at);
     if (!p.lookingAt(RBRACE)) {
-      re->children.push_back(parseInitAtom(p));
+      re->children.push_back(parseInitAtom(p,s));
       while (p.consumeIf(COMMA))
-        re->children.push_back(parseInitAtom(p));
+        re->children.push_back(parseInitAtom(p,s));
     }
     p.consume(RBRACE);
     re->defined_at.extend_to(p.nextLoc());
     return re;
   } else if (p.consumeIf(LPAREN)) {
-    init_spec_atom *e = parseInitAtom(p);
+    init_spec_atom *e = parseInitAtom(p,s);
     p.consume(RPAREN);
     return e;
   } else {
@@ -238,7 +265,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p)
     return nullptr;
   }
 }
-static init_spec_atom *parseInitAtomUnr(parser &p)
+static init_spec_atom *parseInitAtomUnr(parser &p,script &s)
 {
   if (p.lookingAt(SUB) || p.lookingAt(TILDE)) {
     auto loc = p.nextLoc();
@@ -247,95 +274,95 @@ static init_spec_atom *parseInitAtomUnr(parser &p)
         *init_spec_uex::lookup_op("-") :
         *init_spec_uex::lookup_op("~");
     p.skip();
-    init_spec_atom *e = parseInitAtomUnr(p);
+    init_spec_atom *e = parseInitAtomUnr(p,s);
     return new init_spec_uex(loc, op, e);
   } else {
-    return parseInitAtomPrim(p);
+    return parseInitAtomPrim(p,s);
   }
 }
-static init_spec_atom *parseInitAtomMul(parser &p)
+static init_spec_atom *parseInitAtomMul(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomUnr(p);
+  init_spec_atom *e = parseInitAtomUnr(p,s);
   while (p.lookingAt(MUL) || p.lookingAt(DIV) || p.lookingAt(MOD)) {
     const auto &op =
       p.lookingAt(MUL) ? *init_spec_bex::lookup_op("*") :
       p.lookingAt(DIV) ? *init_spec_bex::lookup_op("/") :
       *init_spec_bex::lookup_op("%");
     p.skip();
-    init_spec_atom *t = parseInitAtomUnr(p);
+    init_spec_atom *t = parseInitAtomUnr(p,s);
     e = new init_spec_bex(op, e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtomAdd(parser &p)
+static init_spec_atom *parseInitAtomAdd(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomMul(p);
+  init_spec_atom *e = parseInitAtomMul(p,s);
   while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
     const auto &op = p.lookingAt(ADD) ?
       *init_spec_bex::lookup_op("+") :
       *init_spec_bex::lookup_op("-");
     p.skip();
-    init_spec_atom *t = parseInitAtomMul(p);
+    init_spec_atom *t = parseInitAtomMul(p,s);
     e = new init_spec_bex(op, e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtomShift(parser &p)
+static init_spec_atom *parseInitAtomShift(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomAdd(p);
+  init_spec_atom *e = parseInitAtomAdd(p,s);
   while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
     const auto &op = p.lookingAt(LSH) ?
       *init_spec_bex::lookup_op("<<") :
       *init_spec_bex::lookup_op(">>");
     p.skip();
-    init_spec_atom *t = parseInitAtomAdd(p);
+    init_spec_atom *t = parseInitAtomAdd(p,s);
     e = new init_spec_bex(op, e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseAND(parser &p)
+static init_spec_atom *parseInitAtomBitwiseAND(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomShift(p);
+  init_spec_atom *e = parseInitAtomShift(p,s);
   while (p.consumeIf(AMP)) {
-    init_spec_atom *t = parseInitAtomShift(p);
+    init_spec_atom *t = parseInitAtomShift(p,s);
     e = new init_spec_bex(*init_spec_bex::lookup_op("&"), e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseXOR(parser &p)
+static init_spec_atom *parseInitAtomBitwiseXOR(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomBitwiseAND(p);
+  init_spec_atom *e = parseInitAtomBitwiseAND(p,s);
   while (p.consumeIf(CIRC)) {
-    init_spec_atom *t = parseInitAtomBitwiseAND(p);
+    init_spec_atom *t = parseInitAtomBitwiseAND(p,s);
     e = new init_spec_bex(*init_spec_bex::lookup_op("^"), e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseOR(parser &p)
+static init_spec_atom *parseInitAtomBitwiseOR(parser &p,script &s)
 {
-  init_spec_atom *e = parseInitAtomBitwiseXOR(p);
+  init_spec_atom *e = parseInitAtomBitwiseXOR(p,s);
   while (p.consumeIf(PIPE)) {
-    init_spec_atom *t = parseInitAtomBitwiseXOR(p);
+    init_spec_atom *t = parseInitAtomBitwiseXOR(p,s);
     e = new init_spec_bex(*init_spec_bex::lookup_op("|"), e, t);
   }
   return e;
 }
-static init_spec_atom *parseInitAtom(parser &p)
+static init_spec_atom *parseInitAtom(parser &p,script &s)
 {
-  return parseInitAtomBitwiseOR(p);
+  return parseInitAtomBitwiseOR(p,s);
 }
 
-static init_spec *parseInit(parser &p)
+static init_spec *parseInit(parser &p,script &s)
 {
   auto l = p.nextLoc();
-  init_spec_atom *e = parseInitAtom(p);
+  init_spec_atom *e = parseInitAtom(p,s);
 
   if (p.consumeIf(COLON)) {
     // memory initializer
     init_spec_mem *m = new init_spec_mem(l);
     m->root = e;
     if (p.consumeIf(LBRACK)) {
-      init_spec_atom *de = parseInitAtom(p);
+      init_spec_atom *de = parseInitAtom(p,s);
       m->dimension = de;
       p.consume(RBRACK);
     }
@@ -433,24 +460,24 @@ template <typename T>
 static refable<T> dereferenceLet(
   parser &p,
   script &s,
-  enum spec::spec_kind kind,
+  enum spec::spec_kind skind,
   const char *what)
 {
-  auto loc = p.nextLoc();
+  auto at = p.nextLoc();
   std::string name = p.consumeIdent();
   auto itr = s.let_bindings.find(name);
   if (itr == s.let_bindings.end()) {
-    p.fatalAt(loc,what," not defined");
+    p.fatalAt(at,what," not defined");
   }
   let_spec *ls = itr->second;
   spec *rs = ls->value;
-  if (rs->kind != kind) {
+  if (rs->skind != skind) {
     std::stringstream ss;
     ss << "identifier does not reference a " << what;
     ss << " (defined on line " << rs->defined_at.line << ")";
-    p.fatalAt(loc,ss.str());
+    p.fatalAt(at,ss.str());
   }
-  return refable<T>(loc,name,(T *)rs);
+  return refable<T>(at,name,(T *)rs);
 }
 
 static refable<init_spec_mem> dereferenceLetMem(
@@ -459,7 +486,7 @@ static refable<init_spec_mem> dereferenceLetMem(
 {
   refable<init_spec> rf =
     dereferenceLet<init_spec>(p, s, spec::INIT_SPEC, "memory object");
-  if ((*rf).kind != init_spec::IS_MEM) {
+  if ((*rf).skind != init_spec::IS_MEM) {
     p.fatalAt(rf.defined_at,"identifier does not reference a memory object");
   }
   return refable<init_spec_mem>(
@@ -556,8 +583,8 @@ static void parseDispatchStatementArguments(
 {
   p.consume(LPAREN);
   while (!p.lookingAt(RPAREN)) {
-    init_spec *is = parseInit(p);
-    if (is->kind == init_spec::IS_SYM) {
+    init_spec *is = parseInit(p,s);
+    if (is->skind == init_spec::IS_SYM) {
       // make a reference argument
       ds.arguments.emplace_back(
         is->defined_at,
@@ -611,7 +638,7 @@ static void parseDispatchStatementWhereClause(
         if (std::get<0>(w) == name)
           p.fatalAt(loc,"repeated where binding name");
       p.consume(EQ);
-      init_spec *i = parseInit(p);
+      init_spec *i = parseInit(p,s);
       i->defined_at.extend_to(p.nextLoc());
       ds.where_bindings.emplace_back(name,i);
       bool where_used_at_least_once = false;
@@ -650,7 +677,7 @@ static void parseDispatchStatementWhereClause(
           p.fatalAt(ds.arguments[ai].defined_at,"undefined symbol");
         }
         let_spec *ls = itr->second;
-        if (ls->value->kind != spec::INIT_SPEC) {
+        if (ls->value->skind != spec::INIT_SPEC) {
           p.fatalAt(ds.arguments[ai].defined_at,
             "symbol does not refer to a kernel argument (see line ",
             ls->defined_at.line,
@@ -682,10 +709,16 @@ static program_spec *parseDispatchStatementDeviceProgramPart(
     } else {
       p.fatal("invalid device specification");
     }
-    p.consume(BACKTICK);
+    if (p.consumeIf(HASH)) {
+      dev.instance = p.consumeIdent("instance identifier");
+    }
     dev.defined_at.extend_to(p.nextLoc());
+    if (!p.lookingAt(BACKTICK))
+      p.fatal("expected ` (dispatch program separator) or "
+        "# (instance identifier)");
+    p.consume(BACKTICK);
   } else {
-    dev.kind = device_spec::BY_DEFAULT;
+    dev.skind = device_spec::BY_DEFAULT;
   }
 
   // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
@@ -824,14 +857,14 @@ static init_spec_symbol *parseSymbol(parser &p)
 // Given an arugment; we resolve symbol the symbol to a let target (or fail)
 static refable<init_spec> parseInitResolved(parser &p, script &s)
 {
-  init_spec *is = parseInit(p);
-  if (is->kind == init_spec::IS_SYM) {
+  init_spec *is = parseInit(p,s);
+  if (is->skind == init_spec::IS_SYM) {
     // make a reference argument
     auto itr = s.let_bindings.find(((const init_spec_symbol *)is)->identifier);
     if (itr == s.let_bindings.end()) {
       p.fatalAt(is->defined_at,"unbound identifier");
-    } else if (itr->second->value->kind != spec::INIT_SPEC ||
-      ((init_spec *)itr->second->value)->kind != init_spec::IS_MEM)
+    } else if (itr->second->value->skind != spec::INIT_SPEC ||
+      ((init_spec *)itr->second->value)->skind != init_spec::IS_MEM)
     {
       p.fatalAt(is->defined_at,"identifier does not reference a memory object");
     }
@@ -1010,7 +1043,7 @@ static void parseLetStatement(parser &p, script &s)
   } else {
     // a regular initializer
     // let M = 0:w
-    value = parseInit(p);
+    value = parseInit(p,s);
   }
   ls->value = value;
   s.let_bindings[name] = ls;

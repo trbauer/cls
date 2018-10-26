@@ -439,18 +439,13 @@ static void CL_CALLBACK dispatchContextNotify(
 
 device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
-  auto itr = csi->devices.find(ds);
-  if (itr != csi->devices.find_end()) {
-    return *itr->second;
-  }
-
   cl::Device dev;
-  switch (ds->kind) {
+  switch (ds->skind) {
   case device_spec::BY_DEFAULT:
     dev = getDeviceDefault(os);
     break;
   case device_spec::BY_INDEX:
-    if (!getDeviceByIndex(os, ds->by_index_value,dev)) {
+    if (!getDeviceByIndex(os, ds->by_index_value, dev)) {
       fatalAt(ds->defined_at,"invalid device index");
     }
     break;
@@ -465,10 +460,13 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
     break;
   }
 
-  //
-  // device_object &dobj2 = csi->devices2.get(ds,ds,dev);
-  device_object &dobj = csi->devices.emplace_back(ds, ds, dev);
+  auto dev_key = device_key(dev(),ds->instance);
+  auto itr = csi->devices.find(dev_key);
+  if (itr != csi->devices.find_end()) {
+    return *itr->second;
+  }
 
+  device_object &dobj = csi->devices.emplace_back(dev_key, ds, dev);
   try {
     std::vector<cl::Device> devs{dev};
     dobj.context = new cl::Context(
@@ -501,7 +499,7 @@ void script_compiler::compile()
   // Construct contexts and command queues (device_state) for all
   // device_spec's that appear in the script and compile programs.
   for (const statement_spec *st : s.statement_list.statements) {
-    if (st->kind == statement_spec::DISPATCH) {
+    if (st->skind == statement_spec::DISPATCH) {
       compileDispatch((const dispatch_spec *)st);
     }
   }
@@ -511,10 +509,10 @@ void script_compiler::compile()
   //  - compile diff command (needs args for surface info type)
   for (size_t st_ix = 0; st_ix < s.statement_list.statements.size(); st_ix++) {
     const statement_spec *st = s.statement_list.statements[st_ix];
-    if (st->kind == statement_spec::DISPATCH) {
+    if (st->skind == statement_spec::DISPATCH) {
       dispatch_command *dc = compileDispatchArgs((const dispatch_spec *)st);
       csi->instructions.emplace_back(dc);
-    } else if (st->kind == statement_spec::DIFF) {
+    } else if (st->skind == statement_spec::DIFF) {
       const diff_spec *ds = (const diff_spec *)st;
       if (ds->ref.value->is_atom()) {
         diffu_command *dc = compileDiffU(ds);
@@ -523,21 +521,22 @@ void script_compiler::compile()
         diffs_command *dc = compileDiffS(ds);
         csi->instructions.emplace_back(dc);
       }
-    } else if (st->kind == statement_spec::PRINT) {
+    } else if (st->skind == statement_spec::PRINT) {
       print_command *pc = compilePrint((const print_spec *)st);
       csi->instructions.emplace_back(pc);
-    } else if (st->kind == statement_spec::SAVE) {
+    } else if (st->skind == statement_spec::SAVE) {
       const save_spec *ss = (const save_spec *)st;
       // surface_object *so =  &csi->surfaces.get(ss->arg.value);
       save_command *sc = new save_command(ss,nullptr);
       csi->instructions.emplace_back(sc);
-    } else if (st->kind == statement_spec::LET) {
+    } else if (st->skind == statement_spec::LET) {
       ; // nop
     } else {
       internalAt(st->defined_at, "NOT IMPLEMENTED");
     }
   } // for
 
+  // Binding surface_object's to their non-dispatch commands.
   // (e.g. print, diff, save) and bind surface_object*'s to their value.
   // Loop through all memory object statements and link them to the surface
   // objects they process.  We do this as a second pass because
@@ -547,7 +546,7 @@ void script_compiler::compile()
   //    print<int>(X)  <<<<<<<<<<<<< surface object used before dispatch
   //    #0`foo.cl`kernel<...>(X);
   for (script_instruction &si : csi->instructions) {
-    switch (si.kind)
+    switch (si.skind)
     {
     case script_instruction::DIFFS: {
       diffs_command *dfsc = si.dfsc;
@@ -658,7 +657,26 @@ void script_compiler::compile()
       debug(si.svc->spec,"bound surface to ",si.svc->so->str());
       break;
     } // switch
-  } // for
+  } // for (binding surfaces to non-dispatch commands)
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Ensure all surfaces are used within the same context
+  for (surface_object *so : csi->surfaces) {
+    device_object *dobj = nullptr;
+    for (const surface_object::use &du : so->dispatch_uses) {
+      const dispatch_command *dc = std::get<0>(du);
+      if (dobj == nullptr) {
+        dobj = dc->dobj;
+      } else if (dobj != dc->dobj) {
+        std::stringstream ss;
+        ss <<
+          "memory object used across cl_context's (c.f. lines " <<
+            dobj->spec->defined_at.line << " and " <<
+            dc->dobj->spec->defined_at.line << ")";
+        fatalAt(so->spec->defined_at, ss.str());
+      }
+    }
+  }
 }
 
 void script_compiler::compileDispatch(const dispatch_spec *ds)
@@ -719,43 +737,18 @@ dispatch_command *script_compiler::compileDispatchArgs(
 
 diffu_command *script_compiler::compileDiffU(const diff_spec *ds)
 {
-#if 0
-  surface_object *so = &csi->surfaces.get(ds->sut.value);
-  const type *element_type = ds->element_type;
-
-  if (!element_type) {
-    // infer the template type by using the last type where the surface
-    // is used
-    // e.g. if the surface was last used as: global int2 *buffer,
-    // then we use int2
-    element_type = inferSurfaceElementType(so, st_ix);
-  } // element_type != nullptr
-
-  return new diffu_command(ds,so,element_type);
-#endif
+  // we patch surface and type information later
   return new diffu_command(ds,nullptr,nullptr);
 }
 diffs_command *script_compiler::compileDiffS(const diff_spec *ds)
 {
+  // we patch surface and type information later
   return new diffs_command(ds,nullptr,nullptr,nullptr);
 }
 
 print_command *script_compiler::compilePrint(const print_spec *ps)
 {
-#if 0
-  surface_object *so = &csi->surfaces.get(ps->arg.value);
-  const type *element_type = ps->element_type;
-
-  if (!element_type) {
-    // infer the template type by using the last type where the surface
-    // is used
-    // e.g. if the surface was last used as: global int2 *buffer,
-    // then we use "int2"
-    element_type = inferSurfaceElementType(so, st_ix);
-  } // element_type != nullptr
-
-  return new print_command(ps,so,element_type);
-#endif
+  // we patch surface and type information later
   return new print_command(ps,nullptr,ps->element_type);
 }
 
@@ -796,7 +789,7 @@ const type *script_compiler::inferSurfaceElementType(
   statement_spec *from_st = s.statement_list.statements[from_st_ix];
   for (int ix = (int)from_st_ix - 1; ix >= 0; ix--) {
     const statement_spec *st1 = s.statement_list.statements[ix];
-    if (st1->kind == statement_spec::DISPATCH) {
+    if (st1->skind == statement_spec::DISPATCH) {
       const dispatch_spec *ds = (const dispatch_spec *)st1;
       dispatch_command &dc = csi->dispatches.get(ds);
       kernel_object &ko = *dc.kernel;

@@ -18,10 +18,12 @@ const char *cls::to_symbol(cls::lexemes::lexeme l)
 
     CLS_LEXEME_TOKEN(AMP);    // &
     CLS_LEXEME_TOKEN(PIPE);   // |
+    CLS_LEXEME_TOKEN(CIRC);  // `
     CLS_LEXEME_TOKEN(DOT);    // .
     CLS_LEXEME_TOKEN(COMMA);  // ,
     CLS_LEXEME_TOKEN(SEMI);   // ;
     CLS_LEXEME_TOKEN(COLON);  // :
+    CLS_LEXEME_TOKEN(BACKTICK);  // `
 
     CLS_LEXEME_TOKEN(TILDE);  // ~
 
@@ -73,10 +75,12 @@ const char *cls::to_syntax(cls::lexemes::lexeme l)
 
   CLS_LEXEME_TOKEN(AMP,"&");    // &
   CLS_LEXEME_TOKEN(PIPE,"|");   // |
+  CLS_LEXEME_TOKEN(CIRC,"^");   // ^
   CLS_LEXEME_TOKEN(DOT,".");    // .
   CLS_LEXEME_TOKEN(COMMA,",");  // ,
   CLS_LEXEME_TOKEN(SEMI,";");   // ;
   CLS_LEXEME_TOKEN(COLON,":");  // :
+  CLS_LEXEME_TOKEN(BACKTICK,"`");  // :
 
   CLS_LEXEME_TOKEN(TILDE,"~");  // ~
 

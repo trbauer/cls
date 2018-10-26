@@ -24,16 +24,16 @@ namespace cls
   ///////////////////////////////////////////////////////////////////////////
   // float, int, or unsigned
   struct type_num {
-    enum kind {
+    enum skind {
       UNSIGNED = 0,
       SIGNED,
       FLOATING
-    } kind;
+    } skind;
     size_t size_in_bytes;
     const char *name;
     constexpr type_num(
-      const char *_name, enum kind _kind, size_t _size_in_bytes)
-      : name(_name), kind(_kind), size_in_bytes(_size_in_bytes) { }
+      const char *_name, enum skind _kind, size_t _size_in_bytes)
+      : name(_name), skind(_kind), size_in_bytes(_size_in_bytes) { }
     constexpr size_t     size() const {return size_in_bytes;}
     std::string          syntax() const {return name;}
     bool operator==(const type_num &t) const {return text::streq(name,t.name);}
@@ -41,7 +41,7 @@ namespace cls
 
     template <typename RET,typename FUNC,typename...Ts>
     RET reify(FUNC f,Ts...ts) const {
-      switch (kind) {
+      switch (skind) {
       case UNSIGNED:
         switch (size) {
         case 1: return f<uint8_t>(ts...);
@@ -114,16 +114,16 @@ namespace cls
       RESERVE_ID,     // reserve_id_t
       EVENT,          // event_t
       CL_MEM_FENCE_FLAGS, // cl_mem_fence_flags
-    } kind;
+    } skind;
     size_t pointer_size;
 
     constexpr type_builtin(const type_builtin &tb) = default;
     constexpr type_builtin(bi_kind _kind, size_t ptr_size)
-      : kind(_kind), pointer_size(ptr_size) { }
+      : skind(_kind), pointer_size(ptr_size) { }
 
     size_t size() const {return pointer_size;}
     std::string syntax() const {
-      switch (kind) {
+      switch (skind) {
       case IMAGE1D:                   return "image1d_t";
       case IMAGE1D_ARRAY:             return "image1d_array_t";
       case IMAGE1D_BUFFER:            return "image1d_buffer_t";
@@ -147,7 +147,7 @@ namespace cls
       default:                        return "???";
       }
     }
-    bool operator==(const type_builtin &t) const {return kind == t.kind;}
+    bool operator==(const type_builtin &t) const {return skind == t.skind;}
     bool operator!=(const type_builtin &t) const {return !(*this == t);}
   };
   ///////////////////////////////////////////////////////////////////////////

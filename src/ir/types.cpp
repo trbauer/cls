@@ -200,7 +200,7 @@ void cls::formatBufferElement(
 {
   if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
-    switch (tn.kind) {
+    switch (tn.skind) {
     case type_num::FLOATING:
       switch (tn.size()) {
       case 2:

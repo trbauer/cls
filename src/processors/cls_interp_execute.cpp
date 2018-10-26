@@ -56,7 +56,7 @@ static void fill_buffer_with_const(
   const type_num &tn,
   const init_spec_atom *is)
 {
-  switch (tn.kind) {
+  switch (tn.skind) {
   case type_num::SIGNED:
     switch (tn.size_in_bytes) {
     case 1: fill_buffer_with_const_loop<int8_t>(e,ec,ab,is); break;
@@ -101,6 +101,9 @@ static void fill_buffer_rng_loop_int(
   if (isr->e_hi) {
     v_hi = e->evalTo<T>(ec, isr->e_hi);
   }
+  if (v_lo.as<T>() > v_hi.as<T>()) {
+    e->fatalAt(isr->defined_at,"low bound > high bound");
+  }
   std::uniform_int_distribution<R> dist(v_lo.as<T>(),v_hi.as<T>());
   size_t total_elems = ab.capacity / sizeof(T);
   for (size_t i = 0; i < total_elems; i++) {
@@ -123,6 +126,9 @@ static void fill_buffer_rng_loop_flt(
     if (isr->e_lo) {
       v_lo = e->evalToF(ec, isr->e_lo);
     }
+  }
+  if (v_lo.as<T>() > v_hi.as<T>()) {
+    e->fatalAt(isr->defined_at,"low bound > high bound");
   }
   std::uniform_real_distribution<R> dist((R)v_lo.f64, (R)v_hi.f64);
   size_t total_elems = ab.capacity / sizeof(T);
@@ -150,7 +156,7 @@ static void fill_buffer_rng(
 
   if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
-    switch (tn.kind) {
+    switch (tn.skind) {
     case type_num::SIGNED: {
       switch (tn.size_in_bytes) {
       case 1: fill_buffer_rng_loop_int<int8_t,int16_t>(csi.e,ec,ab,isr,gen); break;
@@ -224,7 +230,7 @@ static void fill_buffer_seq(
 {
  if (t.is<type_num>()) {
     const type_num &tn = t.as<type_num>();
-    switch (tn.kind) {
+    switch (tn.skind) {
     case type_num::SIGNED: {
       switch (tn.size_in_bytes) {
       case 1: fill_buffer_seq_loop<int8_t>(csi.e,ec,ab,iss); break;
@@ -597,7 +603,7 @@ void compiled_script_impl::init_surface(
   void *host_ptr)
 {
   arg_buffer ab(this, so.spec->defined_at, host_ptr, so.size_in_bytes);
-  switch (so.spec->root->kind) {
+  switch (so.spec->root->skind) {
   case init_spec::IS_FIL: {
     const init_spec_file *isf = (const init_spec_file *)so.spec->root;
     if (isf->flavor != init_spec_file::BIN) {
@@ -734,7 +740,7 @@ void compiled_script::execute(int)
   csi->init_surfaces();
 
   for (script_instruction &si : csi->instructions) {
-    switch (si.kind) {
+    switch (si.skind) {
     case script_instruction::DISPATCH: {
       dispatch_command *dc = si.dsc;
       csi->os.verbose() << "EXECUTING  => " << dc->spec->spec::str() << "\n";
