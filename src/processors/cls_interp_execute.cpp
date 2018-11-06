@@ -614,7 +614,7 @@ void compiled_script_impl::init_surface(
       fatalAt(isf->defined_at,"unable to open file");
     }
     fs.seekg(0, fs.end);
-    size_t file_size = fs.tellg();
+    size_t file_size = (size_t)fs.tellg();
     if (file_size != so.size_in_bytes) {
       fatalAt(so.spec->defined_at,
         "file size doesn't match buffer (",

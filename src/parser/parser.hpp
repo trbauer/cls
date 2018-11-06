@@ -12,6 +12,7 @@
 #include "cls_lex.yy.hpp"
 YY_DECL;
 
+#include <string>
 #include <vector>
 
 using namespace cls::lexemes;

@@ -54,7 +54,7 @@ static void formatBool(std::ostream &os, cl_bool value)
   if (value == CL_FALSE)
     os << "CL_FALSE";
   else if (value == CL_TRUE)
-    os << "CL_FALSE";
+    os << "CL_TRUE";
   else
     os << (int)value << "?";
 }
@@ -469,12 +469,6 @@ void listDeviceInfoForDevice(
   auto START_GROUP = [](const char *name) {
     std::cout << "  === " <<  name << ":\n";
   };
-
-   DEVICE_INFO_WITH(
-     CL_DEVICE_QUEUE_ON_HOST_PROPERTIES, // CL_DEVICE_QUEUE_PROPERTIES
-     cl_command_queue_properties,
-     formatCommandQueueProperties);
-
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("DEVICE");

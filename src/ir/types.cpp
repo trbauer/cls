@@ -176,7 +176,7 @@ void cls::formatBuffer(
     os << ss.str();
     curr += elem_type.size();
 
-    curr_col += ss.tellp();
+    curr_col += (size_t)ss.tellp();
     elems_on_row++;
   };
   if (buffer_length_in_bytes > 0)
