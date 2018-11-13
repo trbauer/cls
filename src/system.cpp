@@ -5,8 +5,23 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+
+#define NO_CPP17_STD_FILESYSTEM
+#ifndef NO_CPP17_STD_FILESYSTEM
+// #include <experimental/filesystem>
+// namespace fs = std::experimental::filesystem;
+#if __has_include(<filesystem>)
+#include <filesystem>
+// different versions of VS2017 have this in different namespaces
+// namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
+#elif __has_include(<experimental/filesystem>)
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
+#else
+#error "#include <filesystem> not found"
+#endif
+#endif
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -20,8 +35,6 @@ namespace fs = std::experimental::filesystem;
 #define IS_STDERR_TTY (isatty(STDERR_FILENO) != 0)
 #define IS_STDOUT_TTY (isatty(STDOUT_FILENO) != 0)
 #endif
-
-
 
 
 using namespace sys;
@@ -44,12 +57,11 @@ size_t sys::get_terminal_width()
   return csbi.srWindow.Right - csbi.srWindow.Left + 1; // X-size
                                                        // csbi.srWindow.Bottom - csbi.srWindow.Top + 1; // Y-size
 #else
-  struct winsize max;
-  ioctl(0, TIOCGWINSZ , &max);
-  return max.ws_col;
+  struct winsize ws{0};
+  ioctl(0, TIOCGWINSZ , &ws);
+  return ws.ws_col;
 #endif
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // LOGGING AND EXIT
@@ -154,12 +166,76 @@ bool sys::directory_exists(const std::string &path)
 #endif
 }
 
-std::vector<std::string> sys::get_directory_contents(const std::string &path)
+static std::string add_trailing_slash_if_absent(std::string path)
+{
+  if (!path.empty()) {
+    if (path[path.size() - 1] != '\\' && path[path.size() - 1] != '/') {
+      path += sys::path_separator;
+    }
+  }
+  return path;
+}
+
+static std::vector<std::string> list_dir_elems(
+  const std::string &path, bool return_full_paths)
 {
   std::vector<std::string> elems;
-  for (auto &p : fs::directory_iterator(path))
-    elems.push_back(p.path().string());
+#if defined(NO_CPP17_STD_FILESYSTEM)
+#ifdef _WIN32
+  std::vector<std::string> paths;
+  auto dir_with_slash = add_trailing_slash_if_absent(path);
+  auto find_spec = dir_with_slash + "*";
+
+  WIN32_FIND_DATAA ffd;
+  HANDLE h = FindFirstFileA(find_spec.c_str(), &ffd);
+  if (h == INVALID_HANDLE_VALUE)
+    return elems;
+  do {
+    if (!streq(ffd.cFileName,".") && !streq(ffd.cFileName,".."))
+      if (return_full_paths)
+        elems.emplace_back(dir_with_slash + ffd.cFileName);
+      else
+        elems.emplace_back(ffd.cFileName);
+  } while (FindNextFileA(h, &ffd) != 0);
+  (void)FindClose(h);
+#else
+#error "need to implement this via dirent.h"
+#endif
+#else
+  for (auto &p : fs::directory_iterator(path)) {
+    if (return_full_paths) 
+      elems.emplace_back(p.path().string());
+    else
+      elems.emplace_back(p.path().filename().string());
+  }
+#endif
   return elems;
+}
+std::vector<std::string> sys::list_directory(const std::string &path)
+{
+  return list_dir_elems(path,false);
+}
+std::vector<std::string> sys::list_directory_full_paths(const std::string &path)
+{
+  return list_dir_elems(path,true);
+}
+
+std::string sys::drop_extension(std::string file)
+{
+  auto dot_ix = file.rfind('.');
+  return file.substr(0, dot_ix);
+}
+std::string sys::take_extension(std::string file)
+{
+  auto dot_ix = file.rfind('.');
+  return file.substr(dot_ix);
+}
+std::string sys::replace_extension(std::string file, std::string new_ext)
+{
+  auto dot_ix = file.rfind('.');
+  // if (dot_ix != std::string::npos)
+  //  return file;
+  return file.substr(0, dot_ix) + new_ext;
 }
 
 std::string sys::get_temp_dir()

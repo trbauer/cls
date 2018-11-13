@@ -93,7 +93,7 @@ image image::convert(enum format to) const {
     for (size_t x = 0; x < width; x++) {
       unsigned char r, g, b, a = 0xFF;
       if (format == image::I) {
-        r = g = b= *ibits++;
+        r = g = b = *ibits++;
       } else if (format == image::RGB) {
         r = *ibits++;
         g = *ibits++;

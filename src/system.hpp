@@ -106,8 +106,12 @@ namespace sys
   bool               file_exists(const char *path);
   bool               file_exists(const std::string &path);
   bool               directory_exists(const std::string &path);
-  std::vector<std::string>
-                     get_directory_contents(const std::string &path);
+  std::vector<std::string>  list_directory(const std::string &path);
+  std::vector<std::string>  list_directory_full_paths(const std::string &path);
+  //
+  std::string        drop_extension(std::string file);
+  std::string        take_extension(std::string file);
+  std::string        replace_extension(std::string file, std::string ext);
   // if not found, then returns ""
   // if found, then it always ends with a / or backslash
   std::string        get_temp_dir();

@@ -7,16 +7,8 @@
 #include "../system.hpp"
 #include "../text.hpp"
 
-#if __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#elif __has_include(<experimental/filesystem>)
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#else
-#error "#include <filesystem> not found"
-#endif
 #include <fstream>
+#include <sstream>
 
 using namespace cls::k;
 using namespace cls;
@@ -164,7 +156,7 @@ static cls::k::program_info parseProgramInfoText(
   std::stringstream ss;
   size_t off = src.build_opts.find("-D",0);
   while (off < src.build_opts.size()) {
-    if (ss.tellp() != 0) // separate arguments
+    if ((size_t)ss.tellp() != 0) // separate arguments
       ss << " ";
 
     // consume the -D option
@@ -194,9 +186,13 @@ static cls::k::program_info parseProgramInfoText(
     "\n\n"
     "// CPP OPTIONS: " + ss.str();
   if (os.save_preprocessed) {
-    auto ppc_path =
-      fs::path(".") / fs::path(src.path).filename().replace_extension(".ppcl");
-    std::ofstream of(ppc_path.string());
+    // auto ppc_path =
+    //  fs::path(".") / fs::path(src.path).filename().replace_extension(".ppcl");
+    // std::ofstream of(ppc_path.string());
+    std::string ppc_path = ".";
+    ppc_path += sys::path_separator;
+    ppc_path += sys::replace_extension(src.path, ".ppcl");
+    std::ofstream of(ppc_path);
     os.verbose() << "dumping preprocessed " << ppc_path << "\n";
     of << cpp_inp;
   }

@@ -84,7 +84,8 @@ std::vector<std::string> text::to_lines(
       if (i == str.length() - 1) {
         return lns;
       }
-    } else if (str[i] != '\r') {
+    }
+    else if (str[i] != '\r') {
       curr += str[i];
     }
   }
@@ -107,7 +108,7 @@ std::vector<std::string> text::to_words(const std::string &str)
     size_t start = off;
     while (off < str.size() && !isspace(str[off]))
       off++;
-    ws.push_back(str.substr(start,off - start));
+    ws.push_back(str.substr(start, off - start));
   }
   return ws;
 }
@@ -129,7 +130,8 @@ std::string text::prefix_lines(
         return ss.str();
       }
       ss << pfx;
-    } else {
+    }
+    else {
       ss << str[i];
     }
   }
@@ -141,7 +143,7 @@ void text::printf_to(std::ostream &os, const char *patt, va_list va)
 {
   va_list va_tmp;
 
-  va_copy(va_tmp,va);
+  va_copy(va_tmp, va);
   size_t elen = _vscprintf(patt, va_tmp) + 1;
   va_end(va_tmp);
 
@@ -168,7 +170,7 @@ std::string text::printf(const char *patt, ...)
 
   va_list va;
   va_start(va, patt);
-  printf_to(ss, patt,va);
+  printf_to(ss, patt, va);
   va_end(va);
 
   return ss.str();
@@ -187,11 +189,13 @@ void text::format_buffer(
   bool using_cols = elems_per_row == 0;
   if (max_cols != 0 && elems_per_row != 0) {
     FATAL("FormatBinary can only accept maxcols xor elems_per_row");
-  } else if (max_cols == 0 && elems_per_row == 0) {
+  }
+  else if (max_cols == 0 && elems_per_row == 0) {
     max_cols = sys::get_terminal_width();
     if (max_cols <= 1) {
       max_cols = 80;
-    } else {
+    }
+    else {
       max_cols -= 1;
     }
   }
@@ -228,18 +232,23 @@ void text::format_buffer(
       return;
     if (velem_w == 1) {
       os << std::setw(2 * velem_w) << (unsigned)(*(uint8_t *)ptr);
-    } else if (velem_w == 2) {
+    }
+    else if (velem_w == 2) {
       os << std::setw(2 * velem_w) << *(uint16_t *)ptr;
-    } else if (velem_w == 4) {
+    }
+    else if (velem_w == 4) {
       if (floating_point) {
         os << std::setw(12) << std::setprecision(6) << *(float *)ptr;
-      } else {
+      }
+      else {
         os << std::setw(2 * velem_w) << *(uint32_t *)ptr;
       }
-    } else if (velem_w == 8) {
+    }
+    else if (velem_w == 8) {
       if (floating_point) {
         os << std::setw(12) << std::setprecision(7) << *(double *)ptr;
-      } else {
+      }
+      else {
         os << std::setw(2 * velem_w) << *(uint64_t *)ptr;
       }
     }
@@ -248,16 +257,17 @@ void text::format_buffer(
   };
   auto emit_work_item = [&] {
     if (elem_vwidth <= 1) {
-      if (using_cols && col_ix + 2*velem_w + 1 > max_cols
+      if (using_cols && col_ix + 2 * velem_w + 1 > max_cols
         || !using_cols && elem_col_ix == elems_per_row)
       {
         newline();
       }
       os << ' '; col_ix++;
       emit_velem();
-    } else {
+    }
+    else {
       // " {" + v * elem_width + interspacing + 1
-      size_t space_needed = 2 + 2*velem_w*elem_vwidth + (elem_vwidth - 1) + 1;
+      size_t space_needed = 2 + 2 * velem_w*elem_vwidth + (elem_vwidth - 1) + 1;
       if (using_cols && col_ix + space_needed >= max_cols - 1 ||
         !using_cols && elem_col_ix == elems_per_row) {
         // col_ix + [space used in output + interspacing + {} and space]
@@ -281,7 +291,8 @@ void text::format_buffer(
       emit_work_item();
       elem_col_ix++;
     }
-  } else {
+  }
+  else {
     os << "*** zero-length buffer ****";
   }
   os << '\n';
@@ -309,11 +320,14 @@ std::string text::format_buffer_diff(
     void *ptr = arr + i * elem_w;
     if (elem_w == 1) {
       ss << std::setw(2 * elem_w) << (unsigned)(*(uint8_t *)ptr);
-    } else if (elem_w == 2) {
+    }
+    else if (elem_w == 2) {
       ss << std::setw(2 * elem_w) << *(uint16_t *)ptr;
-    } else if (elem_w == 4) {
+    }
+    else if (elem_w == 4) {
       ss << std::setw(2 * elem_w) << *(uint32_t *)ptr;
-    } else if (elem_w == 8) {
+    }
+    else if (elem_w == 8) {
       ss << std::setw(2 * elem_w) << *(uint64_t *)ptr;
     }
   };
@@ -354,7 +368,8 @@ std::string text::format_buffer_diff(
             ss << ANSI_GREEN;
             emit_elem(ref, k);
             ss << ANSI_RESET;
-          } else {
+          }
+          else {
             emit_elem(ref, k);
           }
           ss << " ";
@@ -375,7 +390,8 @@ std::string text::format_buffer_diff(
         }
       }
       ss << '\n';
-    } else {
+    }
+    else {
       ss << ' ';
     }
   }
@@ -407,7 +423,7 @@ static std::string findMsvcExe()
   // C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
   //                                                                                ^^^^^^^^^^^
   if (sys::directory_exists(msvc_2017_root)) {
-    for (auto &p : sys::get_directory_contents(msvc_2017_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2017_root)) {
       p += "\\bin\\HostX86\\x86\\cl.exe";
       RETURN_IF_EXISTS(p);
     }
@@ -425,8 +441,8 @@ static std::string findClangExe()
 #ifdef _WIN32
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
-//  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
-//  RETURN_IF_EXISTS("C:\\Progra~2\\LLVM\\bin\\clang.exe");
+  //  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
+  //  RETURN_IF_EXISTS("C:\\Progra~2\\LLVM\\bin\\clang.exe");
 #else
   RETURN_IF_EXISTS("/usr/bin/clang");
 #endif
@@ -473,7 +489,7 @@ std::string text::load_c_preprocessed(
   // CPP
   // % cpp -E file.cl
   // % cpp -E file.cl -DTYPE=int -o out.ppc
-  std::vector<std::string> p_args {
+  std::vector<std::string> p_args{
     inp_path,
     "-E", // works for MSVC too
   };
@@ -492,7 +508,8 @@ std::string text::load_c_preprocessed(
   if (pp_exe.find("cl.exe") != std::string::npos) {
     p_args.push_back("/P");
     p_args.push_back("/Fi:" + tmp_file);
-  } else {
+  }
+  else {
     p_args.push_back("-o");
     p_args.push_back(tmp_file);
   }
@@ -503,7 +520,8 @@ std::string text::load_c_preprocessed(
     // punt, and just return the .cl contents
     WARNING("text::load_c_preprocessed: unable to preprocess\n");
     return sys::read_file_text(inp_path);
-  } else {
+  }
+  else {
 #ifdef USE_TEMP_FILE
     return sys::read_file_text(tmp_file);
 #else
@@ -514,7 +532,8 @@ std::string text::load_c_preprocessed(
 
 void text::table::col::emit(double f, int prec) {
   std::stringstream ss;
-  if (numeric) {ss << std::left;} else {ss << std::right;}
+  if (numeric) { ss << std::left; }
+  else { ss << std::right; }
   for (int i = 0; i < lpad; i++)
     ss << ' ';
   ss << std::fixed << std::setprecision(prec) << f;
@@ -537,7 +556,8 @@ void text::table::str(std::ostream &os, const char *delim) const {
       auto align = c->numeric ? std::right : std::left;
       if (i >= c->rows.size()) {
         os << align << std::setw(c->max_width) << c->dft;
-      } else {
+      }
+      else {
         os << align << std::setw(c->max_width) << c->rows[i];
       }
       os << delim;

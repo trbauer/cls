@@ -78,7 +78,7 @@ val evaluator::eval(
   } // end case IS_UEX:
   case init_spec::IS_BIV: {
     auto computeDim =
-      [&] (const ndr &ndr, int dim_ix) {
+      [&] (const ndr &ndr, size_t dim_ix) {
         if (dim_ix >= ndr.rank())
           fatalAt(e->defined_at,
             &ndr == &ec.global_size ? "global" : "local",

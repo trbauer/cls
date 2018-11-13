@@ -16,7 +16,7 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
 else()
   message(FATAL_ERROR "unexpected platform")
 endif()
-
+ 
 add_definitions(-DVERSION_STRING="${VERSION_STRING}")
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 add_definitions(-DCLS_HOST_POINTER_SIZE=32)
@@ -53,6 +53,7 @@ source_group("Source\\IR" FILES ${CLS_IR})
 source_group("Source\\Parser" FILES ${CLS_PARSE})
 source_group("Source\\Interpreters" FILES ${CLS_PROC})
 
+# set(CLS_SOURCES ${CLS_ROOT} ${CLS_IR} ${CLS_PARSE} ${CLS_PROC} .editorconfig)
 set(CLS_SOURCES ${CLS_ROOT} ${CLS_IR} ${CLS_PARSE} ${CLS_PROC})
 
 add_executable("cls${TARGET_MODIFIER}"
