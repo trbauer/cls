@@ -6,15 +6,16 @@
 #include <mutex>
 #include <sstream>
 
-#define NO_CPP17_STD_FILESYSTEM
-#ifndef NO_CPP17_STD_FILESYSTEM
+// #define USE_CPP17_STD_FILESYSTEM
+#ifdef USE_CPP17_STD_FILESYSTEM
 // #include <experimental/filesystem>
 // namespace fs = std::experimental::filesystem;
 #if __has_include(<filesystem>)
 #include <filesystem>
 // different versions of VS2017 have this in different namespaces
-// namespace fs = std::filesystem;
-namespace fs = std::experimental::filesystem;
+// even with the top-level header
+namespace fs = std::filesystem;
+// namespace fs = std::experimental::filesystem;
 #elif __has_include(<experimental/filesystem>)
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
@@ -180,7 +181,14 @@ static std::vector<std::string> list_dir_elems(
   const std::string &path, bool return_full_paths)
 {
   std::vector<std::string> elems;
-#if defined(NO_CPP17_STD_FILESYSTEM)
+#if defined(USE_CPP17_STD_FILESYSTEM)
+  for (auto &p : fs::directory_iterator(path)) {
+    if (return_full_paths) 
+      elems.emplace_back(p.path().string());
+    else
+      elems.emplace_back(p.path().filename().string());
+  }
+#else
 #ifdef _WIN32
   std::vector<std::string> paths;
   auto dir_with_slash = add_trailing_slash_if_absent(path);
@@ -201,13 +209,6 @@ static std::vector<std::string> list_dir_elems(
 #else
 #error "need to implement this via dirent.h"
 #endif
-#else
-  for (auto &p : fs::directory_iterator(path)) {
-    if (return_full_paths) 
-      elems.emplace_back(p.path().string());
-    else
-      elems.emplace_back(p.path().filename().string());
-  }
 #endif
   return elems;
 }
@@ -235,7 +236,7 @@ std::string sys::replace_extension(std::string file, std::string new_ext)
   auto dot_ix = file.rfind('.');
   // if (dot_ix != std::string::npos)
   //  return file;
-  return file.substr(0, dot_ix) + new_ext;
+  return file.substr(0, dot_ix) + "." + new_ext;
 }
 
 std::string sys::get_temp_dir()

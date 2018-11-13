@@ -367,11 +367,13 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     if (os.save_binaries) {
       std::string bin_ext;
       if (vend == cl_vendor::CL_NVIDIA)
-        bin_ext = ".ptx";
+        bin_ext = "ptx";
       else // INTC AMD are usually ELF format
-        bin_ext = ".bin";
-      auto bin_path =
-        fs::path(".") / fs::path(ps->path).filename().replace_extension(bin_ext);
+        bin_ext = "bin";
+      auto bin_path = 
+        std::string(".") + 
+        sys::path_separator +
+        sys::replace_extension(ps->path,bin_ext);
 
       size_t bits_len = 0;
       CL_COMMAND(ps->defined_at,
@@ -382,14 +384,11 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
           &bits_len,
           nullptr);
       unsigned char *bits = (unsigned char *)alloca(bits_len);
-      // unsigned char **bits_array = &bits;
       CL_COMMAND(ps->defined_at,
         clGetProgramInfo,
           po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
-      // auto bin = po.program->getInfo<CL_PROGRAM_BINARIES>().front();
       os.verbose() << "dumping binary " << bin_path << "\n";
-      // sys::write_bin_file(bin_path.string(),bin.data(),bin.size());
-      sys::write_bin_file(bin_path.string(),bits,bits_len);
+      sys::write_bin_file(bin_path,bits,bits_len);
     }
   } // endif text
 

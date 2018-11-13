@@ -5,16 +5,6 @@
 #include "../parser/kargs.hpp"
 #include "../stats.hpp"
 
-#if __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::experimental::filesystem;
-// namespace fs = std::filesystem;
-#elif __has_include(<experimental/filesystem>)
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#else
-#error "#include <filesystem> not found"
-#endif
 #include <fstream>
 #include <functional>
 #include <random>
