@@ -1,4 +1,11 @@
-#pragma once
+#ifndef IMAGE_HPP
+#define IMAGE_HPP
+
+#ifdef _WIN32
+// TODO: we could support this on Unix if we made custom BITMAPINFOHEADER
+#define IMAGE_HPP_SUPPORTS_BMP
+#endif
+
 #include <cstdint>
 
 struct pixel_value {
@@ -30,11 +37,18 @@ struct image {
   enum format {INVALID, I, RGB, BGR, RGBA, ARGB} format;
 
   static size_t bytes_per_pixel(enum format f);
+
+  // static image *load_ppm(const char *file, bool fatal_if_error = false);
+  // void save_ppm(const char *file);
+#ifdef IMAGE_HPP_SUPPORTS_BMP
   static image *load_bmp(const char *file, bool fatal_if_error = false);
   void save_bmp(const char *file) const;
+#endif
+
 
   image();
   image(size_t w, size_t h, enum format f);
+  image(size_t w, size_t h, size_t p, enum format f);
   image(const image &rhs) { assign(rhs); }
   ~image();
 
@@ -59,5 +73,6 @@ struct image {
     size_t new_width,
     size_t new_height,
     struct pixel_value fill = pixel_value(0));
-
 };
+
+#endif

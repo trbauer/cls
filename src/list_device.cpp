@@ -226,7 +226,7 @@ static void emitDeviceInfoMem(
 }
 
 template <>
-static void emitDeviceInfo(
+void emitDeviceInfo(
   std::ostream &os,
   cl_device_id dev_id,
   cl_device_info param,
@@ -377,45 +377,59 @@ void listDeviceInfoForDevice(
 {
   cl_device_id dev = d();
 
-#define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,...) \
-  { \
+#if defined(__GNUC__) && __GNUC__>=6
+#pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
+
+  // This was really sexy until I tried to support GCC
+  // I had a cool overloading trick with __VA_ARGS__, but GCC 
+  // requires a non-empty __VA_ARGS__ (probably more legit)
+  //   DEVICE_INFO("foo",cl_int,"ns");
+  //   DEVICE_INFO("foo",cl_int);
+  //                     ^^ doesn't work on GNU since __VA_ARGS__ 
+  //                        must capture something and we need cl_int bound
+  //                        to a macro arg so we can use it as template arg
+#define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
+  do { \
     emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,FORMATTER,__VA_ARGS__); \
+    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,UNITS); \
     std::cout << "\n"; \
-  }
+  } while (0)
 #define DEVICE_INFO(PARAM,TYPE,...) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,__VA_ARGS__)
-#define DEVICE_INFO_WITH(PARAM,TYPE,FORMATTER,...) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,FORMATTER,__VA_ARGS__)
+  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,nullptr)
+#define DEVICE_INFO_UNITS(PARAM,TYPE,UNITS) \
+  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,UNITS)
+#define DEVICE_INFO_WITH(PARAM,TYPE,FORMATTER) \
+  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,FORMATTER,nullptr)
 #define DEVICE_INFO_MEMSIZE(PARAM,TYPE) \
-  { \
+  do { \
     emitParamName(#PARAM); \
     emitDeviceInfoMem<TYPE>(std::cout,dev,PARAM); \
     std::cout << "\n"; \
-  }
+  } while (0)
 
 #define DEVICE_INFO_BOOL(PARAM) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,cl_bool,formatBool)
+  DEVICE_INFO_WITH0(#PARAM,PARAM,cl_bool,formatBool,nullptr)
 #define DEVICE_INFO_STRING(PARAM) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>)
+  DEVICE_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>,nullptr)
 
 #define DEVICE_INFO_ARRAY_WITH0(PARAM_STR,PARAM,TYPE,PARAM_LEN,FORMATTER) \
-  { \
+  do { \
     emitParamName(PARAM_STR); \
     emitDeviceInfo<TYPE>(std::cout,dev,PARAM,PARAM_LEN,FORMATTER); \
     std::cout << "\n"; \
-  }
+  } while (0)
 #define DEVICE_INFO_ARRAY_WITH(PARAM,TYPE,PARAM_LEN,FORMATTER) \
   DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,PARAM_LEN,FORMATTER)
 #define DEVICE_INFO_ARRAY(PARAM,TYPE,PARAM_LEN) \
   DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,PARAM_LEN,default_formatter<TYPE>)
 #define DEVICE_INFO_ARRAY2(PARAM,TYPE,PARAM_LEN,DELIM) \
-  { \
+  do { \
     emitParamName(#PARAM); \
     emitDeviceInfoArray<TYPE>(\
       std::cout, dev, PARAM, PARAM_LEN, DELIM, default_formatter<TYPE>); \
     std::cout << "\n"; \
-  }
+  } while (0)
   //
   //
   if (dev_ix >= 0) {
@@ -475,7 +489,7 @@ void listDeviceInfoForDevice(
   DEVICE_INFO_WITH(CL_DEVICE_TYPE,cl_device_type,formatDeviceType);
   DEVICE_INFO_STRING(CL_DEVICE_VERSION);
   DEVICE_INFO_STRING(CL_DEVICE_VENDOR);
-  DEVICE_INFO_WITH(CL_DEVICE_VENDOR_ID,cl_uint,fmtHex<cl_uint,4>);
+  DEVICE_INFO_WITH(CL_DEVICE_VENDOR_ID,cl_uint,(fmtHex<cl_uint,4>));
   DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION);
   DEVICE_INFO_BOOL(CL_DEVICE_AVAILABLE);
   DEVICE_INFO_STRING(CL_DRIVER_VERSION);

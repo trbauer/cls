@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <iostream>
 #include <ostream>
 #include <sstream>
 #include <string>

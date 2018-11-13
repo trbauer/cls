@@ -173,8 +173,8 @@ static size_t computeBufferSize(
   const init_spec_mem *ism)
 {
   if (ism->dimension) {
-    return (size_t)e->evalTo<size_t>(
-      evaluator::context(dc.global_size, dc.local_size), ism->dimension).u64;
+    evaluator::context ec(dc.global_size, dc.local_size);
+    return (size_t)e->evalTo<size_t>(ec, ism->dimension).u64;
   } else {
     return dc.global_size.product()*elem_type.size();
   }

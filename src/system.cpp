@@ -5,8 +5,10 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <thread>
 
 // #define USE_CPP17_STD_FILESYSTEM
+
 #ifdef USE_CPP17_STD_FILESYSTEM
 // #include <experimental/filesystem>
 // namespace fs = std::experimental::filesystem;
@@ -14,13 +16,24 @@
 #include <filesystem>
 // different versions of VS2017 have this in different namespaces
 // even with the top-level header
-namespace fs = std::filesystem;
-// namespace fs = std::experimental::filesystem;
+// namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 #elif __has_include(<experimental/filesystem>)
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
 #else
 #error "#include <filesystem> not found"
+#endif
+#else
+// both Win32 and Unix
+#include <sys/types.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#define STAT64_T __stat64
+#define STAT64    _stat64
+#else
+#define STAT64_T stat64
+#define STAT64   stat64
 #endif
 #endif
 
@@ -56,7 +69,7 @@ size_t sys::get_terminal_width()
     return 0;
   }
   return csbi.srWindow.Right - csbi.srWindow.Left + 1; // X-size
-                                                       // csbi.srWindow.Bottom - csbi.srWindow.Top + 1; // Y-size
+      // csbi.srWindow.Bottom - csbi.srWindow.Top + 1; // Y-size
 #else
   struct winsize ws{0};
   ioctl(0, TIOCGWINSZ , &ws);
@@ -138,6 +151,7 @@ bool sys::file_exists(const char *path)
   return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
          !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 #else
+  // TODO: we could uniformly use this for Win32 as well!
   struct stat sb = {0};
   if (stat(path, &sb)) {
       return false;
@@ -219,6 +233,18 @@ std::vector<std::string> sys::list_directory(const std::string &path)
 std::vector<std::string> sys::list_directory_full_paths(const std::string &path)
 {
   return list_dir_elems(path,true);
+}
+
+uint64_t sys::file_size(const std::string &path)
+{
+#ifdef USE_CPP17_STD_FILESYSTEM
+  return (uint64_t)fs::file_size(fs::path(path));
+#else
+  struct STAT64_T sb;
+  if (STAT64(path.c_str(), &sb) != 0)
+    return (uint64_t)-1;
+  return (uint64_t)sb.st_size;
+#endif
 }
 
 std::string sys::drop_extension(std::string file)
@@ -451,9 +477,25 @@ void *sys::get_symbol_address(void *lib, const char *name) {
 #endif
 }
 
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // PROCESS CREATION
-static void process_reader(HANDLE read_handle, std::string &save_target)
+//
+
+// NEEDED because GCC's std::thread isn't allowing more than one argument
+//  (could be older headers on MinGW:GCC 7.2)
+//
+// static void process_reader(HANDLE read_handle, std::string &save_target)
+struct process_io_args {
+  HANDLE        handle;
+  std::string  &data;
+  process_io_args(HANDLE _handle, std::string &_save_target)
+    : handle(_handle), data(_save_target)
+  {}
+};
+
+static void process_reader(process_io_args args)
 {
   std::stringstream ss;
 
@@ -463,7 +505,7 @@ static void process_reader(HANDLE read_handle, std::string &save_target)
 
     char buf[513];
     DWORD nr = 0;
-    if (!ReadFile(read_handle, buf, sizeof(buf) - 1, &nr, NULL)) {
+    if (!ReadFile(args.handle, buf, sizeof(buf) - 1, &nr, NULL)) {
       DWORD err = GetLastError();
       if (err = ERROR_BROKEN_PIPE) {
         if (nr > 0) {
@@ -481,18 +523,20 @@ static void process_reader(HANDLE read_handle, std::string &save_target)
     }
   }
 
-  save_target = ss.str();
+  args.data = ss.str();
 }
-static void process_writer(HANDLE write_handle, std::string data)
+
+// static void process_writer(HANDLE write_handle, std::string data)
+static void process_writer(process_io_args args)
 {
-  const char *buf = data.c_str();
+  const char *buf = args.data.c_str();
   size_t off = 0;
-  while (off < data.size()) {
+  while (off < args.data.size()) {
     DWORD nw = 0;
     if (!WriteFile(
-      write_handle,
+      args.handle,
       buf + off,
-      (DWORD)(data.size() - off),
+      (DWORD)(args.data.size() - off),
       &nw,
       NULL))
     {
@@ -609,9 +653,12 @@ process_result sys::process_read(
   (void)CloseHandle(stdin_read_handle);
 
   // spawn threads for IO
-  std::thread thr_out(process_reader, stdout_read_handle, pr.out);
-  std::thread thr_err(process_reader, stderr_read_handle, pr.err);
-  std::thread thr_in(process_writer, stdin_write_handle, input);
+  //  std::thread thr_out(process_reader, stdout_read_handle, pr.out); // see the note above by process_io_args
+  //  std::thread thr_err(process_reader, stderr_read_handle, pr.err);
+  //  std::thread thr_in(process_writer, stdin_write_handle, input);
+  std::thread thr_out(process_reader, process_io_args(stdout_read_handle, pr.out));
+  std::thread thr_err(process_reader, process_io_args(stderr_read_handle, pr.err));
+  std::thread thr_in(process_writer, process_io_args(stdin_write_handle, input));
 
   // fetch the exit code and release the process object
 	auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);

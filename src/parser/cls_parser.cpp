@@ -29,9 +29,9 @@ static std::string consumeToChar(parser &p, const char *set)
   return s.substr(start, len);
 }
 
-static init_spec_atom *parseInitAtom(parser &p,script &s);
+static init_spec_atom *parseInitAtom(parser &p, script &s);
 
-static init_spec_atom *parseInitAtomPrim(parser &p,script &s)
+static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
 {
   auto at = p.nextLoc();
   if (p.lookingAt(STRLIT)) {

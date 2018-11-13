@@ -399,7 +399,7 @@ namespace opts
         const char *desc,
         const char *extDesc,
         int         attrs, // OptAttrs
-        bool &      boolValue)
+        bool&       boolValue)
     {
       defineFlag(
           sNm,
@@ -437,7 +437,7 @@ namespace opts
         const char *desc,
         const char *extDesc,
         int         attrs, // OptAttrs
-        int &       val)
+        int&        val)
     {
       defineOpt(
           sNm,
@@ -624,17 +624,6 @@ namespace opts
 
     ///////////////////////////////////////////////////////////////////////////
     // These just redirect to the parent options
-    template<typename T>
-    void defineFlag(
-        const char *sNm,
-        const char *lNm,
-        const char *desc,
-        const char *extDesc,
-        int         attrs, // OptAttrs
-        T &         ref)
-    {
-      opts.defineFlag(sNm, lNm, desc, extDesc, attrs, ref);
-    }
     void defineFlag(
         const char *sNm,
         const char *lNm,
@@ -645,19 +634,16 @@ namespace opts
     {
       opts.defineFlag(sNm, lNm, desc, extDesc, attrs, setter);
     }
-    template<typename T>
-    void defineOpt(
+    void defineFlag(
         const char *sNm,
         const char *lNm,
-        const char *type,
         const char *desc,
         const char *extDesc,
         int         attrs, // OptAttrs
-        T &         ref)
+        bool&       var)
     {
-      opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, ref);
+      opts.defineFlag(sNm, lNm, desc, extDesc, attrs, var);
     }
-    template<typename T>
     void defineOpt(
         const char *sNm,
         const char *lNm,
@@ -668,6 +654,19 @@ namespace opts
         Setter<O>   setter)
     {
       opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, setter);
+    }
+    // have to expand these manually
+    template<typename T>
+    void defineOpt(
+        const char *sNm,
+        const char *lNm,
+        const char *type,
+        const char *desc,
+        const char *extDesc,
+        int         attrs, // OptAttrs
+        T&          ref)
+    {
+      opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, ref);
     }
     void defineOpt(
         const char *     sNm,

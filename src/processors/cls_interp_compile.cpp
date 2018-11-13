@@ -118,9 +118,9 @@ static void emitCompiledKernelProperties(
   cl_spec spec = getDeviceSpec(ko.program->device->device);
 
   // units are an optional last parameter
-#define KERNEL_PROPERTY(MINSPEC,PARAM,TYPE,...) \
+#define KERNEL_PROPERTY(MINSPEC,PARAM,TYPE) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelProperty<TYPE>(kernel, device, PARAM, #PARAM, false, __VA_ARGS__)
+    emitCompiledKernelProperty<TYPE>(kernel, device, PARAM, #PARAM, false, nullptr)
 #define KERNEL_PROPERTY_MEM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
     emitCompiledKernelProperty<cl_ulong>(kernel, device, PARAM, #PARAM, true, nullptr)

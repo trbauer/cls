@@ -1,16 +1,17 @@
-#pragma once
 #include "image.hpp"
 #include "system.hpp"
 
 
 #include <Windows.h>
 // #include <Wincodec.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <fstream>
+#include <cmath>
+#include <string>
 #include <vector>
 
 uint8_t pixel_value::intensity() const {
-  return (uint8_t)roundf(((float)r + (float)g + (float)b) / 3.0f);
+  return (uint8_t)std::roundf(((float)r + (float)g + (float)b) / 3.0f);
 }
 
 image::image()
@@ -22,20 +23,21 @@ image::image()
   , format(format::INVALID)
 {
 }
-image::image(size_t w, size_t h, enum format f)
-  : pitch(bytes_per_pixel(f) * w)
+image::image(size_t w, size_t h, size_t p, enum format f)
+  : pitch(p)
   , bits(new uint8_t[pitch * h])
   , width(w)
   , height(h)
   , alloc_height(h)
   , format(f)
 {
+  if (p < bytes_per_pixel(f) * w)
+    FATAL("image::image: pitch is too small for width*bytes-per-pixel");
   memset(bits, 0, pitch*alloc_height);
 }
-image::~image()
-{
-  release();
-}
+image::image(size_t w, size_t h, enum format f)
+  : image(w, h, bytes_per_pixel(f) * w, f) { }
+image::~image() {release();}
 
 size_t image::bytes_per_pixel(enum format f) {
   switch (f) {
@@ -157,6 +159,43 @@ void image::release() {
   width = height = pitch = alloc_height = 0;
 }
 
+/*
+// PPM format http://netpbm.sourceforge.net/doc/ppm.html
+//
+// EXAMPLE:
+// P3
+// # feep.ppm
+// 4 4
+// 15
+//  0  0  0    0  0  0    0  0  0   15  0 15
+//  0  0  0    0 15  7    0  0  0    0  0  0
+//  0  0  0    0  0  0    0 15  7    0  0  0
+// 15  0 15    0  0  0    0  0  0    0  0  0
+image *image::load_ppm(const char *file, bool fatal_if_error)
+{
+  std::ifstream ifs(file);
+  if (!ifs.is_open()) 
+    FATAL("image::load_ppm: could not open file");
+  
+  std::string ln;
+
+  while (ifs.good()) {
+    std::getline(ifs,ln);
+    if (ln.size() == 0 && ln[0] = '#')
+      continue;
+    else if (ln != "P3") 
+      FATAL("image::load_ppm: malformed PPM (expected P3)");
+  }
+
+}
+
+void image::save_ppm(const char *file)
+{
+}
+*/
+
+
+#ifdef IMAGE_HPP_SUPPORTS_BMP  
 static void write_bmp_info_header(
   const image &img, BITMAPINFOHEADER &bih)
 {
@@ -327,6 +366,7 @@ image *image::load_bmp(const char *file_name, bool fatal_if_error)
   }
   return img;
 }
+#endif
 
 void image::resize(
   size_t new_width,

@@ -39,6 +39,7 @@ namespace cls
     bool operator==(const type_num &t) const {return text::streq(name,t.name);}
     bool operator!=(const type_num &t) const {return !(*this == t);}
 
+    /*
     template <typename RET,typename FUNC,typename...Ts>
     RET reify(FUNC f,Ts...ts) const {
       switch (skind) {
@@ -58,7 +59,7 @@ namespace cls
         case 8: return f<int64_t>(ts...);
         }
         break;
-      case FLOAT:
+      case FLOATING:
         switch (size) {
         case 2: return f<half>(ts...);
         case 4: return f<float>(ts...);
@@ -66,7 +67,9 @@ namespace cls
         }
       default: throw "INTERNAL ERROR: corrupt type_num";
       }
-    }
+    } // reify
+    */
+
   }; // type_num
 
   ///////////////////////////////////////////////////////////////////////////
@@ -273,7 +276,7 @@ namespace cls
 
     constexpr type() : var(VOID) { }
 //    constexpr type(const type &t) : var(t.var) { }
-    constexpr type(const type &) = default;
+//    constexpr type(const type &) = default;
     constexpr type(type_num t) : var(t) { }
     constexpr type(type_builtin t) : var(t) { }
     constexpr type(type_struct t) : var(t) { }

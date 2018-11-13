@@ -108,6 +108,7 @@ namespace sys
   bool               directory_exists(const std::string &path);
   std::vector<std::string>  list_directory(const std::string &path);
   std::vector<std::string>  list_directory_full_paths(const std::string &path);
+  uint64_t           file_size(const std::string &path);
   //
   std::string        drop_extension(std::string file);
   std::string        take_extension(std::string file);

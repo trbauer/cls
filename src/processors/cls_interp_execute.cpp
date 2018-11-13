@@ -32,6 +32,7 @@ init_times compiled_script::get_init_times() const
   return ts;
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 // Constant initialization
 template <typename T>
@@ -44,7 +45,13 @@ static void fill_buffer_with_const_loop(
   auto val = e->evalTo<T>(ec, is);
   size_t total_elems = ab.capacity / sizeof(T);
   for (size_t i = 0; i < total_elems; i++) {
-    ab.write<T>(val.as<T>());
+    // THIS IS EVIL!!!!  MSVC 2017 allowed it GCC does not.
+    // T t = val.as<T>();
+    // https://en.cppreference.com/w/cpp/language/dependent_name
+    // zapcc 5.0 finally clued me into it
+    // https://www.jdoodle.com/online-compiler-c++
+    T t = val.template as<T>();
+    ab.write<T>(t);
   }
 }
 

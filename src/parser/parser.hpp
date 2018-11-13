@@ -32,12 +32,34 @@ namespace cls {
       : lexeme(lxm), loc(ln, cl, off, len) { }
   };
 
+  // These have to be functions for some reason unknown to me 
+  // (MinGW GCC 7.2 rejects as method, VS 2017 accepts)
+  //
+  // I was using I tokenString() within the body.
+  template <typename T> void parseIntegralBody(std::string str, int base, T &val);
+  template <> inline void parseIntegralBody(std::string str, int base, int64_t &val) {
+    val = std::stoll(str,nullptr,base);
+  }
+  template <> inline void parseIntegralBody(std::string str, int base, uint64_t &val) {
+    val = std::stoull(str,nullptr,base);
+  }
+  template <> inline void parseIntegralBody(std::string str, int base, int32_t &val) {
+    val = std::stol(str,nullptr,base);
+  }
+  template <> inline void parseIntegralBody(std::string str, int base, uint32_t &val) {
+    val = std::stoul(str,nullptr,base);
+  }
+
   class parser : public cls::fatal_handler {
     std::vector<token>  m_tokens;
     size_t              m_offset;
     token               m_eof;
   private:
-    template <typename...Ts> bool lookingAtSeqHelper(int ix) const {return true;}
+    // template <typename...Ts> bool lookingAtSeqHelper(int ix) const {return true;}
+    // GCC 7.2 rules require non-empty unpack
+    template <typename...Ts> bool lookingAtSeqHelper(int ix, lexeme lxm) const {return lookingAt(lxm,ix);}
+    template <typename...Ts> bool lookingAtSeqHelper(int ix, const char *lxm) const {return lookingAtIdentEq(lxm,ix);}
+    //
     template <typename...Ts> bool lookingAtSeqHelper(int ix, lexeme lxm, Ts...ts) const {return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
     template <typename...Ts> bool lookingAtSeqHelper(int ix, const char *lxm, Ts...ts) const {return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
   public:
@@ -185,7 +207,7 @@ namespace cls {
     bool lookingAtIdent(int i = 0) const {
       return next(i).lexeme == IDENT;
     }
-    bool lookingAtIdentEq(const char *v, int i = 0) {
+    bool lookingAtIdentEq(const char *v, int i = 0) const {
       if (!lookingAt(IDENT)) {
         return false;
       }
@@ -258,20 +280,6 @@ namespace cls {
       return false;
     }
 
-    template <typename T> T parseIntegralBody(int base) const;
-    template <> int64_t parseIntegralBody(int base) const {
-      return std::stoll(tokenString(),nullptr,base);
-    }
-    template <> uint64_t parseIntegralBody(int base) const {
-      return std::stoull(tokenString(),nullptr,base);
-    }
-    template <> int32_t parseIntegralBody(int base) const {
-      return std::stol(tokenString(),nullptr,base);
-    }
-    template <> uint32_t parseIntegralBody(int base) const {
-      return std::stoul(tokenString(),nullptr,base);
-    }
-
     template <typename T>
     T consumeIntegral(const char *what = "int") {
       T x = 0;
@@ -284,7 +292,8 @@ namespace cls {
           lookingAt(INTLIT16) ? 16 :
           lookingAt(INTLIT02) ? 2 :
           0; // lookingAtInt() => 0 unreachable
-        x = parseIntegralBody<T>(base);
+        // x = parseIntegralBody<T>(tokenString(), base);
+        parseIntegralBody<T>(tokenString(), base, x);
       } catch (std::invalid_argument &) {
         fatal("expected ",what);
       } catch (std::out_of_range &) {
