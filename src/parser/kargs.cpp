@@ -109,14 +109,9 @@ struct karg_parser : cls::parser
         type_name += consumeIdent("type");
       }
     }
-    auto t = lookupPrimtiveType(type_name);
+    auto t = lookupBuiltinType(type_name,bytes_per_addr);
     if (t == nullptr) {
-      if (type_name == "size_t" || type_name == "uintptr_t")
-        t = lookupPrimtiveType(bytes_per_addr == 4 ? "uint" : "ulong");
-      else if (type_name == "intptr_t" || type_name == "ptrdiff_t")
-        t = lookupPrimtiveType(bytes_per_addr == 4 ? "int" : "long");
-      else
-        fatalAt(type_loc,"unrecognized type");
+      fatalAt(type_loc,"unrecognized type");
     }
     a.type = *t;
     if (consumeIf(MUL)) {
@@ -383,7 +378,7 @@ program_info cls::k::parseProgramInfoFromAPI(
       auto star = full_type_name.find("*");
       std::string type_name = full_type_name.substr(0,star);
 
-      const type *t = lookupPrimtiveType(type_name);
+      const type *t = lookupBuiltinType(type_name, bytes_per_addr);
       if (t == nullptr) {
         fh->fatalAt(at,
           "failed to parse program info program: "

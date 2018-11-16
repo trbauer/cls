@@ -159,10 +159,16 @@ void image::release() {
   width = height = pitch = alloc_height = 0;
 }
 
-/*
+
 // PPM format http://netpbm.sourceforge.net/doc/ppm.html
 //
 // EXAMPLE:
+// P6
+// 640 480
+// 255
+// [.... binary data RGB,RGB,RGB...]
+// [or RRGGBBRRGGBB] if max value >= 256
+// EXAMPLE: (not supported yet)
 // P3
 // # feep.ppm
 // 4 4
@@ -174,28 +180,53 @@ void image::release() {
 image *image::load_ppm(const char *file, bool fatal_if_error)
 {
   std::ifstream ifs(file);
-  if (!ifs.is_open()) 
+  if (!ifs.is_open())
     FATAL("image::load_ppm: could not open file");
-  
+
   std::string ln;
-
-  while (ifs.good()) {
-    std::getline(ifs,ln);
-    if (ln.size() == 0 && ln[0] = '#')
-      continue;
-    else if (ln != "P3") 
-      FATAL("image::load_ppm: malformed PPM (expected P3)");
-  }
-
+  if (!std::getline(ifs,ln) || ln != "P6")
+    FATAL("image::load_ppm: error parsing file");
+  int width, height, max_value;
+  ifs >> width;
+  ifs >> max_value;
+  ifs >> height;
+  if (!ifs)
+    FATAL("image::load_ppm: error parsing image dimensions");
+  ifs >> max_value;
+  if (!ifs)
+    FATAL("image::load_ppm: error parsing image dimensions");
+  if (max_value <= 0 || width <= 0 || height <= 0)
+    FATAL("image::load_ppm: invalid image dimensions");
+  if (max_value > 255)
+    FATAL("image::load_ppm: only single byte-per-channel images supported");
+  image *i = new image(width, height, image::format::RGB);
+  ifs.read((char *)i->bits, width*height*3);
+  if (max_value <= 0 || width <= 0 || height <= 0)
+    FATAL("image::load_ppm: failed to read all data");
+  if (!ifs.eof())
+    FATAL("image::load_ppm: expected end of file");
+  return i;
 }
 
 void image::save_ppm(const char *file)
 {
+  if (format != image::format::RGB) {
+    image i = image::convert(image::format::RGB);
+    i.save_ppm(file);
+    return;
+  }
+
+  std::ofstream ofs(file,std::ostream::binary);
+  ofs << "P6\n";
+  ofs << width << "  " << height << "\n";
+  ofs << "255\n";
+  for (size_t h = 0; h < height; h++) {
+    ofs.write((const char *)(bits + h*pitch), 3*width);
+  }
 }
-*/
 
 
-#ifdef IMAGE_HPP_SUPPORTS_BMP  
+#ifdef IMAGE_HPP_SUPPORTS_BMP
 static void write_bmp_info_header(
   const image &img, BITMAPINFOHEADER &bih)
 {

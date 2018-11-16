@@ -392,7 +392,7 @@ void listDeviceInfoForDevice(
 #define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
   do { \
     emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,UNITS); \
+    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,FORMATTER,UNITS); \
     std::cout << "\n"; \
   } while (0)
 #define DEVICE_INFO(PARAM,TYPE,...) \

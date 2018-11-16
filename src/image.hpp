@@ -38,8 +38,8 @@ struct image {
 
   static size_t bytes_per_pixel(enum format f);
 
-  // static image *load_ppm(const char *file, bool fatal_if_error = false);
-  // void save_ppm(const char *file);
+  static image *load_ppm(const char *file, bool fatal_if_error = false);
+  void save_ppm(const char *file);
 #ifdef IMAGE_HPP_SUPPORTS_BMP
   static image *load_bmp(const char *file, bool fatal_if_error = false);
   void save_bmp(const char *file) const;
@@ -68,7 +68,7 @@ struct image {
 
   image convert(enum format to) const;
 
-  // resizes the image padding pixels or truncating if needed.
+  // resizes the image by padding or truncating as needed.
   void resize(
     size_t new_width,
     size_t new_height,

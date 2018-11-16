@@ -34,6 +34,27 @@ DEFINE_PRIM_TYPE(UINT,   "uint",   UNSIGNED, 4);
 DEFINE_PRIM_TYPE( LONG,  "long",     SIGNED, 8);
 DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
 
+constexpr type_builtin TBI_IMAGE1D_32b(type_builtin::IMAGE1D,4);
+const type T_IMAGE1D_32b(TBI_IMAGE1D_32b);
+constexpr type_builtin TBI_IMAGE1D_64b(type_builtin::IMAGE1D,8);
+const type T_IMAGE1D_64b(TBI_IMAGE1D_64b);
+//
+constexpr type_builtin TBI_IMAGE2D_32b(type_builtin::IMAGE2D,4);
+const type T_IMAGE2D_32b(TBI_IMAGE2D_32b);
+constexpr type_builtin TBI_IMAGE2D_64b(type_builtin::IMAGE2D,8);
+const type T_IMAGE2D_64b(TBI_IMAGE2D_64b);
+//
+constexpr type_builtin TBI_IMAGE3D_32b(type_builtin::IMAGE3D,4);
+const type T_IMAGE3D_32b(TBI_IMAGE3D_32b);
+constexpr type_builtin TBI_IMAGE3D_64b(type_builtin::IMAGE3D,8);
+const type T_IMAGE3D_64b(TBI_IMAGE3D_64b);
+//
+constexpr type_builtin TBI_SAMPLER_32b(type_builtin::SAMPLER,4);
+const type T_SAMPLER_32b(TBI_SAMPLER_32b);
+constexpr type_builtin TBI_SAMPLER_64b(type_builtin::SAMPLER,8);
+const type T_SAMPLER_64b(TBI_SAMPLER_64b);
+
+// TODO: others ...
 
 /*
 DEFINE_PRIM_TYPE(CHAR,"char",SIGNED,1);
@@ -72,8 +93,7 @@ std::string type::syntax() const {
 // constexpr static type CHAR{type_num("char",type_num::SIGNED,1)};
 // constexpr static type_struct TS2 = type_struct{&CHAR};
 // constexpr static type CHAR2{TS2};
-
-const type *cls::lookupPrimtiveType(std::string name)
+const type *cls::lookupBuiltinType(std::string name, size_t bytes_per_addr)
 {
   // normalize primitive names (e.g. unsigned int -> uint)
   if (name == "signed") {
@@ -118,6 +138,23 @@ const type *cls::lookupPrimtiveType(std::string name)
   MATCH_PRIM_TYPE(T_LONG,"long");
   MATCH_PRIM_TYPE(T_ULONG,"ulong");
   //
+  // extra types that alias to something else
+  if (name == "size_t" || name == "uintptr_t")
+    return bytes_per_addr == 4 ? &UINT() : &ULONG();
+  else if (name == "intptr_t" || name == "ptrdiff_t")
+    return bytes_per_addr == 4 ? &INT() : &LONG();
+  //
+  // image and other built-in types
+#define BUILTIN_CASE(LEXEME,ID) \
+  if (name == (LEXEME)) \
+    return bytes_per_addr == 4 ? &T_ ## ID ## _32b : &T_ ## ID ## _64b
+
+  BUILTIN_CASE("image1d_t",IMAGE1D);
+  BUILTIN_CASE("image2d_t",IMAGE2D);
+  BUILTIN_CASE("image3d_t",IMAGE3D);
+  BUILTIN_CASE("sampler_t",SAMPLER);
+#undef BUILTIN_CASE
+
   return nullptr;
 }
 

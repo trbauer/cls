@@ -166,7 +166,8 @@ namespace cls
       IS_BEX, IS_UEX, // an expression (binary or unary)
       ////////////////////////////////////
       // Non-atoms
-      IS_FIL, // a file "image(foo.bmp):w"
+      IS_FIL, // e.g. "file<bin>('foo.dat'):w"
+      IS_IMG, // e.g. "image<rgb>('foo.ppm'):r"
       // TODO: there should be a second argument to specify the image type
       // If specified as an input, this loads as a buffer or image of
       // RGB24 or an intensity image if the BMP is monochrome.
@@ -363,6 +364,34 @@ namespace cls
 
     void str(std::ostream &os, format_opts fopts) const;
   };
+
+  // image<rgba>(...);
+  struct init_spec_image : init_spec_atom {
+    std::string         path;
+    enum channel_order {INVALID_CO=0,R,RG,RGB,RGBA} corder;
+    enum channel_type {INVALID_CT=0,UINT8,FLOAT,HALF} ctype;
+    init_spec_atom     *width;
+    init_spec_atom     *height;
+    init_spec_atom     *pitch;
+    init_spec_image(
+      loc loc,
+      std::string _path,
+      channel_order ord,
+      channel_type ty,
+      init_spec_atom *_width,
+      init_spec_atom *_height,
+      init_spec_atom *_pitch)
+      : init_spec_atom(loc, IS_IMG)
+      , path(_path)
+      , corder(ord)
+      , ctype(ty)
+      , width(_width)
+      , height(_height)
+      , pitch(_pitch)
+    { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
   // struct init_spec_atom_function : init_spec_atom {
   //   std::vector<init_spec_atom> arguments;
   //   init_spec_atom_function(loc loc, enum init_spec_kind k)

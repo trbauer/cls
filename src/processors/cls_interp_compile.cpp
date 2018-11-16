@@ -598,7 +598,7 @@ void script_compiler::compile()
           ism_ref->defined_at,
           dfsc->so_ref,
           [&](void *host_ptr) {
-            evaluator::context ec(dc->global_size,dc->local_size);
+            evaluator::context ec(*dc);
             const type *elem_type = dfsc->element_type;
             if (!elem_type) {
               // typeless diff needs the element from the SUT
@@ -714,7 +714,10 @@ dispatch_command *script_compiler::compileDispatchArgs(
     if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
       csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
     } else if (ai.type.is<type_ptr>()) {
-      csi->e->setKernelArgMemobj(
+      csi->e->setKernelArgBuffer(
+        arg_index, dc, ss, ris.defined_at, ris, ai);
+    } else if (ai.type.is<type_builtin>() && ai.type.as<type_builtin>().is_surface()) {
+      csi->e->setKernelArgImage(
         arg_index, dc, ss, ris.defined_at, ris, ai);
     } else {
       // A uniform argument

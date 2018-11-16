@@ -98,31 +98,51 @@ namespace cls
   struct type_builtin {
     // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/otherDataTypes.html
     enum bi_kind {
-      IMAGE1D,        // image1d_t
-      IMAGE1D_ARRAY,  // image1d_array_t
-      IMAGE1D_BUFFER, // image1d_buffer_t
-      IMAGE2D,        // image2d_t
-      IMAGE2D_ARRAY,  // image2d_array_t
-      IMAGE2D_DEPTH,  // image2d_depth_t
-      IMAGE2D_ARRAY_DEPTH, // image2d_array_depth_t
-      IMAGE2D_MSAA,    // image2d_msaa_t
-      IMAGE2D_ARRAY_MSAA, // image2d_array_msaa_t
-      IMAGE2D_MSAA_DEPTH, // image2d_msaa_depth_t
+      IMAGE1D,                  // image1d_t
+      IMAGE1D_ARRAY,            // image1d_array_t
+      IMAGE1D_BUFFER,           // image1d_buffer_t
+      IMAGE2D,                  // image2d_t
+      IMAGE2D_ARRAY,            // image2d_array_t
+      IMAGE2D_DEPTH,            // image2d_depth_t
+      IMAGE2D_ARRAY_DEPTH,      // image2d_array_depth_t
+      IMAGE2D_MSAA,             // image2d_msaa_t
+      IMAGE2D_ARRAY_MSAA,       // image2d_array_msaa_t
+      IMAGE2D_MSAA_DEPTH,       // image2d_msaa_depth_t
       IMAGE2D_ARRAY_MSAA_DEPTH, // image2d_array_msaa_depth_t
-      IMAGE3D,        // image3d_t
-      SAMPLER,        // sampler_t
-      QUEUE,          // queue_t
-      NDRANGE,        // ndrange_t
-      CLK_EVENT,      // clk_event_t
-      RESERVE_ID,     // reserve_id_t
-      EVENT,          // event_t
-      CL_MEM_FENCE_FLAGS, // cl_mem_fence_flags
+      IMAGE3D,                  // image3d_t
+      SAMPLER,                  // sampler_t
+      QUEUE,                    // queue_t
+      NDRANGE,                  // ndrange_t
+      CLK_EVENT,                // clk_event_t
+      RESERVE_ID,               // reserve_id_t
+      EVENT,                    // event_t
+      CL_MEM_FENCE_FLAGS,       // cl_mem_fence_flags
     } skind;
     size_t pointer_size;
+
+    // TODO: read up on image details
+    // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/read_imagef2d.html
+    // cl_khr_mipmap_image https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/cl_khr_mipmap_image.html
 
     constexpr type_builtin(const type_builtin &tb) = default;
     constexpr type_builtin(bi_kind _kind, size_t ptr_size)
       : skind(_kind), pointer_size(ptr_size) { }
+
+    bool is_surface() const {
+      switch (skind) {
+      case type_builtin::IMAGE1D:
+      case type_builtin::IMAGE1D_ARRAY:
+      case type_builtin::IMAGE1D_BUFFER:
+      case type_builtin::IMAGE2D:
+      case type_builtin::IMAGE2D_ARRAY:
+      case type_builtin::IMAGE2D_ARRAY_DEPTH:
+      case type_builtin::IMAGE2D_ARRAY_MSAA:
+      case type_builtin::IMAGE2D_ARRAY_MSAA_DEPTH:
+      case type_builtin::IMAGE3D:
+        return true;
+      }
+      return false;
+    }
 
     size_t size() const {return pointer_size;}
     std::string syntax() const {
@@ -377,7 +397,7 @@ namespace cls
   MAKE_TYPE_ACCESSORS(UINT);
   MAKE_TYPE_ACCESSORS(ULONG);
 
-  const type *lookupPrimtiveType(std::string name);
+  const type *lookupBuiltinType(std::string name, size_t bytes_per_addr);
 
   // works for buffer or scalar
   void format(

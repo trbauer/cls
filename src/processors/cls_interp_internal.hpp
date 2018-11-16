@@ -408,10 +408,21 @@ struct arg_buffer : fatal_handler {
 
 struct evaluator : interp_fatal_handler {
   struct context {
+    size_t     sizeof_pointer; // in bytes
     const ndr &global_size;
     const ndr &local_size;
-    context(const ndr &gs, const ndr &ls, std::stringstream *dss = nullptr)
-      : global_size(gs), local_size(ls), debug_stream(dss) { }
+    context(
+      size_t sizeof_ptr, 
+      const ndr &gs, const ndr &ls, 
+      std::stringstream *dss = nullptr)
+      : sizeof_pointer(sizeof_ptr)
+      , global_size(gs), local_size(ls)
+      , debug_stream(dss) { }
+    context() : context(0, ndr(),ndr()) { }
+    context(const dispatch_command &dc, std::stringstream *dss = nullptr) 
+      : context(dc.dobj->pointer_size, dc.global_size, dc.local_size, dss) 
+    {
+    }
 
     std::stringstream *debug_stream;
 
@@ -515,7 +526,14 @@ struct evaluator : interp_fatal_handler {
     std::stringstream &ss,
     const refable<init_spec> &ris,
     const arg_info &ai); // top-level
-  void setKernelArgMemobj(
+  void setKernelArgBuffer(
+    cl_uint arg_index,
+    dispatch_command &dc,
+    std::stringstream &ss, // debug string for arg
+    const loc &arg_loc,
+    const refable<init_spec> &ris,
+    const arg_info &ai);
+  void setKernelArgImage(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg

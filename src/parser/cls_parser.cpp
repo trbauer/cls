@@ -67,7 +67,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
       at.extend_to(p.nextLoc());
       return new init_spec_symbol(at, id);
     } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
-      id == "sizeof" || id == "random" || id == "seq" || id == "file")
+      id == "sizeof" || id == "random" || id == "seq" || id == "file" || id == "image")
     {
       // foo<...  (e.g. random<12007>(...))
       // or
@@ -179,6 +179,51 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
         p.consume(RPAREN);
         at.extend_to(p.nextLoc());
         return new init_spec_file(at, s, flv, col, sep);
+      } else if (id == "image") {
+        p.consume(LANGLE);
+        auto ord = init_spec_image::RGB;
+        if (p.consumeIfIdentEq("r") || p.consumeIfIdentEq("R")) {
+          ord = init_spec_image::R;
+        } else if (p.consumeIfIdentEq("rg") || p.consumeIfIdentEq("RG")) {
+          ord = init_spec_image::RG;
+        } else if (p.consumeIfIdentEq("rgb") || p.consumeIfIdentEq("RGB")) {
+          ord = init_spec_image::RGB;
+        } else if (p.consumeIfIdentEq("rgba") || p.consumeIfIdentEq("RGBA")) {
+          ord = init_spec_image::RGBA;
+        } else {
+          p.fatal("unrecognized image format (try r, rg, rgb, rgba)");
+        }
+        p.consume(COMMA);
+        auto ty = init_spec_image::UINT8;
+        if (p.consumeIfIdentEq("u8") || p.consumeIfIdentEq("UINT8")) {
+          ty = init_spec_image::UINT8;
+        } else if (p.consumeIfIdentEq("f32") || p.consumeIfIdentEq("FLOAT")) {
+          ty = init_spec_image::FLOAT;
+        } else if (p.consumeIfIdentEq("f16") || p.consumeIfIdentEq("HALF_FLOAT")) {
+          ty = init_spec_image::HALF;
+        } else {
+          p.fatal("unrecognized image format (try: u8, f32, or f16)");
+        }
+        p.consume(COMMA);
+        init_spec_atom *width = parseInitAtom(p, s);
+        p.consume(COMMA);
+        init_spec_atom *height = parseInitAtom(p, s);
+        init_spec_atom *pitch = nullptr;
+        if (p.consumeIf(COMMA)) {
+          pitch = parseInitAtom(p, s);
+        }
+        p.consume(RANGLE);
+        p.consume(LPAREN);
+        std::string file;
+        if (!p.lookingAt(RPAREN)) {
+          if (!p.lookingAt(STRLIT)) {
+            p.fatalAt(at,"expected file path (string literal)");
+          }
+          file = p.tokenStringLiteral(); p.skip();
+        }
+        p.consume(RPAREN);
+        at.extend_to(p.nextLoc());
+        return new init_spec_image(at, file, ord, ty, width, height, pitch);
       } else {
         ///////////////////////////////////////////////////
         // generic function
@@ -880,10 +925,6 @@ static refable<init_spec> parseInitResolved(parser &p, script &s)
   }
 }
 
-// template<typename T>
-// static bool parseBuiltIn(Parser &p, script &s) {
-//  s.statements.emplace_back(T,);
-// }
 
 // barrier | diff(X,Y) | print(X) | save(sym,X)
 static bool parseBuiltIn(parser &p, script &s)
@@ -901,7 +942,11 @@ static bool parseBuiltIn(parser &p, script &s)
     const type *elem_type = nullptr;
     if (p.consumeIf(LANGLE)) {
       auto at = p.nextLoc();
-      elem_type = lookupPrimtiveType(p.consumeIdent("type name"));
+      // HACK: need to know the pointer size; assume 64b for now
+      // technically we should probably just save the string and deal with
+      // it during compilation once devices are matched etc...
+      const size_t HACK = 8;
+      elem_type = lookupBuiltinType(p.consumeIdent("type name"),HACK);
       p.consume(RANGLE);
     }
     p.consume(LPAREN);
@@ -927,7 +972,10 @@ static bool parseBuiltIn(parser &p, script &s)
       if (p.lookingAtInt()) {
         elems_per_row = p.consumeIntegral<int>("elements per column");
       } else {
-        elem_type = lookupPrimtiveType(p.consumeIdent("type name"));
+        // HACK: we can't know the bits per ptr until we unify the
+        // arguments with the owning context.
+        const size_t HACK = 8;
+        elem_type = lookupBuiltinType(p.consumeIdent("type name"),HACK);
         if (p.consumeIf(COMMA)) {
           elems_per_row = p.consumeIntegral<int>("elements per column");
         }

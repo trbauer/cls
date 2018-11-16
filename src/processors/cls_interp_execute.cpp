@@ -46,11 +46,13 @@ static void fill_buffer_with_const_loop(
   size_t total_elems = ab.capacity / sizeof(T);
   for (size_t i = 0; i < total_elems; i++) {
     // THIS IS EVIL!!!!  MSVC 2017 allowed it GCC does not.
-    // T t = val.as<T>();
-    // https://en.cppreference.com/w/cpp/language/dependent_name
     // zapcc 5.0 finally clued me into it
     // https://www.jdoodle.com/online-compiler-c++
+    //
+    // T t = val.as<T>();
+    // https://en.cppreference.com/w/cpp/language/dependent_name
     T t = val.template as<T>();
+    //        ^^^^^^^^^ NUTs!
     ab.write<T>(t);
   }
 }
@@ -365,7 +367,7 @@ void compiled_script_impl::execute(
   const void *ref_host_ptr,
   const void *sut_host_ptr)
 {
-  evaluator::context ec{ndr(),ndr()};
+  evaluator::context ec;
   if (dfc.so_ref->size_in_bytes == 0)
     return; // zero sized buffers always match
   const type *elem_type = dfc.element_type;
@@ -414,7 +416,7 @@ void compiled_script_impl::execute(
 
 void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 {
-  evaluator::context ec{ndr(),ndr()};
+  evaluator::context ec;
   if (dfc.so->size_in_bytes == 0)
     return; // zero sized buffers always match
   if (!dfc.spec->ref.value->is_atom())
@@ -474,7 +476,10 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 {
-  evaluator::context ec{ndr(),ndr()};
+  evaluator::context ec;
+  if (prc.so && !prc.so->dispatch_uses.empty())
+    ec.sizeof_pointer = 
+      std::get<0>(prc.so->dispatch_uses.front())->dobj->pointer_size;
 
   const type *elem_type = prc.element_type;
   if (elem_type == nullptr) {
@@ -591,8 +596,7 @@ void compiled_script_impl::init_surfaces()
       so->spec->defined_at,
       so,
       [&] (void *host_ptr) {
-        evaluator::context ec(dc->global_size, dc->local_size);
-
+        evaluator::context ec(*dc);
         init_surface(*so, ec, elem_type, host_ptr);
       });
 

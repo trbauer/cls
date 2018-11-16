@@ -210,6 +210,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_BEX: fmt(os, fopts, (const init_spec_bex           *)this); break;
   case IS_UEX: fmt(os, fopts, (const init_spec_uex           *)this); break;
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
+  case IS_IMG: fmt(os, fopts, (const init_spec_image         *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_mem        *)this); break;
@@ -518,6 +519,35 @@ void init_spec_file::str(std::ostream &os, format_opts fopts) const
     break;
   }
   os << ">(\"" << path << "\")";
+}
+
+void init_spec_image::str(std::ostream &os, format_opts fopts) const
+{
+  os << "image<";
+  switch (corder) {
+  case channel_order::R:    os << "r"; break;
+  case channel_order::RG:   os << "rg"; break;
+  case channel_order::RGB:  os << "rgb"; break;
+  case channel_order::RGBA: os << "rgba"; break;
+  default: os << "?";
+  }
+  os << ",";
+  switch (ctype) {
+  case channel_type::UINT8: os << "u8"; break;
+  case channel_type::FLOAT: os << "f32"; break;
+  case channel_type::HALF:  os << "f16"; break;
+  default: os << "?";
+  } 
+  os << ","; width->str(os, fopts);
+  os << ","; height->str(os, fopts);
+  if (pitch != nullptr) {
+    os << ","; 
+    pitch->str(os, fopts);
+  }
+  os << ">(";
+  if (!path.empty())
+    os << "\"" << path << "\"";
+  os << ")";
 }
 
 
