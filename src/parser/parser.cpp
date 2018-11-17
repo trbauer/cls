@@ -102,7 +102,6 @@ const char *cls::to_syntax(cls::lexemes::lexeme l)
   CLS_LEXEME_TOKEN(INTLIT10,"int"); // an integral pattern
   CLS_LEXEME_TOKEN(INTLIT16,"int"); // an integral pattern
   CLS_LEXEME_TOKEN(FLTLIT,"float"); // a floating point pattern
-  CLS_LEXEME_TOKEN(DIMENSION,"dimension");
 
   CLS_LEXEME_TOKEN(END_OF_FILE,"<<EOF>>");
 #undef CLS_LEXEME_TOKEN

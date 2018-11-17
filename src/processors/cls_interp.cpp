@@ -56,23 +56,23 @@ val evaluator::eval(
     if (isz->type_name.empty()) {
       // sizeof( EXPR )
       auto itr = csi->surfaces.find(isz->mem_object);
-      if (itr == csi->surfaces.find_end()) 
-        internalAt(isz->mem_object.defined_at,"undefined memory object");      
+      if (itr == csi->surfaces.find_end())
+        internalAt(isz->mem_object.defined_at,"undefined memory object");
       const surface_object *so = itr->second;
       return val(so->size_in_bytes);
     } else {
       // sizeof( TYPE )
       if (ec.sizeof_pointer == 0) {
-        // We don't know the size of a pointer: sizeof(int*) or 
-        // sizeof(image2d_t).  If you hit this case consider examining 
-        // where the evaluator::context is constructed and passing the 
+        // We don't know the size of a pointer: sizeof(int*) or
+        // sizeof(image2d_t).  If you hit this case consider examining
+        // where the evaluator::context is constructed and passing the
         // pointer size there.
         internalAt(e->defined_at,
           "use a type name in context where size of pointer is unknown");
       }
       const type *t = lookupBuiltinType(isz->type_name, 0);
-      if (t == nullptr) 
-        fatalAt(e->defined_at, "unrecognized type name");      
+      if (t == nullptr)
+        fatalAt(e->defined_at, "unrecognized type name");
       return val(t->size());
     }
   }
@@ -177,7 +177,7 @@ void evaluator::setKernelArgImmediate(
   }
 }
 
-static cl_mem_flags initClMemFlags(const init_spec_mem *ism) 
+static cl_mem_flags initClMemFlags(const init_spec_mem *ism)
 {
   bool is_r =
     (ism->access_properties & init_spec_mem::INIT_SPEC_MEM_READ);
@@ -297,25 +297,49 @@ void evaluator::setKernelArgImage(
   cl_image_format img_fmt{0};
   cl_image_desc img_desc{0};
   if (ism->root->skind == init_spec::IS_IMG) {
-    fatalAt(ism->defined_at, 
-      "image initializers not implemented yet");
-  } else if (ism->root->skind == init_spec::IS_INT && 
-    ((init_spec_int*)ism->root)->value == 0) 
-  {
-    // an image defined as zeros enables us to choose all the image attributes
-    // e.g. "0:w"
-    img_fmt.image_channel_order = CL_RGB;
-    img_fmt.image_channel_data_type = CL_SNORM_INT8;
+    const init_spec_image *isi = (const init_spec_image*)ism;
+
+    switch (isi->ch_order) {
+    case init_spec_image::R:    img_fmt.image_channel_order = CL_R; break;
+    case init_spec_image::RG:   img_fmt.image_channel_order = CL_RG; break;
+    case init_spec_image::RGB:  img_fmt.image_channel_order = CL_RGB; break;
+    case init_spec_image::RGBA: img_fmt.image_channel_order = CL_RGBA; break;
+    default: fatalAt(ism->defined_at, "invalid channel order");
+    }
+    switch (isi->ch_data_type) {
+    case init_spec_image::U8:  img_fmt.image_channel_data_type = CL_UNSIGNED_INT8; break;
+    case init_spec_image::F16: img_fmt.image_channel_data_type = CL_HALF_FLOAT; break;
+    case init_spec_image::F32: img_fmt.image_channel_data_type = CL_FLOAT; break;
+    default: fatalAt(ism->defined_at, "invalid channel data type");
+    }
+
+    context ctx(dc);
+
+    size_t isi_width = 0;
+    if (isi->width)
+      isi_width = (size_t)evalTo<size_t>(ctx,isi->width).u64;
+    size_t isi_row_pitch = 0;
+    if (isi->row_pitch)
+      isi_row_pitch = (size_t)evalTo<size_t>(ctx,isi->row_pitch).u64;
+    size_t isi_height = 0;
+    if (isi->height)
+      isi_height = (size_t)evalTo<size_t>(ctx,isi->height).u64;
+    size_t isi_slice_pitch = 0;
+    if (isi->slice_pitch)
+      isi_slice_pitch = (size_t)evalTo<size_t>(ctx,isi->slice_pitch).u64;
+    size_t isi_depth = 0;
+    if (isi->depth)
+      isi_depth = (size_t)evalTo<size_t>(ctx,isi->depth).u64;
+
     switch (tbi.skind) {
     case type_builtin::IMAGE1D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE1D; 
-      if (dc.global_size.rank() != 1) {
-        fatalAt(ism->defined_at, "image1d_t's require a 1-dimension NDRange");
-      }
-      img_desc.image_width = dc.global_size.product();
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
+      img_desc.image_width = (size_t)isi->width;
+      if (isi_depth != 0 || isi_height)
+        fatalAt(ism->defined_at, "image1d_t's must not have explicit width or depth argument");
       break;
     case type_builtin::IMAGE2D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE2D; 
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
       if (dc.global_size.rank() != 2) {
         fatalAt(ism->defined_at, "image2d_t's require a 2-dimension NDRange");
       }
@@ -323,7 +347,7 @@ void evaluator::setKernelArgImage(
       img_desc.image_height = dc.global_size.get()[1];
       break;
     case type_builtin::IMAGE3D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE3D; 
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE3D;
       if (dc.global_size.rank() != 3) {
         fatalAt(ism->defined_at, "image3d_t's require a 3-dimension NDRange");
       }
@@ -333,67 +357,109 @@ void evaluator::setKernelArgImage(
       break;
     case type_builtin::IMAGE1D_ARRAY:
     case type_builtin::IMAGE2D_ARRAY:
-      fatalAt(ism->defined_at, 
+      fatalAt(ism->defined_at,
         "image arrays cannot be default-initialized");
     default:
-      fatalAt(ism->defined_at, 
+      fatalAt(ism->defined_at,
+        "unsupported image kernel argument type");
+    }
+    fatalAt(ism->defined_at,
+      "image initializers not implemented yet");
+  } else if (ism->root->skind == init_spec::IS_INT &&
+    ((init_spec_int*)ism->root)->value == 0)
+  {
+    // an image defined as zeros enables us to choose all the image attributes
+    // e.g. "0:w"
+    img_fmt.image_channel_order = CL_RGBA;
+    img_fmt.image_channel_data_type = CL_SNORM_INT8;
+    switch (tbi.skind) {
+    case type_builtin::IMAGE1D:
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
+      if (dc.global_size.rank() != 1) {
+        fatalAt(ism->defined_at, "image1d_t's require a 1-dimension NDRange");
+      }
+      img_desc.image_width = dc.global_size.product();
+      break;
+    case type_builtin::IMAGE2D:
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+      if (dc.global_size.rank() != 2) {
+        fatalAt(ism->defined_at, "image2d_t's require a 2-dimension NDRange");
+      }
+      img_desc.image_width = dc.global_size.get()[0];
+      img_desc.image_height = dc.global_size.get()[1];
+      break;
+    case type_builtin::IMAGE3D:
+      img_desc.image_type = CL_MEM_OBJECT_IMAGE3D;
+      if (dc.global_size.rank() != 3) {
+        fatalAt(ism->defined_at, "image3d_t's require a 3-dimension NDRange");
+      }
+      img_desc.image_width = dc.global_size.get()[0];
+      img_desc.image_height = dc.global_size.get()[1];
+      img_desc.image_depth = dc.global_size.get()[2];
+      break;
+    case type_builtin::IMAGE1D_ARRAY:
+    case type_builtin::IMAGE2D_ARRAY:
+      fatalAt(ism->defined_at,
+        "image arrays cannot be default-initialized");
+    default:
+      fatalAt(ism->defined_at,
         "unsupported image kernel argument type");
     }
   } else {
-    fatalAt(ism->defined_at, 
+    fatalAt(ism->defined_at,
       "image requires image initializer "
       "or 0 as an initializer");
   }
 
-  size_t elems_per_channel = 0;
+  size_t elems_per_pixel = 0;
   switch (img_fmt.image_channel_order) {
-  case CL_A: 
-  case CL_R: 
+  case CL_A:
+  case CL_R:
   case CL_INTENSITY:
   case CL_LUMINANCE:
-    elems_per_channel = 1; 
+    elems_per_pixel = 1;
     break;
-  case CL_RG: 
-  case CL_RA: 
-    elems_per_channel = 2; 
+  case CL_RG:
+  case CL_RA:
+    elems_per_pixel = 2;
     break;
-  case CL_RGB: 
-    elems_per_channel = 3; 
+  case CL_RGB:
+    elems_per_pixel = 3;
     break;
-  case CL_RGBA: 
+  case CL_RGBA:
   case CL_BGRA:
   case CL_ARGB:
-    elems_per_channel = 4; 
+    elems_per_pixel = 4;
     break;
   default: internalAt(ism->defined_at, "unsupported channel order");
   }
 
-  size_t bytes_per_pixel = 0;
+  size_t bytes_per_channel = 0;
   switch (img_fmt.image_channel_data_type) {
   case CL_SNORM_INT8:
   case CL_UNORM_INT8:
   case CL_SIGNED_INT8:
   case CL_UNSIGNED_INT8:
-    bytes_per_pixel = 1;
+    bytes_per_channel = 1;
     break;
   case CL_SNORM_INT16:
   case CL_UNORM_INT16:
   case CL_SIGNED_INT16:
   case CL_UNSIGNED_INT16:
   case CL_HALF_FLOAT:
-    bytes_per_pixel = 2;
+    bytes_per_channel = 2;
     break;
   case CL_FLOAT:
   case CL_SIGNED_INT32:
   case CL_UNSIGNED_INT32:
-    bytes_per_pixel = 4;
+    bytes_per_channel = 4;
     break;
   default:
     fatalAt(ism->defined_at, "unsupported channel data type");
   }
 
-  size_t image_size = 
-    dc.global_size.product() * elems_per_channel * bytes_per_pixel;
+  size_t image_size =
+    dc.global_size.product() * elems_per_pixel * bytes_per_channel;
   if (ism->dimension) {
     evaluator::context ec(dc);
     size_t explicit_image_size = evalTo<size_t>(ec, ism->dimension).u64;
@@ -406,8 +472,8 @@ void evaluator::setKernelArgImage(
   if (itr != csi->surfaces.find_end()) {
     // surface already exists, ensure it fits our min size
     so = itr->second;
-    if (so->size_in_bytes < image_size) 
-      fatalAt(ism->defined_at, 
+    if (so->size_in_bytes < image_size)
+      fatalAt(ism->defined_at,
         "allocated image size is smaller than min size needed in this use");
   } else {
     // first use of this image
@@ -427,6 +493,8 @@ void evaluator::setKernelArgImage(
       image_size,
       memobj,
       (*dc.dobj->queue)());
+    so->image_format = img_fmt;
+    so->image_desc = img_desc;
   }
 
   ss << "IMG<";

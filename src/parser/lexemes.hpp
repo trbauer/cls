@@ -54,7 +54,6 @@ namespace cls
       INTLIT16, // 0x123
       FLTLIT,   // 1.3, 0.1, 1e9, 1e-4,
       STRLIT,   // "foo"
-      DIMENSION, // 128x128 128x128x8
 
       END_OF_FILE, // special lexeme that indicates end of file
 

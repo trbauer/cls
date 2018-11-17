@@ -194,24 +194,50 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
           p.fatal("unrecognized image format (try r, rg, rgb, rgba)");
         }
         p.consume(COMMA);
-        auto ty = init_spec_image::UINT8;
+        auto ty = init_spec_image::U8;
         if (p.consumeIfIdentEq("u8") || p.consumeIfIdentEq("UINT8")) {
-          ty = init_spec_image::UINT8;
+          ty = init_spec_image::U8;
         } else if (p.consumeIfIdentEq("f32") || p.consumeIfIdentEq("FLOAT")) {
-          ty = init_spec_image::FLOAT;
+          ty = init_spec_image::F32;
         } else if (p.consumeIfIdentEq("f16") || p.consumeIfIdentEq("HALF_FLOAT")) {
-          ty = init_spec_image::HALF;
+          ty = init_spec_image::F16;
         } else {
           p.fatal("unrecognized image format (try: u8, f32, or f16)");
         }
         p.consume(COMMA);
-        init_spec_atom *width = parseInitAtom(p, s);
-        p.consume(COMMA);
-        init_spec_atom *height = parseInitAtom(p, s);
-        init_spec_atom *pitch = nullptr;
-        if (p.consumeIf(COMMA)) {
-          pitch = parseInitAtom(p, s);
+        // dimension:
+        // W (RP)
+        // W (RP) x H (SP)
+        // W (RP) x H (SP) x D
+        // the spacing makes this hard
+        init_spec_atom *width = nullptr;
+        init_spec_atom *row_pitch = nullptr,
+                       *height = nullptr,
+                       *slice_pitch = nullptr,
+                       *depth = nullptr;
+
+        depth = parseInitAtom(p, s);
+        if (p.consumeIf(LPAREN)) {
+          row_pitch = parseInitAtom(p, s);
+          p.consume(RPAREN);
         }
+        if (p.lookingAt(IDENT)) {
+          std::string id = p.tokenString();
+          if (id == "x") {
+          } else if (id.size() > 0) { // 768(800)x1024
+            try {
+              loc l = p.nextLoc();
+              l.column += 1;
+              l.offset += 1;
+              auto val = std::stoull(id.substr(1),nullptr,10);
+            } catch (...) {
+              p.fatal("syntax error in image dimension");
+            }
+          } else {
+            p.fatal("syntax error in image dimension");
+          }
+        }
+
         p.consume(RANGLE);
         p.consume(LPAREN);
         std::string file;
@@ -223,7 +249,8 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
         }
         p.consume(RPAREN);
         at.extend_to(p.nextLoc());
-        return new init_spec_image(at, file, ord, ty, width, height, pitch);
+        return new init_spec_image(
+          at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
       } else {
         ///////////////////////////////////////////////////
         // generic function
@@ -485,7 +512,12 @@ static init_spec *parseInit(parser &p,script &s)
           }
         }
         break;
+      case 'S':
+        m->save_post = true;
+        break;
       default:
+        // adjust the location to the middle of this token for
+        // the diganostic
         l.column += (uint32_t)i;
         l.offset += (uint32_t)i;
         p.fatalAt(l, "invalid memory attribute");
@@ -540,6 +572,105 @@ static refable<init_spec_mem> dereferenceLetMem(
     (init_spec_mem *)rf.value);
 }
 
+// Dimensions are a lexically evil mess.  We do some massive hacking to make
+// it work, but this all requires the assumption that an identifier may not
+// follow a dimension.  So syntax such as
+//  1024x768 foo   [ILLEGAL in our language now]
+//
+// Previously I introduced a lexical pattern for dimensions, but I want to
+// support arithmetic within them. (4*1024)x4*1024 so I have to deal with this
+// mess at some point.
+//
+// EXAMPLE             PARSES AS
+//
+// 1024 x 25           INT(1024) IDENT("x")     INT
+// 1024x256            INT(1024) IDENT("x256")
+// 1024x256x3          INT(1024) IDENT("x256x3")
+// 1024x256 x3         INT(1024) IDENT("x256x3") IDENT("x3")
+// 1024x768x(2*4)      INT(1024) IDENT("x256x") EXPR
+// (2*1024)x768 x 3    EXPR      IDENT("x768") IDENT("x") INT(3)
+static void parseDimensionExpressions(
+  parser &p,
+  script &s,
+  std::vector<init_spec_atom *> &dims)
+{
+  dims.push_back(parseInitAtom(p, s));
+  if (p.lookingAtIdentEq("x")) {
+    // EXPR IDENT("x") ...
+    p.skip();
+    parseDimensionExpressions(p, s, dims);
+  } else {
+    while (p.lookingAtIdent()) {
+      // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
+      //     ^^^^^^        ^^^^^             ^^^^
+      // need to split x768x3 into: "x 768 x 3"
+      loc at = p.nextLoc();
+      std::string lxm = p.tokenString();
+      p.skip();
+      if (lxm[0] != 'x') {
+        p.fatalAt(at,"syntax error in dimension constant");
+      }
+      size_t off = 0;
+      while (off < lxm.size()) {
+        if (lxm[off] != 'x') {
+          at.column += (uint32_t)off;
+          at.offset += (uint32_t)off;
+          p.fatalAt(at,"syntax error in dimension constant");
+        }
+        off++;
+        size_t end = off;
+        while (end < lxm.size() && isdigit(lxm[end]))
+          end++;
+        if (end == off) {
+          // it must be a new dimension
+          // 2048x1024x(...)
+          //          ^
+          parseDimensionExpressions(p, s, dims);
+          return;
+        } else {
+          // dimension is embedded in identifier
+          // 2048x1024...
+          //     ^^^^^
+          try {
+            auto val = (size_t)std::strtoull(
+              lxm.substr(off,end-off).c_str(),nullptr,10);
+            loc this_int = at;
+            this_int.column += (uint32_t)off;
+            this_int.offset += (uint32_t)off;
+            this_int.extent = (uint32_t)(end - off);
+            dims.push_back(new init_spec_int(this_int, val));
+            off = end;
+          } catch (...) {
+            at.offset += (uint32_t)off;
+            at.column += (uint32_t)off;
+            p.fatalAt(at,"syntax error in dimension constant");
+          }
+          // 2048x1024 x(16)
+          //           ^^^
+          // 2048x1024 x16
+          //           ^^^
+          // bail to the top loop and start the next token
+          // that will handle expressions or fused numbers
+          if (off == lxm.size())
+            break;
+          // OTHERWISE
+          // we are still within the same identifier token and hoping for
+          // the next constant
+          //
+          // 2048x1024x16
+          //          ^^^
+          //   => next iteration of the innermost loop
+          //
+          // 2048x1024x(16)
+          //          ^
+          //   => next iteration of this while will break out
+          //
+        }
+      } // while identifier
+    } // while looking at successive identifiers
+  } // if
+}
+
 
 // Three full forms
 // Full form:                   #1`path/foo.cl`kernel<128,16>(...)
@@ -557,63 +688,19 @@ static void parseDispatchStatementDimensions(
   // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
   //                      ^^^^^^^^^^^^^^^^^
   if (p.consumeIf(LANGLE)) {
-    auto parseDim = [&] (bool allow_null, loc &loc_ref) {
-      ndr d;
-      loc_ref = p.nextLoc();
-      std::vector<size_t> ds;
-      if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL")) {
-        if (!allow_null)
-          p.fatal(p.tokenString(), " not allowed here");
-        p.skip();
-      } else if (p.lookingAtInt()) {
-        // 1024 x 768
-        // 0x200 x 0x100
-        ds.push_back((size_t)p.consumeIntegral<uint64_t>("dimension (int)"));
-        while (p.lookingAtIdentEq("x")) {
-          p.skip();
-          ds.push_back((size_t)p.consumeIntegral<uint64_t>("dimension (int)"));
-        }
-      } else if (p.lookingAt(DIMENSION)) {
-        // 1024x768
-        auto s = p.tokenString();
-        size_t s_off = 0;
-        auto parseDimCoord = [&]() {
-          if (s_off == s.size() || !isdigit(s[s_off])) {
-            p.fatal("syntax error in dimension");
-          }
-          size_t val = 0;
-          while (s_off < s.size() && isdigit(s[s_off])) {
-            val = 10*val + s[s_off++] - '0';
-          }
-          return val;
-        };
-        ds.push_back(parseDimCoord());
-        while (s_off < s.size() && s[s_off] == 'x') {
-          s_off++;
-          ds.push_back(parseDimCoord());
-        }
-        p.skip();
-      } else {
-        p.fatal("expected dimension");
-      }
-
-      loc_ref.extend_to(p.nextLoc());
-      if (ds.size() == 0) {
-        d = ndr();
-      } else if (ds.size() == 1) {
-        d = ndr(ds[0]);
-      } else if (ds.size() == 2) {
-        d = ndr(ds[0],ds[1]);
-      } else if (ds.size() == 3) {
-        d = ndr(ds[0],ds[1],ds[2]);
-      } else {
-        p.fatal("dimension is too large");
-      }
-      return d;
-    }; // parseDim
-    ds.global_size = parseDim(false, ds.global_size_loc);
+    if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL"))
+      p.fatal(p.tokenString(), " not allowed for global dimensions");
+    loc at = p.nextLoc();
+    parseDimensionExpressions(p, s, ds.global_size);
     if (p.consumeIf(COMMA)) {
-      ds.local_size = parseDim(true, ds.local_size_loc);
+      if (!p.consumeIfIdentEq("nullptr") && !p.consumeIfIdentEq("NULL"))
+        parseDimensionExpressions(p, s, ds.local_size);
+    }
+    if (!ds.local_size.empty() &&
+      ds.global_size.size() != ds.local_size.size())
+    {
+      at.extend_to(p.nextLoc());
+      p.fatalAt(at, "global and local sizes have different dimensions");
     }
     p.consume(RANGLE);
   } // end dimension part <...>
@@ -883,6 +970,7 @@ static dispatch_spec *parseDispatchStatement(parser &p, script &s)
   // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
   //                                               ^^^^^^^^^^^^^^^^^^^^^^
   parseDispatchStatementWhereClause(p,s,*ds,nullptr);
+  ds->defined_at.extend_to(p.nextLoc());
 
   return ds;
 }

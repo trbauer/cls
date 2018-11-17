@@ -238,6 +238,8 @@ namespace cls
     bool print_pre = false, print_post = false;
     // e.g. :p16 means 16 elements per row
     int print_pre_elems_per_row = 0, print_post_elems_per_row = 0;
+    // :S save after (edits extension)
+    bool save_post = false;
 
     init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
 
@@ -365,29 +367,48 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
 
-  // image<rgba>(...);
+  // image<CHORD,CHDAT,DIMS>(...);
+  //
+  // DIM = WIDTH (ROW_PITCH)? x HEIGHT (SLICE_PITCH?) x DEPTH
+  //
+  // e.g. image<rgba,f32,1024x768>('file.ppm')
+  // e.g. image<rgba,f32, 1024(1200*4*4) x 768>('file.bmp')
+  //                          ^^^^^^^^^^ pitches are in bytes
+  // e.g. image<rgba,f32, 1024(4*4*1200) x 768>('file.bmp')
+  //                          ^^^^^^^^^^ pitches are in bytes
+  // e.g. image<rgb,f16, 1024x768(3*2*1024*800)>('file.bmp')
+  //                             ^^^^^^^^^^^^^^ pitches are in bytes
+  // e.g. image<rgb,u8>('file.ppm') // image dimensions are inferred from file
+  //
+  // e.g. image<rgb,u8,1024x760>    // empty image
   struct init_spec_image : init_spec_atom {
     std::string         path;
-    enum channel_order {INVALID_CO=0,R,RG,RGB,RGBA} corder;
-    enum channel_type {INVALID_CT=0,UINT8,FLOAT,HALF} ctype;
+    enum channel_order {INVALID_CO=0,R,RG,RGB,RGBA} ch_order;
+    enum channel_type {INVALID_CT=0,U8,F32,F16} ch_data_type;
     init_spec_atom     *width;
+    init_spec_atom     *row_pitch;
     init_spec_atom     *height;
-    init_spec_atom     *pitch;
+    init_spec_atom     *slice_pitch;
+    init_spec_atom     *depth;
     init_spec_image(
       loc loc,
       std::string _path,
       channel_order ord,
       channel_type ty,
       init_spec_atom *_width,
+      init_spec_atom *_row_pitch,
       init_spec_atom *_height,
-      init_spec_atom *_pitch)
+      init_spec_atom *_slice_pitch,
+      init_spec_atom *_depth)
       : init_spec_atom(loc, IS_IMG)
       , path(_path)
-      , corder(ord)
-      , ctype(ty)
+      , ch_order(ord)
+      , ch_data_type(ty)
       , width(_width)
+      , row_pitch(_row_pitch)
       , height(_height)
-      , pitch(_pitch)
+      , slice_pitch(_slice_pitch)
+      , depth(_depth)
     { }
     void str(std::ostream &os, format_opts fopts) const;
   };
@@ -506,10 +527,8 @@ namespace cls
   };
   struct dispatch_spec : statement_spec {
     refable<kernel_spec>                                kernel;
-    ndr                                                 global_size;
-    loc                                                 global_size_loc;
-    ndr                                                 local_size;
-    loc                                                 local_size_loc;
+    std::vector<init_spec_atom*>                        global_size;
+    std::vector<init_spec_atom*>                        local_size;
     std::vector<refable<init_spec>>                     arguments;
     std::vector<std::tuple<std::string,init_spec*>>     where_bindings;
 

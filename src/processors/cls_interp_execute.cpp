@@ -278,18 +278,39 @@ static void fill_buffer_seq(
   }
 }
 
+static void saveImage(
+  loc at,
+  compiled_script_impl *csi,
+  const surface_object *so,
+  size_t row_pitch,
+  size_t slice_pitch,
+  const void *bits)
+{
+  csi->fatalAt(at, "image saving via attribute not implemented yet");
+}
+static void saveBuffer(
+  loc at,
+  compiled_script_impl *csi,
+  const surface_object *so,
+  const void *bits)
+{
+  csi->fatalAt(at, "buffer saving via attribute not implemented yet");
+}
+
 void compiled_script_impl::execute(dispatch_command &dc)
 {
   cl_command_queue queue = (*dc.dobj->queue)();
   cl_kernel kernel = (*dc.kernel->kernel)();
-  loc dc_at = dc.dobj->spec->defined_at;
+  loc dc_at = dc.spec->defined_at;
 
   auto printSurfaces = [&] (bool is_pre) {
     for (const auto &sinfo : dc.surfaces) {
       const surface_object *so = std::get<0>(sinfo);
       if (is_pre && so->spec->print_pre ||
-        !is_pre && so->spec->print_post)
+        !is_pre && (so->spec->print_post || so->spec->save_post))
       {
+        bool is_print = so->spec->print_pre || so->spec->print_post;
+        bool is_image = so->skind == surface_object::SO_IMAGE;
         const type &t = std::get<1>(sinfo);
         const arg_info &ai = std::get<2>(sinfo);
         const loc &at = std::get<3>(sinfo);
@@ -301,18 +322,39 @@ void compiled_script_impl::execute(dispatch_command &dc)
           so->spec->print_pre_elems_per_row :
           so->spec->print_post_elems_per_row;
 
-        withBufferMapRead(
-          at,
-          so,
-          [&] (const void *host_ptr) {
-            formatBuffer(
-              std::cout,
-              host_ptr,
-              so->size_in_bytes,
-              t,
-              elems_per_row);
-            std::cout << "\n";
+        if (is_image) {
+          withImageMapRead(
+            at,
+            so,
+            [&] (size_t row_pitch, size_t slice_pitch, const void *host_ptr)
+          {
+            if (is_print) {
+              fatalAt(dc.spec->defined_at,
+                "image printing not supported (:p or :P)");
+            } else {
+              saveImage(
+                dc.spec->defined_at,
+                this, so, row_pitch, slice_pitch, host_ptr);
+            }
           });
+        } else {
+          withBufferMapRead(
+            at,
+            so,
+            [&] (const void *host_ptr) {
+              if (so->spec->print_post) {
+                formatBuffer(
+                  std::cout,
+                  host_ptr,
+                  so->size_in_bytes,
+                  t,
+                  elems_per_row);
+                std::cout << "\n";
+              } else { // so->spec->save_post
+                saveBuffer(dc.spec->defined_at, this, so, host_ptr);
+              }
+            });
+        }
       }
     }
   };
@@ -478,7 +520,7 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 {
   evaluator::context ec;
   if (prc.so && !prc.so->dispatch_uses.empty())
-    ec.sizeof_pointer = 
+    ec.sizeof_pointer =
       std::get<0>(prc.so->dispatch_uses.front())->dobj->pointer_size;
 
   const type *elem_type = prc.element_type;
@@ -570,8 +612,43 @@ void cl_fatal_handler::withBufferMapWrite(
       nullptr);
 }
 
+void cl_fatal_handler::withImageMapRead(
+  const loc &at,
+  const surface_object *so,
+  image_reader apply)
+{
+  void *host_ptr;
+  size_t origin[3]{0};
+  size_t region[3];
+  region[0] = so->image_desc.image_width;
+  region[1] = so->image_desc.image_height;
+  region[2] = so->image_desc.image_depth;
+  size_t row_pitch = 0, slice_pitch = 0;
+  CL_COMMAND_CREATE(host_ptr,at,
+    clEnqueueMapImage,
+    so->queue,
+    so->memobj,
+    CL_BLOCKING,
+    CL_MAP_READ,
+    origin,
+    region,
+    &row_pitch,
+    &slice_pitch,
+    0,nullptr,nullptr);
 
-void compiled_script_impl::init_surfaces()
+  apply(row_pitch,slice_pitch,host_ptr);
+
+  CL_COMMAND(at,
+    clEnqueueUnmapMemObject,
+      so->queue,
+      so->memobj,
+      host_ptr,
+      0,
+      nullptr,
+      nullptr);
+}
+
+  void compiled_script_impl::init_surfaces()
 {
   for (surface_object *so : surfaces) {
     if (so->dummy_object)

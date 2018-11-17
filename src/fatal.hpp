@@ -18,7 +18,7 @@ namespace cls
 {
   struct loc {
     uint32_t line, column, offset, extent;
-    loc() {}
+    constexpr loc() : line(0), column(0), offset(0), extent(0) {}
     constexpr loc(uint32_t ln, uint32_t col, uint32_t off, uint32_t len)
       : line(ln), column(col), offset(off), extent(len) { }
 
@@ -28,12 +28,8 @@ namespace cls
       return ss.str();
     }
 
-    void extend_to(loc end) {
-      extent = end.offset - offset;
-    }
-    void extend_past(loc end) {
-      extent = end.offset - offset + end.extent;
-    }
+    void extend_to(loc end) {extent = end.offset - offset;}
+    void extend_past(loc end) {extent = end.offset - offset + end.extent;}
   }; // loc
 
   void formatMessageWithContextImpl(

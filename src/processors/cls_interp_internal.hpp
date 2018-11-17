@@ -89,6 +89,10 @@ struct surface_object {
   int                       memobj_index;
   cl_command_queue          queue = nullptr;
 
+  // only non-zero if it's an image
+  cl_image_format           image_format{0};
+  cl_image_desc             image_desc{0};
+
   // e.g. if it's used in a diff command only diff(seq(1,2):w,...)
   bool                      dummy_object = false;
 
@@ -145,8 +149,6 @@ struct dispatch_command {
   dispatch_command(const dispatch_spec *_spec, kernel_object *_kernel)
     : spec(_spec), kernel(_kernel)
     , dobj(_kernel->program->device)
-    , global_size(spec->global_size)
-    , local_size(spec->local_size)
   {
   }
 
@@ -213,6 +215,7 @@ struct mapped_objects {
 };
 
 using buffer_reader = std::function<void(const void *)>;
+using image_reader = std::function<void(size_t, size_t,const void *)>;
 using buffer_writer = std::function<void(void *)>;
 
 // e.g. CL_COMMAND(spec->defined_at,clEnqueueNDRange,...)
@@ -242,6 +245,11 @@ struct cl_fatal_handler : fatal_handler {
     const loc &at,
     const surface_object *so,
     buffer_reader apply);
+  void withImageMapRead(
+    const loc &at,
+    const surface_object *so,
+    image_reader apply);
+
   void withBufferMapWrite(
     const loc &at,
     surface_object *so,
@@ -412,15 +420,15 @@ struct evaluator : interp_fatal_handler {
     const ndr &global_size;
     const ndr &local_size;
     context(
-      size_t sizeof_ptr, 
-      const ndr &gs, const ndr &ls, 
+      size_t sizeof_ptr,
+      const ndr &gs, const ndr &ls,
       std::stringstream *dss = nullptr)
       : sizeof_pointer(sizeof_ptr)
       , global_size(gs), local_size(ls)
       , debug_stream(dss) { }
     context() : context(0, ndr(),ndr()) { }
-    context(const dispatch_command &dc, std::stringstream *dss = nullptr) 
-      : context(dc.dobj->pointer_size, dc.global_size, dc.local_size, dss) 
+    context(const dispatch_command &dc, std::stringstream *dss = nullptr)
+      : context(dc.pointer_size(), dc.global_size, dc.local_size, dss)
     {
     }
 

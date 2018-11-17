@@ -81,6 +81,13 @@ run as = do
   parseOpts as dft_opts >>= runWithOpts
 
 
+-- dimensionParsing: have get_global_id(0) write out get_global_size, get_local_size
+--   <1024>
+--   <1024x768>
+--   <1024,32>
+--   <1024x768,32x1>
+
+
 runWithOpts :: Opts -> IO ()
 runWithOpts os = run_tests >> print_summary >> exit
   where run_tests = do
@@ -90,11 +97,12 @@ runWithOpts os = run_tests >> print_summary >> exit
           ---------------------
           -- not a portable test
           --   runProgramBinariesTest os
-
           --
           -- ATOM ARG SETTERS
           runInitAtomTests os
           --
+          -- DIMENSIONS
+          runDimensionTests os
           --
           -- MUTABILITY
           runSequentialAddTest os "int" ["1","3","-2"] "2"
@@ -161,6 +169,49 @@ runWithOpts os = run_tests >> print_summary >> exit
           if total == passed then exitSuccess
             else exitFailure
 
+runDimensionTests :: Opts -> IO ()
+runDimensionTests os = do
+  let runOne :: String -> [Int] -> [Int] -> IO ()
+      runOne dims expect_gs expect_ls = do
+        let mkDiffStatement sym ds0
+              | null ds0 = ""
+              | otherwise = "diff({" ++ intercalate "," (map show ds_padded) ++ "}," ++ sym ++ ")\n"
+              where ds_padded = ds0 ++ replicate (3 - length ds0) 1 ++ [0] -- e.g. [256] -> [256,1,1,0]
+        let script :: String
+            script =
+              "let G=0:w\n" ++
+              "let L=0:w\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/dims.cl`dims" ++ dims ++ "(G,L)\n" ++
+              mkDiffStatement "G" expect_gs ++
+              mkDiffStatement "L" expect_ls ++
+              ""
+        runScript os ("testing dimension syntax: " ++ dims) (mShouldExit 0) script
+
+  runOne "<1024>"                       [1024] []
+  runOne "<2*512>"                      [1024] []
+  runOne "<1024,nullptr>"               [1024] []
+  runOne "<1024,NULL>"                  [1024] []
+  runOne "<1024,32>"                    [1024] [32]
+  runOne "<1024,2*16>"                  [1024] [32]
+  runOne "<1024,min(g.x/16,128)>"       [1024] [64]
+  --
+  runOne "<1024x64>"                    [1024,64] []
+  runOne "<1024 x 64>"                  [1024,64] []
+  runOne "<1024 x64>"                   [1024,64] []
+  runOne "<1024x 64>"                   [1024,64] []
+  runOne "<1024x(g.x/256)>"             [1024,4]  []
+  runOne "<(1024)x (2*32)>"             [1024,64] []
+  runOne "<1024x64,32x1>"               [1024,64] [32,1]
+  runOne "<1024x64,(g.x/256)x(g.y/4)>"  [1024,64] [4,16]
+  --
+  runOne "<1024x16x4>"                  [1024,16,4] []
+  runOne "<1024x16 x4>"                 [1024,16,4] []
+  runOne "<1024x16x 4>"                 [1024,16,4] []
+  runOne "<1024x16 x 4>"                [1024,16,4] []
+  runOne "<1024x16x(4)>"                [1024,16,4] []
+  runOne "<1024x16 x(4)>"               [1024,16,4] []
+  runOne "<1024x16x4,16x2x2>"           [1024,16,4] [16,2,2]
+  runOne "<1024x16x4,16x(2*2)x1>"       [1024,16,4] [16,4,1]
 
 
 -- tests evaluators (kernel arg evaluates)

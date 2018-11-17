@@ -370,8 +370,8 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         bin_ext = "ptx";
       else // INTC AMD are usually ELF format
         bin_ext = "bin";
-      auto bin_path = 
-        std::string(".") + 
+      auto bin_path =
+        std::string(".") +
         sys::path_separator +
         sys::replace_extension(ps->path,bin_ext);
 
@@ -677,11 +677,23 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
   kernel_object &ko = compileKernel(ds->kernel);
   dispatch_command &dc = csi->dispatches.emplace_back(ds,ds,&ko);
 
-  if (ds->local_size.rank() > 0 && ds->global_size.rank() != ds->local_size.rank()) {
-    fatalAt(ds->local_size_loc,
-      "local rank doesn't match global rank (dimensions)");
+  evaluator e(csi);
+  if (ds->global_size.size() > 3)
+    fatalAt(ds->defined_at,"dimension must be <= 3");
+  dc.global_size.num_dims = ds->global_size.size();
+
+  for (size_t i = 0; i < ds->global_size.size(); i++) {
+    // later iterations will see the value of earlier iterations
+    // => we can support something like <1024x(g.x/2)x(g.x*g.y/4)>
+    //    pretty awesome!
+    evaluator::context ec(dc);
+    // ec holds const references, but that isn't seeing the updates
+    // so we rebuild it ec within each loop
+    dc.global_size.dims[i] =
+      (size_t)e.evalTo<size_t>(ec,ds->global_size[i]).u64;
   }
-  if (ds->local_size.rank() != 0) {
+  if (ds->local_size.empty()) {
+    // use the required workgroup size
     const size_t *rqsz = ko.kernel_info->reqd_word_group_size;
     if (rqsz[0] != 0 && rqsz[1] != 0 && rqsz[2] != 0) {
       switch (dc.global_size.rank()) {
@@ -689,6 +701,17 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
       case 2: dc.local_size = ndr(rqsz[0],rqsz[1]);         break;
       case 3: dc.local_size = ndr(rqsz[0],rqsz[1],rqsz[2]); break;
       }
+    }
+  } else {
+    // have to do the locals too
+    dc.local_size.num_dims = ds->local_size.size();
+    for (size_t i = 0; i < ds->local_size.size(); i++) {
+      // similar to global, later dimension can reference earlier ones
+      // but also we can reference global as well
+      //  <...,clamp(g.x/1024,32,256)>
+      evaluator::context ec(dc);
+      dc.local_size.dims[i] =
+        (size_t)e.evalTo<size_t>(ec,ds->local_size[i]).u64;
     }
   }
 }

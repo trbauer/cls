@@ -32,7 +32,7 @@ namespace cls {
       : lexeme(lxm), loc(ln, cl, off, len) { }
   };
 
-  // These have to be functions for some reason unknown to me 
+  // These have to be functions for some reason unknown to me
   // (MinGW GCC 7.2 rejects as method, VS 2017 accepts)
   //
   // I was using I tokenString() within the body.

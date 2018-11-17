@@ -524,7 +524,7 @@ void init_spec_file::str(std::ostream &os, format_opts fopts) const
 void init_spec_image::str(std::ostream &os, format_opts fopts) const
 {
   os << "image<";
-  switch (corder) {
+  switch (ch_order) {
   case channel_order::R:    os << "r"; break;
   case channel_order::RG:   os << "rg"; break;
   case channel_order::RGB:  os << "rgb"; break;
@@ -532,22 +532,37 @@ void init_spec_image::str(std::ostream &os, format_opts fopts) const
   default: os << "?";
   }
   os << ",";
-  switch (ctype) {
-  case channel_type::UINT8: os << "u8"; break;
-  case channel_type::FLOAT: os << "f32"; break;
-  case channel_type::HALF:  os << "f16"; break;
+  switch (ch_data_type) {
+  case channel_type::U8: os << "u8"; break;
+  case channel_type::F32: os << "f32"; break;
+  case channel_type::F16:  os << "f16"; break;
   default: os << "?";
-  } 
-  os << ","; width->str(os, fopts);
-  os << ","; height->str(os, fopts);
-  if (pitch != nullptr) {
-    os << ","; 
-    pitch->str(os, fopts);
   }
-  os << ">(";
+  if (width) {
+    os << ",";
+    width->str(os, fopts);
+    if (row_pitch != nullptr) {
+      os << "[";
+      row_pitch->str(os, fopts);
+      os << "]";
+    }
+    if (height) {
+      os << " x ";
+      height->str(os, fopts);
+      if (slice_pitch != nullptr) {
+        os << " [";
+        slice_pitch->str(os, fopts);
+        os << "]";
+      }
+      if (depth) {
+        os << " x ";
+        depth->str(os, fopts);
+      }
+    }
+  }
+  os << ">";
   if (!path.empty())
-    os << "\"" << path << "\"";
-  os << ")";
+    os << "(\"" << path << "\")";
 }
 
 
@@ -823,10 +838,18 @@ size_t ndr::product() const {
 void dispatch_spec::str(std::ostream &os, format_opts fopts) const {
   kernel.str(os,fopts);
   os << "<";
-  global_size.str(os);
-  if (local_size.rank() > 0) {
+  for (size_t i = 0; i < global_size.size(); i++) {
+    if (i > 0)
+      os << "x";
+    global_size[i]->str(os, fopts);
+  }
+  if (local_size.size() > 0) {
     os << ",";
-    local_size.str(os);
+    for (size_t i = 0; i < local_size.size(); i++) {
+      if (i > 0)
+        os << "x";
+      local_size[i]->str(os, fopts);
+    }
   }
   os << ">";
   os << "(";

@@ -382,11 +382,11 @@ void listDeviceInfoForDevice(
 #endif
 
   // This was really sexy until I tried to support GCC
-  // I had a cool overloading trick with __VA_ARGS__, but GCC 
+  // I had a cool overloading trick with __VA_ARGS__, but GCC
   // requires a non-empty __VA_ARGS__ (probably more legit)
   //   DEVICE_INFO("foo",cl_int,"ns");
   //   DEVICE_INFO("foo",cl_int);
-  //                     ^^ doesn't work on GNU since __VA_ARGS__ 
+  //                     ^^ doesn't work on GNU since __VA_ARGS__
   //                        must capture something and we need cl_int bound
   //                        to a macro arg so we can use it as template arg
 #define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
