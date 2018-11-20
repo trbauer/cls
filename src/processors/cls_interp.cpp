@@ -220,7 +220,7 @@ void evaluator::setKernelArgBuffer(
   size_t buffer_size = 0;
   if (ism->dimension) {
     evaluator::context ec(dc);
-    buffer_size = evalTo<size_t>(ec, ism->dimension).u64;
+    buffer_size = (size_t)evalTo<size_t>(ec, ism->dimension).u64;
   } else {
     buffer_size = dc.global_size.product()*elem_type.size();
   }
@@ -651,12 +651,47 @@ void evaluator::setKernelArgImage(
         fatalAt(ism->defined_at, "file not found");
     }
     auto ext = sys::take_extension(isi->path);
-    if (ext == ".ppm" || ext == ".bmp") {
+    if (ext == ".dat") { // raw
+      if (img_width == 0)
+        fatalAt(ism->defined_at, "raw image data requires explicit dimensions");
+      // this doesn't take into account pitch or anything...
+      size_t total_pixels = img_width;
+      if (img_height)
+        total_pixels *= img_height;
+      if (img_depth)
+        total_pixels *= img_depth;
+
+      auto binary = sys::read_file_binary(isi->path);
+      if (total_pixels*channels_per_pixel*bytes_per_channel != binary.size()) {
+        fatalAt(ism->defined_at,
+          "raw image file is wrong size for given image dimensions");
+      }
+      image_arg_data = malloc(binary.size());
+      memcpy(image_arg_data, binary.data(), binary.size());
+    } else {
       image *img = nullptr;
-      if (ext == ".ppm")
+      if (ext == ".ppm" || ext == ".pp3" || ext == ".pp6") {
         img = image::load_ppm(isi->path.c_str(),false);
-      else
+#ifdef IMAGE_HPP_SUPPORTS_PNG
+      } else if (ext == ".png") {
+        img = image::load_png(isi->path.c_str(),false);
+#endif
+#ifdef IMAGE_HPP_SUPPORTS_BMP
+      } else if (ext == ".bmp") {
         img = image::load_bmp(isi->path.c_str(),false);
+#endif
+      } else {
+        std::stringstream msg;
+        msg << "invalid file type for image;  the following are supported: ";
+        msg << ".dat (raw bits), .ppm";
+#ifdef IMAGE_HPP_SUPPORTS_PNG
+        msg << ", .png";
+#endif
+#ifdef IMAGE_HPP_SUPPORTS_BMP
+        msg << ", .bmp";
+#endif
+        fatalAt(ism->defined_at,msg.str());
+      }
 
       if (!img)
         fatalAt(isi->defined_at, "failed to load image");
@@ -714,28 +749,7 @@ void evaluator::setKernelArgImage(
       image_arg_data = malloc(size_bytes);
       memcpy(image_arg_data, icvt.bits, size_bytes);
       delete img;
-    } else if (ext == ".dat") { // raw
-      if (img_width == 0)
-        fatalAt(ism->defined_at, "raw image data requires explicit dimensions");
-      // this doesn't take into account pitch or anything...
-      size_t total_pixels = img_width;
-      if (img_height)
-        total_pixels *= img_height;
-      if (img_depth)
-        total_pixels *= img_depth;
-
-      auto binary = sys::read_file_binary(isi->path);
-      if (total_pixels*channels_per_pixel*bytes_per_channel != binary.size()) {
-        fatalAt(ism->defined_at,
-          "raw image file is wrong size for given image dimensions");
-      }
-      image_arg_data = malloc(binary.size());
-      memcpy(image_arg_data, binary.data(), binary.size());
-    } else {
-      fatalAt(ism->defined_at,
-        "unrecognized file type for image "
-        "(.ppm, .bmp, and .dat are supported)");
-    }
+    } // not .dat (some image format)
   } // has init file
 
   switch (tbi.skind) {
@@ -834,7 +848,8 @@ void evaluator::setKernelArgImage(
 
   if (ism->dimension) {
     evaluator::context ec(dc);
-    size_t explicit_image_size = evalTo<size_t>(ec, ism->dimension).u64;
+    size_t explicit_image_size =
+      (size_t)evalTo<size_t>(ec, ism->dimension).u64;
     if (explicit_image_size < image_size_bytes)
       fatalAt(ism->defined_at, "image size is smaller than minimal size");
   }

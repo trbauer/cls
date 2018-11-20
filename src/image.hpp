@@ -2,8 +2,11 @@
 #define IMAGE_HPP
 
 #ifdef _WIN32
-// TODO: we could support this on Unix if we made custom BITMAPINFOHEADER
+// TODO: we could support this on Unix if we made custom BITMAPINFOHEADER, etc...
 #define IMAGE_HPP_SUPPORTS_BMP
+#endif
+#ifdef USE_LODE_PNG
+#define IMAGE_HPP_SUPPORTS_PNG
 #endif
 
 #include <cstdint>
@@ -44,7 +47,10 @@ struct image {
   static image *load_bmp(const char *file, bool fatal_if_error = false);
   void save_bmp(const char *file) const;
 #endif
-
+#ifdef IMAGE_HPP_SUPPORTS_PNG
+  static image *load_png(const char *file, bool fatal_if_error = false);
+  void save_png(const char *file) const;
+#endif
 
   image();
   image(size_t w, size_t h, enum data_format f);

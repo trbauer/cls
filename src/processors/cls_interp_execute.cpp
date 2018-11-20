@@ -353,8 +353,15 @@ static void saveImage(
       img_row_pitch);
   }
   img.save_ppm(ss.str().c_str(),so->size_in_bytes > 1024);
-  auto bmp_file = sys::drop_extension(ss.str()) + ".bmp";
-  img.save_bmp(bmp_file.c_str());
+#if 0
+  // for debugging
+#ifdef IMAGE_HPP_SUPPORTS_BMP
+  img.save_bmp((sys::drop_extension(ss.str()) + ".bmp").c_str());
+#endif
+#ifdef IMAGE_HPP_SUPPORTS_PNG
+  img.save_png((sys::drop_extension(ss.str()) + ".png").c_str());
+#endif
+#endif
 }
 static void saveBuffer(
   loc at,

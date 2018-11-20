@@ -1,5 +1,9 @@
 #include "image.hpp"
 #include "system.hpp"
+#ifdef USE_LODE_PNG
+// up from src and in deps
+#include "../deps/lodepng/lodepng.h"
+#endif
 
 #include <Windows.h>
 // #include <Wincodec.h>
@@ -306,17 +310,57 @@ void image::save_ppm(const char *file, bool use_binary)
 
 
 #ifdef IMAGE_HPP_SUPPORTS_BMP
+// TODO: Enable cross platform by replacing names below.
+//       Some testing should be done (hence, why I don't do it now).
+//
+// for cross platform
+struct bitmap_info_header {
+  uint32_t   biSize;
+  long       biWidth;
+  long       biHeight;
+  uint16_t   biPlanes;
+  uint16_t   biBitCount;
+  uint32_t   biCompression;
+  uint32_t   biSizeImage;
+  long       biXPelsPerMeter;
+  long       biYPelsPerMeter;
+  uint32_t   biClrUsed;
+  uint32_t   biClrImportant;
+};
+// static_assert(sizeof(bitmap_info_header) == sizeof(BITMAPINFOHEADER));
+#pragma pack(push,2)
+struct bitmap_file_header {
+  uint16_t   bfType;
+  uint32_t   bfSize;
+  uint16_t   bfReserved1;
+  uint16_t   bfReserved2;
+  uint32_t   bfOffBits;
+};
+#pragma pack(pop)
+// static_assert(sizeof(bitmap_file_header) == sizeof(BITMAPFILEHEADER));
+// static_assert(offsetof(bitmap_file_header,bfSize) == offsetof(BITMAPFILEHEADER,bfSize));
+struct bitmap_info {
+  bitmap_info_header    bmiHeader;
+  struct {
+    uint8_t    rgbBlue;
+    uint8_t    rgbGreen;
+    uint8_t    rgbRed;
+    uint8_t    rgbReserved;
+  } bmiColors[1];
+};
+// static_assert(sizeof(bitmap_info) == sizeof(BITMAPINFO));
+
 static void write_bmp_info_header(
   const image &img, BITMAPINFOHEADER &bih)
 {
-  const size_t row_bytes = sys::align_round_up<size_t>(3 * img.width, 4);
+  const size_t row_pitch = sys::align_round_up<size_t>(3 * img.width, 4);
   bih.biSize = sizeof(bih);
-  bih.biWidth = (LONG)img.width;
-  bih.biHeight = (LONG)img.height;
+  bih.biWidth = (long)img.width;
+  bih.biHeight = (long)img.height;
   bih.biPlanes = 1;
   bih.biBitCount = 24; // BGR
   bih.biCompression = 0;
-  bih.biSizeImage = (DWORD)(row_bytes * img.height);
+  bih.biSizeImage = (unsigned long)(row_pitch * img.height);
   bih.biXPelsPerMeter = bih.biYPelsPerMeter = 0;
   bih.biClrUsed = 0;
   bih.biClrImportant = 0;
@@ -325,18 +369,31 @@ static void write_bmp_info_header(
 // creates and passes the out_size back
 static void *create_bmp_image_data(const image &img, size_t &out_size)
 {
-  const size_t row_bytes = sys::align_round_up<size_t>(3 * img.width, 4);
+  const size_t row_pitch = sys::align_round_up<size_t>(3 * img.width, 4);
   static const char zeros[4] = { 0, 0, 0, 0 };
   const uint8_t *img_bits = img.bits;
   const size_t pitch_slack =
     img.pitch - image::bytes_per_pixel(img.format) * img.width;
-  out_size = img.height * row_bytes; // (3 * img.width + out_row_slack);
+  out_size = img.height * row_pitch; // (3 * img.width + out_row_slack);
   uint8_t *obuf_base = new uint8_t[out_size];
   // bitmaps reverse the row-order
   for (size_t y = 1; y <= img.height; y++) {
-    uint8_t *orow = obuf_base + row_bytes * (img.height - y);
+    uint8_t *orow = obuf_base + row_pitch * (img.height - y);
     for (size_t x = 0; x < img.width; x++) {
       uint8_t r, g, b;
+      // we force this version here
+      if (img.format == image::BGR) {
+        b = *img_bits++;
+        g = *img_bits++;
+        r = *img_bits++;
+      } else {
+        FATAL("create_bmp_image_data: invalid format");
+      }
+#if 0
+      // Got rid of this because I kept adding formats and needed a uniform
+      // approach.  From now on, the caller just converts to BGR for us
+      //
+      // E.g. BGRA won't work below.
       if (img.format == image::I) {
         r = g = b = *img_bits++;
       } else if (img.format == image::RGB) {
@@ -360,14 +417,15 @@ static void *create_bmp_image_data(const image &img, size_t &out_size)
       } else {
         FATAL("create_bmp_image_data: invalid format");
       }
+#endif
       // TODO: support intensity images?
       // copy out in BGR
       *orow++ = b;
       *orow++ = g;
       *orow++ = r;
     }
-    // row sizes must be multiple of 4
-    for (size_t i = 0; i < row_bytes - 3 * img.width; i++)
+    // set the row pitch slack to 0
+    for (size_t i = 0; i < row_pitch - 3 * img.width; i++)
       *orow++ = 0;
 
     // skip over image pitch slack
@@ -376,8 +434,13 @@ static void *create_bmp_image_data(const image &img, size_t &out_size)
   return obuf_base;
 }
 
+
 void image::save_bmp(const char *file_name) const
 {
+  if (format != data_format::BGR) {
+    convert(data_format::BGR).save_bmp(file_name);
+    return;
+  }
   // We skip the bmiColors table since we don't use it.
   // Hence we just store a BITMAPINFOHEADER and ignore the color
   // table (included if we correctly used BITMAPINFO)
@@ -448,19 +511,17 @@ image *image::load_bmp(const char *file_name, bool fatal_if_error)
 
   const size_t W = bih.biWidth;
   const size_t H = bih.biHeight;
-  const enum data_format default_format = image::RGB;
-  const size_t bytes_per_px = image::bytes_per_pixel(default_format);
-  const size_t row_bytes = sys::align_round_up<size_t>(3 * W, 4);
+  const size_t row_pitch = sys::align_round_up<size_t>(3 * W, 4);
   const uint8_t* bitmap_bits =
     (const uint8_t *)&buffer[bfh.bfOffBits];
 
-  image *img = new image(W, H, default_format);
+  image *img = new image(W, H, image::RGB);
   size_t pitch_slack = img->pitch - 3 * img->width;
   uint8_t *imgbits = img->bits;
   // Bitmaps put rows in reverse order.  Hence, row[0] is really row[h - 1].
   // We simply read the rows out backwards to fix this.
   for (size_t y = 1; y <= H; y++) {
-    const uint8_t *row_bits = bitmap_bits + (H - y) * row_bytes;
+    const uint8_t *row_bits = bitmap_bits + (H - y) * row_pitch;
     for (size_t x = 0; x < W; x++) {
       uint8_t b = *row_bits++;
       uint8_t g = *row_bits++;
@@ -477,6 +538,40 @@ image *image::load_bmp(const char *file_name, bool fatal_if_error)
   return img;
 }
 #endif
+
+#ifdef USE_LODE_PNG
+image *image::load_png(const char *file, bool fatal_if_error)
+{
+  std::vector<unsigned char> bits; //the raw pixels
+  unsigned width = 0, height = 0;
+  auto err = lodepng::decode(bits, width, height, file);
+  if (err) {
+    auto err_str = lodepng_error_text(err);
+    if (fatal_if_error)
+      FATAL("%s: failed to decode PNG: %s",file,err_str);
+    else
+      return nullptr;
+  }
+  // the pixels are now in the vector "image", 4 bytes per pixel RGBARGBA....
+  image *i = new image(width, height, data_format::RGBA);
+  if (!bits.empty())
+    memcpy(i->bits, bits.data(), 4*width*height);
+  return i;
+}
+void image::save_png(const char *file) const
+{
+  if (format != data_format::RGBA || pitch != 4*width) {
+    convert(data_format::RGBA).save_png(file);
+    return;
+  }
+  auto err =
+    lodepng_encode32_file(file, bits, (unsigned)width, (unsigned)height);
+  if (err) {
+    FATAL("%s: failed to write PNG (%s)",file,lodepng_error_text(err));
+  }
+}
+#endif
+
 
 void image::resize(
   size_t new_width,
