@@ -143,6 +143,9 @@ runWithOpts os = run_tests >> print_summary >> exit
           -- SLM
           runSlmDynamicTest os
           runSlmStaticTest os
+          --
+          -- IMAGE
+          runImageTests os
 
           --
           -- TODO: random<> init
@@ -171,6 +174,19 @@ runWithOpts os = run_tests >> print_summary >> exit
 
 runDimensionTests :: Opts -> IO ()
 runDimensionTests os = do
+  let runNegative :: String -> IO ()
+      runNegative dims = do
+        let script :: String
+            script =
+              "let G=0:w\n" ++
+              "let L=0:w\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/dims.cl`dims" ++ dims ++ "(G,L)\n"
+        runScript os ("testing dimension syntax (negative): " ++ dims) (mShouldExit 1) script
+  runNegative "<1x>"
+  runNegative "<1024x16xDSF>"
+  runNegative "<-4>"
+  runNegative "<1024,-4>"
+  --
   let runOne :: String -> [Int] -> [Int] -> IO ()
       runOne dims expect_gs expect_ls = do
         let mkDiffStatement sym ds0
@@ -186,23 +202,23 @@ runDimensionTests os = do
               mkDiffStatement "L" expect_ls ++
               ""
         runScript os ("testing dimension syntax: " ++ dims) (mShouldExit 0) script
-
-  runOne "<1024>"                       [1024] []
-  runOne "<2*512>"                      [1024] []
-  runOne "<1024,nullptr>"               [1024] []
-  runOne "<1024,NULL>"                  [1024] []
-  runOne "<1024,32>"                    [1024] [32]
-  runOne "<1024,2*16>"                  [1024] [32]
-  runOne "<1024,min(g.x/16,128)>"       [1024] [64]
   --
-  runOne "<1024x64>"                    [1024,64] []
-  runOne "<1024 x 64>"                  [1024,64] []
-  runOne "<1024 x64>"                   [1024,64] []
-  runOne "<1024x 64>"                   [1024,64] []
-  runOne "<1024x(g.x/256)>"             [1024,4]  []
-  runOne "<(1024)x (2*32)>"             [1024,64] []
-  runOne "<1024x64,32x1>"               [1024,64] [32,1]
-  runOne "<1024x64,(g.x/256)x(g.y/4)>"  [1024,64] [4,16]
+  runOne "<1024>"                       [1024]      []
+  runOne "<2*512>"                      [1024]      []
+  runOne "<1024,nullptr>"               [1024]      []
+  runOne "<1024,NULL>"                  [1024]      []
+  runOne "<1024,32>"                    [1024]      [32]
+  runOne "<1024,2*16>"                  [1024]      [32]
+  runOne "<1024,min(g.x/16,128)>"       [1024]      [64]
+  --
+  runOne "<1024x64>"                    [1024,64]   []
+  runOne "<1024 x 64>"                  [1024,64]   []
+  runOne "<1024 x64>"                   [1024,64]   []
+  runOne "<1024x 64>"                   [1024,64]   []
+  runOne "<1024x(g.x/256)>"             [1024, 4]   []
+  runOne "<(1024)x (2*32)>"             [1024,64]   []
+  runOne "<1024x64,32x1>"               [1024,64]   [32,1]
+  runOne "<1024x64,(g.x/256)x(g.y/4)>"  [1024,64]   [4,16]
   --
   runOne "<1024x16x4>"                  [1024,16,4] []
   runOne "<1024x16 x4>"                 [1024,16,4] []
@@ -695,7 +711,7 @@ runSlmStaticTest os = do
         "print<int>(H3)\n" ++
         ""
       passed = mShouldExit 0
-  runScript os "slm dynamic allocation" passed script_s
+  runScript os "slm static allocation" passed script_s
 
 
 runSlmDynamicTest :: Opts -> IO ()
@@ -710,6 +726,32 @@ runSlmDynamicTest os = do
         ""
       passed = mShouldExit 0
   runScript os "slm dynamic allocation" passed script_d
+
+
+-------------------------------------------------------------------------------
+--
+runImageTests :: Opts -> IO ()
+runImageTests os = do
+  let script :: String
+      script =
+        "#" ++ show (oDeviceIndex os) ++ "`tests/images.cl`flip_channels<4x4>(image<rgba,un8,4x4>:Sw,image<rgba,un8>(\"tests/test_image.ppm\"):r)" ++
+        ""
+      --
+      passed =
+        mShouldExit 0 .&&.
+        mFileExists "cls-surface-00.ppm" .&&.
+        mFileHasAllLines
+          "cls-surface-00.ppm"
+          ("P3\n"++
+           "4  4\n"++
+           "255\n"++
+           "  0   0 255    0 255   0  255   0   0  192 192 192\n"++
+           "  0   0   0  255 255 255    0   0   0  255 255 255\n"++
+           "  0 255 255  255   0 255  255 255   0  128 128 128\n"++
+           "255 255 255    0   0   0  255 255 255    0   0   0")
+      --
+  runScript os "images (flip channels)" passed script
+  -- TODO: test all the formats
 
 -------------------------------------------------------------------------------
 --
@@ -824,6 +866,20 @@ combineOR m1 m2 = \ec out err -> do
 -- ensures that output has all the following lines somewhere in the output
 mHasAllLines :: String -> Matcher
 mHasAllLines = foldl (.&&.) (\_ _ _ -> mSuccess) . map mHasLine . lines
+
+mFileHasAllLines :: FilePath -> String -> Matcher
+mFileHasAllLines fp inp = \_ _ _ -> do
+  z <- doesFileExist fp
+  if not z then mFail (fp ++ ": file does not exist")
+    else do
+      -- [[String]]
+      output_file_line_words <- map words . lines <$> readFile fp
+      let checkLine [] = mSuccess
+          checkLine (ln:lns)
+            | words ln`elem`output_file_line_words = checkLine lns
+            | otherwise = mFail ("unable to find reference line in output:\n" ++ ln)
+      checkLine (lines inp)
+
 
 mHasLine :: String -> Matcher
 mHasLine ln _ out _

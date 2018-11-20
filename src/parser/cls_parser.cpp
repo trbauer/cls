@@ -31,6 +31,118 @@ static std::string consumeToChar(parser &p, const char *set)
 
 static init_spec_atom *parseInitAtom(parser &p, script &s);
 
+// 1024[1200]x768[800]x4
+//
+// similar to dimensions, but includes pitch
+static void parseImageDimensionExpressions(
+  parser &p,
+  script &s,
+  std::vector<init_spec_atom *> &dims,
+  std::vector<init_spec_atom *> &pitches)
+{
+  dims.push_back(parseInitAtom(p, s));
+  if (p.consumeIf(LBRACK)) {
+    pitches.push_back(parseInitAtom(p, s));
+    p.consume(RBRACK);
+  } else {
+    pitches.push_back(nullptr);
+  }
+  if (dims.size() == 3)
+    return; // at the end
+
+  if (p.consumeIfIdentEq("x")) {
+    // EXPR IDENT("x") ...
+    parseImageDimensionExpressions(p, s, dims, pitches);
+  } else {
+    while (p.lookingAtIdent()) {
+      if (dims.size() == 3)
+        p.fatal("syntax error in image dimension constant");
+      // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
+      //     ^^^^^^        ^^^^^             ^^^^
+      // need to split x768x3 into: "x 768 x 3"
+      loc at = p.nextLoc();
+      std::string lxm = p.tokenString();
+      p.skip();
+      if (lxm[0] != 'x') {
+        p.fatalAt(at,"syntax error in image dimensions");
+      }
+      size_t off = 0;
+      while (off < lxm.size()) {
+        if (lxm[off] != 'x') {
+          at.column += (uint32_t)off;
+          at.offset += (uint32_t)off;
+          p.fatalAt(at,"syntax error in image dimensions");
+        }
+        off++;
+        size_t end = off;
+        while (end < lxm.size() && isdigit(lxm[end]))
+          end++;
+        if (end == off) {
+          // it must be a new dimension
+          // 2048x1024x(...)
+          //          ^
+          parseImageDimensionExpressions(p, s, dims, pitches);
+          return;
+        } else {
+          // dimension is embedded in identifier
+          // 2048x1024...
+          //     ^^^^^
+          try {
+            auto val = (size_t)std::strtoull(
+              lxm.substr(off,end-off).c_str(),nullptr,10);
+            loc this_int = at;
+            this_int.column += (uint32_t)off;
+            this_int.offset += (uint32_t)off;
+            this_int.extent = (uint32_t)(end - off);
+            dims.push_back(new init_spec_int(this_int, val));
+            off = end;
+          } catch (...) {
+            at.offset += (uint32_t)off;
+            at.column += (uint32_t)off;
+            p.fatalAt(at,"syntax error in image dimensions");
+          }
+          // 2048x1024 x16x32
+          //           ^^^^
+          // 2048x1024 x16x(32)
+          //           ^^^^
+          // 2048x1024 x16
+          //           ^^^
+          // bail to the top loop and start the next token
+          // that will handle expressions or fused numbers
+          if (off == lxm.size()) {
+            if (dims.size() == 2) {
+              if (p.consumeIf(LBRACK)) {
+                pitches.push_back(parseInitAtom(p, s));
+                p.consume(RBRACK);
+              } else {
+                pitches.push_back(nullptr);
+              }
+            }
+            break;
+          }
+          // OTHERWISE
+          // we are still within the same identifier token and hoping for
+          // the next constant
+          //
+          // 2048x1024x16
+          //          ^^^
+          //   => next iteration of the innermost loop
+          //
+          // 2048x1024x(16)
+          //          ^
+          //   => next iteration of this while will break out
+          //
+          if (dims.size() == 3) {
+            at.offset += (uint32_t)off;
+            at.column += (uint32_t)off;
+            p.fatalAt(at, "syntax error in image dimensions (too many)");
+          }
+        }
+      } // while identifier
+    } // while looking at successive identifiers
+  } // if
+}
+
 static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
 {
   auto at = p.nextLoc();
@@ -182,72 +294,178 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
       } else if (id == "image") {
         p.consume(LANGLE);
         auto ord = init_spec_image::RGB;
-        if (p.consumeIfIdentEq("r") || p.consumeIfIdentEq("R")) {
+        if (p.consumeIfIdentEq("i") ||
+          p.consumeIfIdentEq("CL_INTENSITY"))
+        {
+          ord = init_spec_image::I;
+        } else if (p.consumeIfIdentEq("l") ||
+          p.consumeIfIdentEq("CL_LUMINANCE"))
+        {
+          ord = init_spec_image::L;
+        } else if (p.consumeIfIdentEq("r") ||
+          p.consumeIfIdentEq("CL_R"))
+        {
           ord = init_spec_image::R;
-        } else if (p.consumeIfIdentEq("rg") || p.consumeIfIdentEq("RG")) {
+        } else if (p.consumeIfIdentEq("rx") ||
+          p.consumeIfIdentEq("CL_Rx"))
+        {
+          ord = init_spec_image::Rx;
+        } else if (p.consumeIfIdentEq("rg") ||
+          p.consumeIfIdentEq("CL_RG"))
+        {
           ord = init_spec_image::RG;
-        } else if (p.consumeIfIdentEq("rgb") || p.consumeIfIdentEq("RGB")) {
+        } else if (p.consumeIfIdentEq("rgx") ||
+          p.consumeIfIdentEq("CL_RGx"))
+        {
+          ord = init_spec_image::RGx;
+        } else if (p.consumeIfIdentEq("rgb") ||
+          p.consumeIfIdentEq("CL_RGB"))
+        {
           ord = init_spec_image::RGB;
-        } else if (p.consumeIfIdentEq("rgba") || p.consumeIfIdentEq("RGBA")) {
+        } else if (p.consumeIfIdentEq("rgbx") ||
+          p.consumeIfIdentEq("CL_RGBx"))
+        {
+          ord = init_spec_image::RGBx;
+        } else if (p.consumeIfIdentEq("rgba") ||
+          p.consumeIfIdentEq("CL_RGBA"))
+        {
           ord = init_spec_image::RGBA;
+        } else if (p.consumeIfIdentEq("argb") ||
+          p.consumeIfIdentEq("CL_ARGB"))
+        {
+          ord = init_spec_image::ARGB;
+        } else if (p.consumeIfIdentEq("bgra") ||
+          p.consumeIfIdentEq("CL_BGRA"))
+        {
+          ord = init_spec_image::BGRA;
+
+        } else if (p.consumeIfIdentEq("srgb") ||
+          p.consumeIfIdentEq("CL_sRGB"))
+        {
+          ord = init_spec_image::sRGB;
+        } else if (p.consumeIfIdentEq("srgbx") ||
+          p.consumeIfIdentEq("CL_sRGBx"))
+        {
+          ord = init_spec_image::sRGBx;
+        } else if (p.consumeIfIdentEq("srgba") ||
+          p.consumeIfIdentEq("CL_sRGBA"))
+        {
+          ord = init_spec_image::sRGBA;
+        } else if (p.consumeIfIdentEq("sbgra") ||
+          p.consumeIfIdentEq("CL_sBGRA"))
+        {
+          ord = init_spec_image::sBGRA;
         } else {
-          p.fatal("unrecognized image format (try r, rg, rgb, rgba)");
+          p.fatal("unrecognized channel order (try r, rg, rgb, rgba, ...)");
         }
         p.consume(COMMA);
         auto ty = init_spec_image::U8;
-        if (p.consumeIfIdentEq("u8") || p.consumeIfIdentEq("UINT8")) {
+        ///////////////////////////////////////////////////////////////////////
+        if (p.consumeIfIdentEq("un8") ||
+          p.consumeIfIdentEq("CL_UNORM_INT8"))
+        {
+          ty = init_spec_image::UN8;
+        } else if (p.consumeIfIdentEq("un16") ||
+          p.consumeIfIdentEq("CL_UNORM_INT16"))
+        {
+          ty = init_spec_image::UN16;
+        } else if (p.consumeIfIdentEq("un24") ||
+          p.consumeIfIdentEq("CL_UNORM_INT24"))
+        {
+          ty = init_spec_image::UN24;
+        } else if (p.consumeIfIdentEq("un565") ||
+          p.consumeIfIdentEq("CL_UNORM_SHORT_565"))
+        {
+          ty = init_spec_image::UN565;
+        } else if (p.consumeIfIdentEq("un555") ||
+          p.consumeIfIdentEq("CL_UNORM_SHORT_555"))
+        {
+          ty = init_spec_image::UN555;
+        } else if (p.consumeIfIdentEq("un101010") ||
+          p.consumeIfIdentEq("CL_UNORM_INT_101010"))
+        {
+          ty = init_spec_image::UN101010;
+        } else if (p.consumeIfIdentEq("un101010_2") ||
+          p.consumeIfIdentEq("CL_UNORM_INT_101010_2"))
+        {
+          ty = init_spec_image::UN101010_2;
+        ///////////////////////////////////////////////////////////////////////
+        } else if (p.consumeIfIdentEq("sn8") ||
+          p.consumeIfIdentEq("CL_SNORM_INT8"))
+        {
+          ty = init_spec_image::SN8;
+        } else if (p.consumeIfIdentEq("sn16") ||
+          p.consumeIfIdentEq("CL_SNORM_INT16"))
+        {
+          ty = init_spec_image::SN16;
+        ///////////////////////////////////////////////////////////////////////
+        } else if (p.consumeIfIdentEq("u8") ||
+          p.consumeIfIdentEq("CL_UNSIGNED_INT8"))
+        {
           ty = init_spec_image::U8;
-        } else if (p.consumeIfIdentEq("f32") || p.consumeIfIdentEq("FLOAT")) {
+        } else if (p.consumeIfIdentEq("u16") ||
+          p.consumeIfIdentEq("CL_UNSIGNED_INT16"))
+        {
+          ty = init_spec_image::U16;
+        } else if (p.consumeIfIdentEq("u32") ||
+          p.consumeIfIdentEq("CL_UNSIGNED_INT32"))
+        {
+          ty = init_spec_image::U32;
+        ///////////////////////////////////////////////////////////////////////
+        } else if (p.consumeIfIdentEq("s8") ||
+          p.consumeIfIdentEq("CL_SIGNED_INT8"))
+        {
+          ty = init_spec_image::S8;
+        } else if (p.consumeIfIdentEq("s16") ||
+          p.consumeIfIdentEq("CL_SIGNED_INT16"))
+        {
+          ty = init_spec_image::S16;
+        } else if (p.consumeIfIdentEq("s32") ||
+          p.consumeIfIdentEq("CL_SIGNED_INT32"))
+        {
+          ty = init_spec_image::S32;
+        ///////////////////////////////////////////////////////////////////////
+        } else if (p.consumeIfIdentEq("f32") ||
+          p.consumeIfIdentEq("CL_FLOAT"))
+        {
           ty = init_spec_image::F32;
-        } else if (p.consumeIfIdentEq("f16") || p.consumeIfIdentEq("HALF_FLOAT")) {
+        } else if (p.consumeIfIdentEq("f16") ||
+          p.consumeIfIdentEq("CL_HALF_FLOAT"))
+        {
           ty = init_spec_image::F16;
+        ///////////////////////////////////////////////////////////////////////
         } else {
-          p.fatal("unrecognized image format (try: u8, f32, or f16)");
-        }
-        p.consume(COMMA);
-        // dimension:
-        // W (RP)
-        // W (RP) x H (SP)
-        // W (RP) x H (SP) x D
-        // the spacing makes this hard
-        init_spec_atom *width = nullptr;
-        init_spec_atom *row_pitch = nullptr,
-                       *height = nullptr,
-                       *slice_pitch = nullptr,
-                       *depth = nullptr;
-
-        depth = parseInitAtom(p, s);
-        if (p.consumeIf(LPAREN)) {
-          row_pitch = parseInitAtom(p, s);
-          p.consume(RPAREN);
-        }
-        if (p.lookingAt(IDENT)) {
-          std::string id = p.tokenString();
-          if (id == "x") {
-          } else if (id.size() > 0) { // 768(800)x1024
-            try {
-              loc l = p.nextLoc();
-              l.column += 1;
-              l.offset += 1;
-              auto val = std::stoull(id.substr(1),nullptr,10);
-            } catch (...) {
-              p.fatal("syntax error in image dimension");
-            }
-          } else {
-            p.fatal("syntax error in image dimension");
-          }
+          p.fatal(
+            "unrecognized image format (try: u8, u16, ..., f32, f16 ,...)");
         }
 
+        init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
+        init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
+        if (p.consumeIf(COMMA)) {
+          // image dimension:
+          // W (RP)
+          // W (RP) x H (SP)
+          // W (RP) x H (SP) x D
+          // the spacing makes this hard
+          std::vector<init_spec_atom *> dims;
+          std::vector<init_spec_atom *> pitches;
+          parseImageDimensionExpressions(p, s, dims, pitches);
+          //
+          width = dims[0];
+          height = dims.size() >= 2 ? dims[1] : nullptr;
+          depth = dims.size() >= 3 ? dims[2] : nullptr;
+          row_pitch = pitches[0];
+          slice_pitch = pitches.size() >= 2 ? pitches[1] : nullptr;
+        }
         p.consume(RANGLE);
-        p.consume(LPAREN);
         std::string file;
-        if (!p.lookingAt(RPAREN)) {
+        if (p.consumeIf(LPAREN)) {
           if (!p.lookingAt(STRLIT)) {
             p.fatalAt(at,"expected file path (string literal)");
           }
           file = p.tokenStringLiteral(); p.skip();
+          p.consume(RPAREN);
         }
-        p.consume(RPAREN);
         at.extend_to(p.nextLoc());
         return new init_spec_image(
           at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
@@ -645,8 +863,10 @@ static void parseDimensionExpressions(
             at.column += (uint32_t)off;
             p.fatalAt(at,"syntax error in dimension constant");
           }
-          // 2048x1024 x(16)
-          //           ^^^
+          // 2048x1024 x16x32
+          //           ^^^^
+          // 2048x1024 x16x(32)
+          //           ^^^^
           // 2048x1024 x16
           //           ^^^
           // bail to the top loop and start the next token
@@ -670,7 +890,6 @@ static void parseDimensionExpressions(
     } // while looking at successive identifiers
   } // if
 }
-
 
 // Three full forms
 // Full form:                   #1`path/foo.cl`kernel<128,16>(...)

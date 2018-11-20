@@ -427,6 +427,50 @@ static void CL_CALLBACK dispatchContextNotify(
   dobj->contextNotify(errinfo, private_info, cb, user_data);
 }
 
+/*
+static void test(cl_context ctx, cl_command_queue cq)
+{
+  cl_image_format img_fmt{0};
+  img_fmt.image_channel_data_type = CL_UNSIGNED_INT8;
+  img_fmt.image_channel_order = CL_RGBA;
+
+  const size_t W = 600, H = 400;
+  cl_image_desc img_desc{0};
+  img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+  img_desc.image_width = W;
+  img_desc.image_height = H;
+
+  cl_int err = 0;
+  cl_mem img = clCreateImage(
+    ctx,
+    // CL_MEM_WRITE_ONLY,
+    CL_MEM_READ_WRITE,
+    &img_fmt,
+    &img_desc,
+    nullptr,
+    &err);
+  if (err != CL_SUCCESS)
+    exit(EXIT_FAILURE);
+
+  void *host_ptr = nullptr;
+  size_t origin[3] {0};
+  size_t region[3] {W,H,1};
+  size_t row_pitch = 0, slice_pitch = 0;
+  host_ptr = clEnqueueMapImage(
+    cq, img, CL_BLOCKING, CL_MAP_WRITE|CL_MAP_READ,
+    origin, region,
+    &row_pitch, &slice_pitch,
+    0, nullptr, nullptr,
+    &err);
+  if (err == CL_INVALID_VALUE)
+    exit(EXIT_FAILURE);
+  else if (err != CL_SUCCESS)
+    exit(EXIT_FAILURE);
+  else
+    exit(EXIT_SUCCESS);
+}
+*/
+
 device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
   cl::Device dev;
@@ -467,6 +511,10 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   } catch (const cl::Error &err) {
     fatalAt(ds->defined_at,"clCreateContext: ",status_to_symbol(err.err()));
   }
+  if (os.verbosity >= 2) {
+    debug(ds->defined_at,
+      "created context on ",dobj.device.getInfo<CL_DEVICE_NAME>().c_str());
+  }
 
   cl_command_queue cq;
   auto cl_err = makeCommandQueue(os.prof_time, dev(), (*dobj.context)(), cq);
@@ -477,7 +525,7 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
       "(", status_to_symbol(cl_err), ")");
   }
   dobj.queue = new cl::CommandQueue(cq);
-
+  // test((*dobj.context)(),cq);
   return dobj;
 }
 
@@ -682,15 +730,24 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
     fatalAt(ds->defined_at,"dimension must be <= 3");
   dc.global_size.num_dims = ds->global_size.size();
 
-  for (size_t i = 0; i < ds->global_size.size(); i++) {
+  auto evaluateDimension = [&](const init_spec_atom *expr) {
     // later iterations will see the value of earlier iterations
     // => we can support something like <1024x(g.x/2)x(g.x*g.y/4)>
     //    pretty awesome!
     evaluator::context ec(dc);
     // ec holds const references, but that isn't seeing the updates
     // so we rebuild it ec within each loop
-    dc.global_size.dims[i] =
-      (size_t)e.evalTo<size_t>(ec,ds->global_size[i]).u64;
+    val v = e.evalTo<size_t>(ec,expr);
+    //
+    if (v.s64 < 0) {
+      fatalAt(expr->defined_at,"negative dimension");
+    }
+    //
+    return (size_t)v.u64;
+  };
+
+  for (size_t i = 0; i < ds->global_size.size(); i++) {
+    dc.global_size.dims[i] = evaluateDimension(ds->global_size[i]);
   }
   if (ds->local_size.empty()) {
     // use the required workgroup size
@@ -706,12 +763,7 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
     // have to do the locals too
     dc.local_size.num_dims = ds->local_size.size();
     for (size_t i = 0; i < ds->local_size.size(); i++) {
-      // similar to global, later dimension can reference earlier ones
-      // but also we can reference global as well
-      //  <...,clamp(g.x/1024,32,256)>
-      evaluator::context ec(dc);
-      dc.local_size.dims[i] =
-        (size_t)e.evalTo<size_t>(ec,ds->local_size[i]).u64;
+      dc.local_size.dims[i] = evaluateDimension(ds->local_size[i]);
     }
   }
 }
@@ -739,7 +791,9 @@ dispatch_command *script_compiler::compileDispatchArgs(
     } else if (ai.type.is<type_ptr>()) {
       csi->e->setKernelArgBuffer(
         arg_index, dc, ss, ris.defined_at, ris, ai);
-    } else if (ai.type.is<type_builtin>() && ai.type.as<type_builtin>().is_surface()) {
+    } else if (ai.type.is<type_builtin>() &&
+      ai.type.as<type_builtin>().is_surface())
+    {
       csi->e->setKernelArgImage(
         arg_index, dc, ss, ris.defined_at, ris, ai);
     } else {

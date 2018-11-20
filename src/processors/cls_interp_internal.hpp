@@ -92,6 +92,7 @@ struct surface_object {
   // only non-zero if it's an image
   cl_image_format           image_format{0};
   cl_image_desc             image_desc{0};
+  const void               *image_init_bytes = nullptr;
 
   // e.g. if it's used in a diff command only diff(seq(1,2):w,...)
   bool                      dummy_object = false;
@@ -215,8 +216,9 @@ struct mapped_objects {
 };
 
 using buffer_reader = std::function<void(const void *)>;
-using image_reader = std::function<void(size_t, size_t,const void *)>;
 using buffer_writer = std::function<void(void *)>;
+using image_reader = std::function<void(size_t, size_t,const void *)>;
+using image_writer = std::function<void(size_t, size_t,void *)>;
 
 // e.g. CL_COMMAND(spec->defined_at,clEnqueueNDRange,...)
 struct cl_fatal_handler : fatal_handler {
@@ -254,6 +256,10 @@ struct cl_fatal_handler : fatal_handler {
     const loc &at,
     surface_object *so,
     buffer_writer apply);
+  void withImageMapWrite(
+    const loc &at,
+    const surface_object *so,
+    image_writer apply);
 }; // cl_fatal_handler
 
 

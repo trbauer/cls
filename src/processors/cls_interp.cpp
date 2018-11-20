@@ -1,6 +1,7 @@
 #include "cls_interp.hpp"
 #include "cls_interp_internal.hpp"
 #include "../devices.hpp"
+#include "../image.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
 
@@ -97,17 +98,17 @@ val evaluator::eval(
         return ndr.get()[dim_ix];
       };
     switch (((const init_spec_builtin *)e)->skind) {
-    case init_spec_builtin::BIV_GX:   return computeDim(ec.global_size, 0);
-    case init_spec_builtin::BIV_GY:   return computeDim(ec.global_size, 1);
-    case init_spec_builtin::BIV_GZ:   return computeDim(ec.global_size, 2);
-    case init_spec_builtin::BIV_LX:   return computeDim(ec.local_size,  0);
-    case init_spec_builtin::BIV_LY:   return computeDim(ec.local_size,  1);
-    case init_spec_builtin::BIV_LZ:   return computeDim(ec.local_size,  2);
+    case init_spec_builtin::BIV_GX: return computeDim(ec.global_size, 0);
+    case init_spec_builtin::BIV_GY: return computeDim(ec.global_size, 1);
+    case init_spec_builtin::BIV_GZ: return computeDim(ec.global_size, 2);
+    case init_spec_builtin::BIV_LX: return computeDim(ec.local_size,  0);
+    case init_spec_builtin::BIV_LY: return computeDim(ec.local_size,  1);
+    case init_spec_builtin::BIV_LZ: return computeDim(ec.local_size,  2);
     default: fatalAt(e->defined_at,"unsupported built-in variable");
     }
     break;
   }
-  default: fatalAt(e->defined_at,"unsupported expression for primitive"); break;
+  default: fatalAt(e->defined_at,"unsupported primitive expression"); break;
   }
   return val((uint64_t)0); // unreachable
 }
@@ -271,107 +272,252 @@ void evaluator::setKernelArgBuffer(
   }
 }
 
-void evaluator::setKernelArgImage(
-  cl_uint arg_index,
-  dispatch_command &dc,
-  std::stringstream &ss,
-  const loc &at,
-  const refable<init_spec> &ris,
-  const arg_info &ai)
+
+  /*
+  switch (isi->ch_order) {
+  case init_spec_image::I:    img_fmt.image_channel_order = CL_INTENSITY; break;
+  case init_spec_image::L:    img_fmt.image_channel_order = CL_LUMINANCE; break;
+  case init_spec_image::D:    img_fmt.image_channel_order = CL_DEPTH; break;
+  case init_spec_image::R:    img_fmt.image_channel_order = CL_R; break;
+  case init_spec_image::Rx:   img_fmt.image_channel_order = CL_Rx; break;
+  case init_spec_image::RG:   img_fmt.image_channel_order = CL_RG; break;
+  case init_spec_image::RGx:  img_fmt.image_channel_order = CL_RGx; break;
+  case init_spec_image::RGB:  img_fmt.image_channel_order = CL_RGB; break;
+  case init_spec_image::RGBx: img_fmt.image_channel_order = CL_RGBx; break;
+  case init_spec_image::RGBA: img_fmt.image_channel_order = CL_RGBA; break;
+  case init_spec_image::ARGB: img_fmt.image_channel_order = CL_ARGB; break;
+  case init_spec_image::BGRA: img_fmt.image_channel_order = CL_BGRA; break;
+  case init_spec_image::sRGB: img_fmt.image_channel_order = CL_sRGB; break;
+  case init_spec_image::sRGBx: img_fmt.image_channel_order = CL_sRGBx; break;
+  case init_spec_image::sRGBA: img_fmt.image_channel_order = CL_sRGBA; break;
+  case init_spec_image::sBGRA: img_fmt.image_channel_order = CL_sBGRA; break;
+  default: fatalAt(ism->defined_at, "invalid channel order");
+  }
+*/
+
+static void channelInfo(
+  evaluator *e,
+  loc at,
+  init_spec_image::channel_order ch_order,
+  cl_channel_order *cl_ch_order,
+  int *num_channels,
+  image::data_format *native_format)
 {
-  if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting memory object argument for ",
-      ai.type.syntax()," ",ai.name);
+  switch (ch_order) {
+  case init_spec_image::I:
+    if (cl_ch_order)
+      *cl_ch_order = CL_INTENSITY;
+    if (num_channels)
+      *num_channels = 1;
+    if (native_format)
+      *native_format = image::data_format::I;
+    break;
+  case init_spec_image::L:
+    if (cl_ch_order)
+      *cl_ch_order = CL_LUMINANCE;
+    if (num_channels)
+      *num_channels = 1;
+    if (native_format)
+      *native_format = image::data_format::I;
+    break;
+  case init_spec_image::D:
+    if (cl_ch_order)
+      *cl_ch_order = CL_DEPTH;
+    if (num_channels)
+      *num_channels = 1;
+    if (native_format)
+      *native_format = image::data_format::I;
+    break;
+
+  case init_spec_image::R:
+    if (cl_ch_order)
+      *cl_ch_order = CL_R;
+    if (num_channels)
+      *num_channels = 1;
+    if (native_format)
+      *native_format = image::data_format::I;
+    break;
+
+  case init_spec_image::Rx:
+    if (cl_ch_order)
+      *cl_ch_order = CL_Rx;
+    if (num_channels)
+      *num_channels = 1;
+    if (native_format)
+      *native_format = image::data_format::I;
+    break;
+
+  case init_spec_image::RG:
+    if (cl_ch_order)
+      *cl_ch_order = CL_RG;
+    if (num_channels)
+      *num_channels = 2;
+    if (native_format)
+      *native_format = image::data_format::INVALID;
+    break;
+  case init_spec_image::RGx:
+    if (cl_ch_order)
+      *cl_ch_order = CL_RGx;
+    if (num_channels)
+      *num_channels = 2;
+    if (native_format)
+      *native_format = image::data_format::INVALID;
+    break;
+  case init_spec_image::RGB:
+    if (cl_ch_order)
+      *cl_ch_order = CL_RGB;
+    if (num_channels)
+      *num_channels = 3;
+    if (native_format)
+      *native_format = image::data_format::RGB;
+    break;
+
+  case init_spec_image::RGBx:
+    if (cl_ch_order)
+      *cl_ch_order = CL_RGBx;
+    if (num_channels)
+      *num_channels = 3;
+    if (native_format)
+      *native_format = image::data_format::RGB;
+    break;
+  case init_spec_image::sRGB:
+    if (cl_ch_order)
+      *cl_ch_order = CL_sRGB;
+    if (num_channels)
+      *num_channels = 3;
+    if (native_format)
+      *native_format = image::data_format::RGB;
+    break;
+  case init_spec_image::sRGBx:
+    if (cl_ch_order)
+      *cl_ch_order = CL_sRGBx;
+    if (num_channels)
+      *num_channels = 3;
+    if (native_format)
+      *native_format = image::data_format::RGB;
+    break;
+  case init_spec_image::RGBA:
+    if (cl_ch_order)
+      *cl_ch_order = CL_RGBA;
+    if (num_channels)
+      *num_channels = 4;
+    if (native_format)
+      *native_format = image::data_format::RGBA;
+    break;
+  case init_spec_image::ARGB:
+    if (cl_ch_order)
+      *cl_ch_order = CL_ARGB;
+    if (num_channels)
+      *num_channels = 4;
+    if (native_format)
+      *native_format = image::data_format::ARGB;
+    break;
+  case init_spec_image::BGRA:
+    if (cl_ch_order)
+      *cl_ch_order = CL_BGRA;
+    if (num_channels)
+      *num_channels = 4;
+    if (native_format)
+      *native_format = image::data_format::INVALID;
+    break;
+  case init_spec_image::sRGBA:
+    if (cl_ch_order)
+      *cl_ch_order = CL_sRGBA;
+    if (num_channels)
+      *num_channels = 4;
+    if (native_format)
+      *native_format = image::data_format::RGBA;
+    break;
+  case init_spec_image::sBGRA:
+    if (cl_ch_order)
+      *cl_ch_order = CL_sBGRA;
+    if (num_channels)
+      *num_channels = 4;
+    if (native_format)
+      *native_format = image::data_format::INVALID;
+    break;
+  default: e->internalAt(at, "invalid channel order");
   }
+}
 
-  if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
-    fatalAt(ris.defined_at, "expected surface initializer");
+static size_t channelsPerPixel(evaluator *e, loc at, cl_channel_order co)
+{
+  switch (co) {
+  case CL_A:
+  case CL_R:
+  case CL_Rx:
+  case CL_INTENSITY:
+  case CL_LUMINANCE:
+  case CL_DEPTH:
+    return 1;
+  case CL_RG:
+  case CL_RGx:
+  case CL_RA:
+    return 2;
+  case CL_sRGB:
+  case CL_RGB:
+  case CL_RGBx:
+  case CL_UNORM_SHORT_565:
+  case CL_UNORM_SHORT_555:
+  case CL_UNORM_INT_101010:
+    return 3;
+  case CL_RGBA:
+  case CL_BGRA:
+  case CL_ARGB:
+  case CL_sRGBA:
+  case CL_sBGRA:
+  case CL_UNORM_INT_101010_2:
+    return 4;
+  default:
+    e->internalAt(at, "unsupported channel order");
+    return 0;
   }
-  const init_spec_mem *ism =
-    (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type.is<type_builtin>()) {
-    fatalAt(ism->defined_at, "image requires image type (e.g. image2d_t)");
+}
+static size_t bytesPerChannel(evaluator *e, loc at, cl_channel_type ct)
+{
+  switch (ct) {
+  case CL_SNORM_INT8:
+  case CL_UNORM_INT8:
+  case CL_SIGNED_INT8:
+  case CL_UNSIGNED_INT8:
+    return 1;
+  case CL_SNORM_INT16:
+  case CL_UNORM_INT16:
+  case CL_SIGNED_INT16:
+  case CL_UNSIGNED_INT16:
+  case CL_HALF_FLOAT:
+    return 2;
+  case CL_UNORM_INT24:
+    return 3;
+  case CL_FLOAT:
+  case CL_SIGNED_INT32:
+  case CL_UNSIGNED_INT32:
+    return 4;
+  default:
+    e->fatalAt(at, "unsupported channel data type");
+    return 0;
   }
-  const type_builtin &tbi = ai.type.as<type_builtin>();
+}
 
-  cl_image_format img_fmt{0};
-  cl_image_desc img_desc{0};
-  if (ism->root->skind == init_spec::IS_IMG) {
-    const init_spec_image *isi = (const init_spec_image*)ism;
 
-    switch (isi->ch_order) {
-    case init_spec_image::R:    img_fmt.image_channel_order = CL_R; break;
-    case init_spec_image::RG:   img_fmt.image_channel_order = CL_RG; break;
-    case init_spec_image::RGB:  img_fmt.image_channel_order = CL_RGB; break;
-    case init_spec_image::RGBA: img_fmt.image_channel_order = CL_RGBA; break;
-    default: fatalAt(ism->defined_at, "invalid channel order");
-    }
-    switch (isi->ch_data_type) {
-    case init_spec_image::U8:  img_fmt.image_channel_data_type = CL_UNSIGNED_INT8; break;
-    case init_spec_image::F16: img_fmt.image_channel_data_type = CL_HALF_FLOAT; break;
-    case init_spec_image::F32: img_fmt.image_channel_data_type = CL_FLOAT; break;
-    default: fatalAt(ism->defined_at, "invalid channel data type");
-    }
+#if 0
 
-    context ctx(dc);
-
-    size_t isi_width = 0;
-    if (isi->width)
-      isi_width = (size_t)evalTo<size_t>(ctx,isi->width).u64;
-    size_t isi_row_pitch = 0;
-    if (isi->row_pitch)
-      isi_row_pitch = (size_t)evalTo<size_t>(ctx,isi->row_pitch).u64;
-    size_t isi_height = 0;
-    if (isi->height)
-      isi_height = (size_t)evalTo<size_t>(ctx,isi->height).u64;
-    size_t isi_slice_pitch = 0;
-    if (isi->slice_pitch)
-      isi_slice_pitch = (size_t)evalTo<size_t>(ctx,isi->slice_pitch).u64;
-    size_t isi_depth = 0;
-    if (isi->depth)
-      isi_depth = (size_t)evalTo<size_t>(ctx,isi->depth).u64;
-
-    switch (tbi.skind) {
-    case type_builtin::IMAGE1D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
-      img_desc.image_width = (size_t)isi->width;
-      if (isi_depth != 0 || isi_height)
-        fatalAt(ism->defined_at, "image1d_t's must not have explicit width or depth argument");
-      break;
-    case type_builtin::IMAGE2D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
-      if (dc.global_size.rank() != 2) {
-        fatalAt(ism->defined_at, "image2d_t's require a 2-dimension NDRange");
-      }
-      img_desc.image_width = dc.global_size.get()[0];
-      img_desc.image_height = dc.global_size.get()[1];
-      break;
-    case type_builtin::IMAGE3D:
-      img_desc.image_type = CL_MEM_OBJECT_IMAGE3D;
-      if (dc.global_size.rank() != 3) {
-        fatalAt(ism->defined_at, "image3d_t's require a 3-dimension NDRange");
-      }
-      img_desc.image_width = dc.global_size.get()[0];
-      img_desc.image_height = dc.global_size.get()[1];
-      img_desc.image_depth = dc.global_size.get()[2];
-      break;
-    case type_builtin::IMAGE1D_ARRAY:
-    case type_builtin::IMAGE2D_ARRAY:
-      fatalAt(ism->defined_at,
-        "image arrays cannot be default-initialized");
-    default:
-      fatalAt(ism->defined_at,
-        "unsupported image kernel argument type");
-    }
-    fatalAt(ism->defined_at,
-      "image initializers not implemented yet");
-  } else if (ism->root->skind == init_spec::IS_INT &&
-    ((init_spec_int*)ism->root)->value == 0)
-  {
+// e.g. 0:w
+//
+// we disable this for now
+//
+// it's not that much work for them to give us an explicit image size
+// and enabling this means funky semantics such as global size being
+// the image size
+static void populateImageInfoFromConst(
+  evaluator *e, loc at,
+  cl_image_format &img_fmt,
+  cl_image_desc &img_desc)
+{
     // an image defined as zeros enables us to choose all the image attributes
     // e.g. "0:w"
     img_fmt.image_channel_order = CL_RGBA;
-    img_fmt.image_channel_data_type = CL_SNORM_INT8;
+    img_fmt.image_channel_data_type = CL_UNORM_INT8;
     switch (tbi.skind) {
     case type_builtin::IMAGE1D:
       img_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
@@ -405,65 +551,291 @@ void evaluator::setKernelArgImage(
       fatalAt(ism->defined_at,
         "unsupported image kernel argument type");
     }
-  } else {
-    fatalAt(ism->defined_at,
-      "image requires image initializer "
-      "or 0 as an initializer");
+}
+
+#endif
+
+
+// suppose "foo.bmp" is a 1024x768 image
+// CASES:                           image size      initial data
+// image<rgb,u8>             ->      ERROR needs dimension (could infer global size, but too bad)
+// image<rgb,u8,640x480>     ->      640x480
+// image<rgb,u8>("foo.bmp")  ->      1024x768
+// image<rgb,u8,640x480>("foo.bmp")
+// image<rgb,u8>("foo.dat")  ->      ERROR raw data needs dimension
+// image<rgb,u8,640x480>("foo.dat")
+void evaluator::setKernelArgImage(
+  cl_uint arg_index,
+  dispatch_command &dc,
+  std::stringstream &ss,
+  const loc &at,
+  const refable<init_spec> &ris,
+  const arg_info &ai)
+{
+  if (os.verbosity >= 2) {
+    debug(ris.defined_at, "setting memory object argument for ",
+      ai.type.syntax()," ",ai.name);
   }
 
-  size_t elems_per_pixel = 0;
-  switch (img_fmt.image_channel_order) {
-  case CL_A:
-  case CL_R:
-  case CL_INTENSITY:
-  case CL_LUMINANCE:
-    elems_per_pixel = 1;
-    break;
-  case CL_RG:
-  case CL_RA:
-    elems_per_pixel = 2;
-    break;
-  case CL_RGB:
-    elems_per_pixel = 3;
-    break;
-  case CL_RGBA:
-  case CL_BGRA:
-  case CL_ARGB:
-    elems_per_pixel = 4;
-    break;
-  default: internalAt(ism->defined_at, "unsupported channel order");
+  if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
+    fatalAt(ris.defined_at, "expected image surface initializer");
+  }
+  const init_spec_mem *ism =
+    (const init_spec_mem *)(const init_spec *)ris;
+  if (!ai.type.is<type_builtin>()) {
+    fatalAt(ism->defined_at, "image requires image type (e.g. image2d_t)");
+  }
+  const type_builtin &tbi = ai.type.as<type_builtin>();
+
+  cl_image_format img_fmt{0};
+  cl_image_desc img_desc{0};
+  if (ism->root->skind != init_spec::IS_IMG) {
+    fatalAt(ism->defined_at, "image requires image initializer");
   }
 
-  size_t bytes_per_channel = 0;
-  switch (img_fmt.image_channel_data_type) {
-  case CL_SNORM_INT8:
-  case CL_UNORM_INT8:
-  case CL_SIGNED_INT8:
-  case CL_UNSIGNED_INT8:
-    bytes_per_channel = 1;
+  const init_spec_image *isi = (const init_spec_image*)ism->root;
+
+  int channels_per_pixel;
+  image::data_format native_format;
+  channelInfo(this,
+    isi->defined_at,isi->ch_order,
+    &img_fmt.image_channel_order,
+    &channels_per_pixel,&native_format);
+
+  // TODO: merge with with bytesPerChannel (channelDataTypeInfo)
+  switch (isi->ch_data_type) {
+  case init_spec_image::U8:    img_fmt.image_channel_data_type = CL_UNSIGNED_INT8; break;
+  case init_spec_image::U16:   img_fmt.image_channel_data_type = CL_UNSIGNED_INT16; break;
+  case init_spec_image::U32:   img_fmt.image_channel_data_type = CL_UNSIGNED_INT32; break;
+  case init_spec_image::S8:    img_fmt.image_channel_data_type = CL_SIGNED_INT8; break;
+  case init_spec_image::S16:   img_fmt.image_channel_data_type = CL_SIGNED_INT16; break;
+  case init_spec_image::S32:   img_fmt.image_channel_data_type = CL_SIGNED_INT32; break;
+  //
+  case init_spec_image::SN8:    img_fmt.image_channel_data_type = CL_SNORM_INT8; break;
+  case init_spec_image::SN16:   img_fmt.image_channel_data_type = CL_SNORM_INT16; break;
+  case init_spec_image::UN8:    img_fmt.image_channel_data_type = CL_UNORM_INT8; break;
+  case init_spec_image::UN16:   img_fmt.image_channel_data_type = CL_UNORM_INT16; break;
+  case init_spec_image::UN565:  img_fmt.image_channel_data_type = CL_UNORM_SHORT_565; break;
+  case init_spec_image::UN555:  img_fmt.image_channel_data_type = CL_UNORM_SHORT_555; break;
+  case init_spec_image::UN101010:   img_fmt.image_channel_data_type = CL_UNORM_INT_101010; break;
+  case init_spec_image::UN101010_2:   img_fmt.image_channel_data_type = CL_UNORM_INT_101010_2; break;
+  //
+  case init_spec_image::F16:   img_fmt.image_channel_data_type = CL_HALF_FLOAT; break;
+  case init_spec_image::F32:   img_fmt.image_channel_data_type = CL_FLOAT; break;
+  default: fatalAt(ism->defined_at, "invalid channel data type");
+  }
+  size_t bytes_per_channel =
+    bytesPerChannel(this, ism->defined_at, img_fmt.image_channel_data_type);
+
+  // evaluate any dimensions that are given
+  context ctx(dc);
+  size_t img_width = 0;
+  if (isi->width)
+    img_width = (size_t)evalTo<size_t>(ctx,isi->width).u64;
+  size_t img_row_pitch = 0;
+  if (isi->row_pitch)
+    img_row_pitch = (size_t)evalTo<size_t>(ctx,isi->row_pitch).u64;
+  size_t img_height = 0;
+  if (isi->height)
+    img_height = (size_t)evalTo<size_t>(ctx,isi->height).u64;
+  size_t img_slice_pitch = 0;
+  if (isi->slice_pitch)
+    img_slice_pitch = (size_t)evalTo<size_t>(ctx,isi->slice_pitch).u64;
+  size_t img_depth = 0;
+  if (isi->depth)
+    img_depth = (size_t)evalTo<size_t>(ctx,isi->depth).u64;
+
+  void *image_arg_data = nullptr;
+  if (!isi->path.empty()) {
+    if (!sys::file_exists(isi->path)) {
+        fatalAt(ism->defined_at, "file not found");
+    }
+    auto ext = sys::take_extension(isi->path);
+    if (ext == ".ppm" || ext == ".bmp") {
+      image *img = nullptr;
+      if (ext == ".ppm")
+        img = image::load_ppm(isi->path.c_str(),false);
+      else
+        img = image::load_bmp(isi->path.c_str(),false);
+
+      if (!img)
+        fatalAt(isi->defined_at, "failed to load image");
+
+      if (img_width == 0)
+        img_width = img->width;
+      else if (img->width != img_width)
+        fatalAt(ism->defined_at, "image width mismatches actual image");
+
+      if (img_height == 0)
+        img_height = img->height;
+      else if (img->height != img_height)
+        fatalAt(ism->defined_at, "image height mismatches actual image");
+
+      if (img_depth > 0 && img_depth != 1)
+        fatalAt(ism->defined_at, "image depth must be 0 or 1");
+
+      size_t bpp = 0;
+      image icvt;
+      switch (isi->ch_order) {
+      case init_spec_image::I:
+      case init_spec_image::L:
+      case init_spec_image::D:
+      case init_spec_image::R:
+      // case init_spec_image::Rx: is this like RG or R?
+        bpp = image::bytes_per_pixel(image::I);
+        icvt = img->convert(image::I);
+        break;
+      case init_spec_image::RGB:
+      case init_spec_image::sRGB:
+      // case init_spec_image::sRGBx:
+      // case init_spec_image::RGBx:
+        bpp = image::bytes_per_pixel(image::RGB);
+        icvt = img->convert(image::RGB);
+        break;
+      case init_spec_image::RGBA:
+      case init_spec_image::sRGBA:
+        bpp = image::bytes_per_pixel(image::RGBA);
+        icvt = img->convert(image::RGBA);
+        break;
+      case init_spec_image::ARGB:
+        bpp = image::bytes_per_pixel(image::ARGB);
+        icvt = img->convert(image::ARGB);
+        break;
+      case init_spec_image::BGRA:
+        bpp = image::bytes_per_pixel(image::BGRA);
+        icvt = img->convert(image::BGRA);
+        break;
+      case init_spec_image::RG:
+      case init_spec_image::RGx:
+      default:
+        fatalAt(ism->defined_at,"unsupported channel order for loaded images");
+      }
+      const size_t size_bytes = icvt.width*icvt.height*bpp;
+      image_arg_data = malloc(size_bytes);
+      memcpy(image_arg_data, icvt.bits, size_bytes);
+      delete img;
+    } else if (ext == ".dat") { // raw
+      if (img_width == 0)
+        fatalAt(ism->defined_at, "raw image data requires explicit dimensions");
+      // this doesn't take into account pitch or anything...
+      size_t total_pixels = img_width;
+      if (img_height)
+        total_pixels *= img_height;
+      if (img_depth)
+        total_pixels *= img_depth;
+
+      auto binary = sys::read_file_binary(isi->path);
+      if (total_pixels*channels_per_pixel*bytes_per_channel != binary.size()) {
+        fatalAt(ism->defined_at,
+          "raw image file is wrong size for given image dimensions");
+      }
+      image_arg_data = malloc(binary.size());
+      memcpy(image_arg_data, binary.data(), binary.size());
+    } else {
+      fatalAt(ism->defined_at,
+        "unrecognized file type for image "
+        "(.ppm, .bmp, and .dat are supported)");
+    }
+  } // has init file
+
+  switch (tbi.skind) {
+  case type_builtin::IMAGE1D:
+    img_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
+    img_desc.image_width = img_width;
+    if (img_width == 0)
+      fatalAt(ism->defined_at, "image1d_t must have width argument");
+    if (isi->height || isi->depth)
+      fatalAt(ism->defined_at,
+        "image1d_t's must not have width or depth arguments");
     break;
-  case CL_SNORM_INT16:
-  case CL_UNORM_INT16:
-  case CL_SIGNED_INT16:
-  case CL_UNSIGNED_INT16:
-  case CL_HALF_FLOAT:
-    bytes_per_channel = 2;
+  case type_builtin::IMAGE2D:
+    img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+    if (img_width == 0 || img_height == 0)
+      fatalAt(ism->defined_at,
+        "image2d_t must have width and height arguments");
+     else if (isi->depth)
+      fatalAt(ism->defined_at, "image2d_t may not have a depth argument");
+    img_desc.image_width = img_width;
+    img_desc.image_height = img_height;
     break;
-  case CL_FLOAT:
-  case CL_SIGNED_INT32:
-  case CL_UNSIGNED_INT32:
-    bytes_per_channel = 4;
+  case type_builtin::IMAGE3D:
+    img_desc.image_type = CL_MEM_OBJECT_IMAGE3D;
+    if (img_width == 0 || img_height == 0 || img_depth == 0)
+      fatalAt(ism->defined_at,
+        "image3d_t must have width, height, and depth arguments");
+    img_desc.image_width = img_width;
+    img_desc.image_height = img_height;
+    img_desc.image_depth = img_depth;
+    break;
+  case type_builtin::IMAGE1D_ARRAY:
+    img_desc.image_type = CL_MEM_OBJECT_IMAGE1D_ARRAY;
+    if (img_width == 0 || img_height == 0)
+      fatalAt(ism->defined_at,
+        "image1d_array_t must have width and count arguments");
+     else if (isi->depth)
+      fatalAt(ism->defined_at,
+        "image1d_array_t may not have a depth argument");
+    img_desc.image_width = img_width;
+    img_desc.image_height = img_height;
+    fatalAt(ism->defined_at, "image arrays not supported yet");
+    break;
+  case type_builtin::IMAGE2D_ARRAY:
+    img_desc.image_type = CL_MEM_OBJECT_IMAGE2D_ARRAY;
+    if (img_width == 0 || img_height == 0 || img_depth == 0)
+      fatalAt(ism->defined_at,
+        "image2d_array_t must have width, height, and count arguments");
+    img_desc.image_width = img_width;
+    img_desc.image_height = img_height;
+    img_desc.image_depth = img_depth;
+    fatalAt(ism->defined_at, "image arrays not supported yet");
     break;
   default:
-    fatalAt(ism->defined_at, "unsupported channel data type");
+    fatalAt(ism->defined_at, "unsupported image kernel argument type");
   }
 
-  size_t image_size =
-    dc.global_size.product() * elems_per_pixel * bytes_per_channel;
+  size_t bytes_per_pixel = channels_per_pixel * bytes_per_channel;
+
+  size_t image_row_packed = img_width*bytes_per_pixel;
+  size_t image_row = image_row_packed;
+  if (img_row_pitch > 0) {
+    if (img_row_pitch < image_row)
+      fatalAt(ism->defined_at, "image row pitch is too small");
+    image_row = img_row_pitch;
+  }
+  size_t image_slice_packed = image_row*std::max(img_height,(size_t)1);
+  size_t image_slice = image_slice_packed;
+  if (img_slice_pitch > 0) {
+    if (img_slice_pitch < image_slice)
+      fatalAt(ism->defined_at, "image slice pitch is too small");
+    image_slice = img_slice_pitch;
+  }
+  size_t image_size_bytes = image_slice*std::max(img_depth,(size_t)1);
+  if ((img_row_pitch > 0 || img_slice_pitch > 0) && image_arg_data) {
+    // we have to rescale the initialization data to support the
+    // row and slice pitch
+    uint8_t *dst = (uint8_t*)calloc(1,image_size_bytes);
+    const uint8_t *src = (const uint8_t *)image_arg_data;
+    if (img_depth != 0) {
+      for (size_t d = 0, slices = d < img_depth == 0 ? 1 : img_depth;
+        d < slices;
+        d++)
+      {
+        for (size_t h = 0; h < img_height; h++) {
+          memcpy(
+            dst + d*image_slice        + h*image_row,
+            src + d*image_slice_packed + h*image_row_packed,
+            image_row);
+        }
+      }
+    }
+    free(image_arg_data);
+    image_arg_data = dst;
+  }
+
   if (ism->dimension) {
     evaluator::context ec(dc);
     size_t explicit_image_size = evalTo<size_t>(ec, ism->dimension).u64;
-    if (explicit_image_size < image_size)
+    if (explicit_image_size < image_size_bytes)
       fatalAt(ism->defined_at, "image size is smaller than minimal size");
   }
 
@@ -472,7 +844,7 @@ void evaluator::setKernelArgImage(
   if (itr != csi->surfaces.find_end()) {
     // surface already exists, ensure it fits our min size
     so = itr->second;
-    if (so->size_in_bytes < image_size)
+    if (so->size_in_bytes < image_size_bytes)
       fatalAt(ism->defined_at,
         "allocated image size is smaller than min size needed in this use");
   } else {
@@ -490,13 +862,25 @@ void evaluator::setKernelArgImage(
     so = csi->define_surface(
       ism,
       surface_object::SO_IMAGE,
-      image_size,
+      image_size_bytes,
       memobj,
       (*dc.dobj->queue)());
     so->image_format = img_fmt;
     so->image_desc = img_desc;
+    so->image_init_bytes = image_arg_data;
   }
-
+  //
+  dc.surfaces.emplace_back(so, ai.type.as<type_builtin>(), ai, at);
+  //
+  so->dispatch_uses.emplace_back(&dc, arg_index, ai);
+  //
+  CL_COMMAND(at,
+    clSetKernelArg,
+      (*dc.kernel->kernel)(),
+      arg_index,
+      sizeof(cl_mem),
+      (const void *)&so->memobj);
+  //
   ss << "IMG<";
   ss << img_desc.image_width;
   if (img_desc.image_row_pitch)

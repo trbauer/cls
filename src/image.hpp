@@ -34,12 +34,12 @@ struct image {
                        // the bottom right is bits[n - 1].
   uint8_t *bits = nullptr;
   size_t width = 0, height = 0;  // in px
-  enum format {INVALID, I, RGB, BGR, RGBA, ARGB} format;
+  enum data_format {INVALID, I, RGB, BGR, RGBA, ARGB, BGRA} format;
 
-  static size_t bytes_per_pixel(enum format f);
+  static size_t bytes_per_pixel(enum data_format f);
 
   static image *load_ppm(const char *file, bool fatal_if_error = false);
-  void save_ppm(const char *file);
+  void save_ppm(const char *file, bool use_binary = true);
 #ifdef IMAGE_HPP_SUPPORTS_BMP
   static image *load_bmp(const char *file, bool fatal_if_error = false);
   void save_bmp(const char *file) const;
@@ -47,8 +47,8 @@ struct image {
 
 
   image();
-  image(size_t w, size_t h, enum format f);
-  image(size_t w, size_t h, size_t p, enum format f);
+  image(size_t w, size_t h, enum data_format f);
+  image(size_t w, size_t h, size_t p, enum data_format f);
   image(const image &rhs) { assign(rhs); }
   ~image();
 
@@ -59,14 +59,14 @@ struct image {
     const void *imgbits,
     size_t w,
     size_t h,
-    enum format f,
+    enum data_format f,
     size_t p,
     size_t ah);
   void assign(const image &rhs);
 
   void release();
 
-  image convert(enum format to) const;
+  image convert(enum data_format to) const;
 
   // resizes the image by padding or truncating as needed.
   void resize(

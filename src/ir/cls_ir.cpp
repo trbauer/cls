@@ -525,17 +525,50 @@ void init_spec_image::str(std::ostream &os, format_opts fopts) const
 {
   os << "image<";
   switch (ch_order) {
+  case channel_order::I:    os << "i"; break;
+  case channel_order::L:    os << "l"; break;
+  case channel_order::D:    os << "d"; break;
   case channel_order::R:    os << "r"; break;
+  case channel_order::Rx:   os << "rx"; break;
+  //
   case channel_order::RG:   os << "rg"; break;
+  case channel_order::RGx:  os << "rgx"; break;
   case channel_order::RGB:  os << "rgb"; break;
+  case channel_order::RGBx: os << "rgbx"; break;
+  //
   case channel_order::RGBA: os << "rgba"; break;
+  case channel_order::ARGB: os << "argb"; break;
+  case channel_order::BGRA: os << "bgra"; break;
+  //
+  case channel_order::sRGB: os << "srgb"; break;
+  case channel_order::sRGBx: os << "srgbx"; break;
+  case channel_order::sRGBA: os << "srgba"; break;
+  case channel_order::sBGRA: os << "sbgra"; break;
   default: os << "?";
   }
   os << ",";
   switch (ch_data_type) {
-  case channel_type::U8: os << "u8"; break;
+  case channel_type::UN8:      os << "un8"; break;
+  case channel_type::UN16:     os << "un16"; break;
+  case channel_type::UN24:     os << "un24"; break;
+  case channel_type::UN565:    os << "un565"; break;
+  case channel_type::UN555:    os << "un555"; break;
+  case channel_type::UN101010: os << "un101010"; break;
+  case channel_type::UN101010_2: os << "un101010_2"; break;
+  //
+  case channel_type::SN8:  os << "sn8"; break;
+  case channel_type::SN16: os << "sn16"; break;
+  //
+  case channel_type::U8:  os << "u8"; break;
+  case channel_type::U16: os << "u16"; break;
+  case channel_type::U32: os << "u32"; break;
+  //
+  case channel_type::S8:  os << "s8"; break;
+  case channel_type::S16: os << "s16"; break;
+  case channel_type::S32: os << "s32"; break;
+  //
+  case channel_type::F16: os << "f16"; break;
   case channel_type::F32: os << "f32"; break;
-  case channel_type::F16:  os << "f16"; break;
   default: os << "?";
   }
   if (width) {

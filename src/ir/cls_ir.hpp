@@ -383,8 +383,25 @@ namespace cls
   // e.g. image<rgb,u8,1024x760>    // empty image
   struct init_spec_image : init_spec_atom {
     std::string         path;
-    enum channel_order {INVALID_CO=0,R,RG,RGB,RGBA} ch_order;
-    enum channel_type {INVALID_CT=0,U8,F32,F16} ch_data_type;
+    enum channel_order {
+      INVALID_CO=0,
+      I,
+      L,
+      D, // depth 1.2
+      R, Rx,
+      RG, RGx,
+      RGB, RGBx,
+      RGBA, ARGB, BGRA,
+      sRGB, sRGBx, sRGBA, sBGRA
+    } ch_order;
+    enum channel_type {
+      INVALID_CT=0,
+      UN8,UN16,UN24,UN565,UN555,UN101010,UN101010_2,
+      SN8,SN16,
+      U8,U16,U32,
+      S8,S16,S32,
+      F16,F32
+    } ch_data_type;
     init_spec_atom     *width;
     init_spec_atom     *row_pitch;
     init_spec_atom     *height;

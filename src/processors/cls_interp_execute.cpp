@@ -1,4 +1,6 @@
 #include "cls_interp_internal.hpp"
+#include "../image.hpp"
+#include "../system.hpp"
 #include "../text.hpp"
 
 #include <chrono>
@@ -286,7 +288,73 @@ static void saveImage(
   size_t slice_pitch,
   const void *bits)
 {
-  csi->fatalAt(at, "image saving via attribute not implemented yet");
+  std::stringstream ss;
+  ss << "cls-surface-" << std::setfill('0') <<
+    std::setw(2) << so->memobj_index << ".ppm";
+//  if (so->spec->root->skind == init_spec::IS_IMG &&
+//    !((const init_spec_image *)so->spec->root)->path.empty())
+//  {
+//    auto path = ((const init_spec_image *)so->spec->root)->path;
+//  }
+
+  image::data_format fmt;
+  switch (so->image_format.image_channel_order) {
+  case CL_A:
+  case CL_R:
+  // case CL_Rx:
+  case CL_INTENSITY:
+  case CL_LUMINANCE:
+  case CL_DEPTH:
+    fmt = image::I;
+    break;
+  // case CL_RG:
+  // case CL_RGx:
+  // case CL_RA:
+  //
+  // case CL_sRGB:
+  case CL_RGB:
+    fmt = image::RGB;
+    break;
+  // case CL_RGBx:
+  // case CL_UNORM_SHORT_565:
+  // case CL_UNORM_SHORT_555:
+  // case CL_UNORM_INT_101010:
+  case CL_RGBA:
+    fmt = image::RGBA;
+    break;
+  case CL_BGRA:
+    fmt = image::BGRA;
+    break;
+  case CL_ARGB:
+    fmt = image::ARGB;
+    break;
+  // case CL_sRGBA:
+  // case CL_sBGRA:
+  // case CL_UNORM_INT_101010_2:
+  default:
+    csi->internalAt(at, "unsupported channel order for saving");
+  }
+  if (so->image_desc.image_depth != 0) {
+    csi->internalAt(at, "3D images not supported for saving");
+  }
+  image img(
+    so->image_desc.image_width,
+    std::max(so->image_desc.image_height,(size_t)1),
+    fmt);
+  const uint8_t *host_src = (const uint8_t *)bits;
+  size_t img_row_pitch = img.width*image::bytes_per_pixel(fmt);
+  for (size_t h = 0, hlen = std::max(so->image_desc.image_height,(size_t)1);
+    h < hlen;
+    h++)
+  {
+    memcpy(
+      img.bits + h*img_row_pitch,
+      host_src + h*row_pitch,
+      img_row_pitch);
+  }
+  img.save_ppm(ss.str().c_str(),so->size_in_bytes > 1024);
+  auto bmp_file = sys::drop_extension(ss.str()) + ".bmp";
+  img.save_bmp(bmp_file.c_str());
 }
 static void saveBuffer(
   loc at,
@@ -294,7 +362,11 @@ static void saveBuffer(
   const surface_object *so,
   const void *bits)
 {
-  csi->fatalAt(at, "buffer saving via attribute not implemented yet");
+  std::stringstream ss;
+  ss << "cls-surface-" << std::setfill('0') << std::setw(2) <<
+    so->memobj_index << ".bits";
+  std::ofstream ofs(ss.str(), std::ofstream::binary);
+  ofs.write((const char *)bits, so->size_in_bytes);
 }
 
 void compiled_script_impl::execute(dispatch_command &dc)
@@ -621,8 +693,8 @@ void cl_fatal_handler::withImageMapRead(
   size_t origin[3]{0};
   size_t region[3];
   region[0] = so->image_desc.image_width;
-  region[1] = so->image_desc.image_height;
-  region[2] = so->image_desc.image_depth;
+  region[1] = std::max(so->image_desc.image_height,(size_t)1);
+  region[2] = std::max(so->image_desc.image_depth,(size_t)1);
   size_t row_pitch = 0, slice_pitch = 0;
   CL_COMMAND_CREATE(host_ptr,at,
     clEnqueueMapImage,
@@ -648,7 +720,45 @@ void cl_fatal_handler::withImageMapRead(
       nullptr);
 }
 
-  void compiled_script_impl::init_surfaces()
+void cl_fatal_handler::withImageMapWrite(
+  const loc &at,
+  const surface_object *so,
+  image_writer apply)
+{
+  void *host_ptr = nullptr;
+  size_t origin[3] {0};
+  size_t region[3];
+  region[0] = so->image_desc.image_width;
+  region[1] = std::max(so->image_desc.image_height,(size_t)1);
+  region[2] = std::max(so->image_desc.image_depth,(size_t)1);
+
+  size_t row_pitch = 0, slice_pitch = 0;
+  CL_COMMAND_CREATE(host_ptr,at,
+    clEnqueueMapImage,
+    so->queue,
+    so->memobj,
+    CL_BLOCKING,
+    CL_MAP_WRITE,
+    origin,
+    region,
+    &row_pitch,
+    &slice_pitch,
+    0,nullptr,nullptr);
+
+  apply(row_pitch,slice_pitch,host_ptr);
+
+  CL_COMMAND(at,
+    clEnqueueUnmapMemObject,
+      so->queue,
+      so->memobj,
+      host_ptr,
+      0,
+      nullptr,
+      nullptr);
+}
+
+
+void compiled_script_impl::init_surfaces()
 {
   for (surface_object *so : surfaces) {
     if (so->dummy_object)
@@ -669,13 +779,28 @@ void cl_fatal_handler::withImageMapRead(
       fatalAt(so->spec->defined_at,"no uses of this surface found");
     }
 
-    withBufferMapWrite(
-      so->spec->defined_at,
-      so,
-      [&] (void *host_ptr) {
-        evaluator::context ec(*dc);
-        init_surface(*so, ec, elem_type, host_ptr);
-      });
+    if (so->skind == surface_object::SO_BUFFER) {
+      withBufferMapWrite(
+        so->spec->defined_at,
+        so,
+        [&] (void *host_ptr) {
+          evaluator::context ec(*dc);
+          init_surface(*so, ec, elem_type, host_ptr);
+        });
+    } else if (so->skind == surface_object::SO_IMAGE) {
+      withImageMapWrite(
+        so->spec->defined_at,
+        so,
+        [&] (size_t, size_t, void *host_ptr) {
+          if (so->image_init_bytes) {
+            memcpy(host_ptr, so->image_init_bytes, so->size_in_bytes);
+          } else {
+            memset(host_ptr, 0, so->size_in_bytes);
+          }
+        });
+    } else {
+      internalAt(so->spec->defined_at,"invalid source kind");
+    }
 
     auto t_duration =
       std::chrono::duration_cast<std::chrono::microseconds>(
