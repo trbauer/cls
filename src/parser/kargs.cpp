@@ -174,7 +174,18 @@ static cls::k::program_info parseProgramInfoText(
     // next iteration
     off = src.build_opts.find("-D",off);
   }
-  std::string cpp_inp = text::load_c_preprocessed(src.path,ss.str());
+
+  std::string cpp_inp;
+  if (os.cpp_override_path.empty()) {
+    cpp_inp = text::load_c_preprocessed(src.path,ss.str());
+  } else {
+    if (!sys::file_exists(os.cpp_override_path))
+      fh->fatalAt(at,
+        "unable to find C Preprocessor from command line option "
+        "for kernel analysis");
+    cpp_inp =
+      text::load_c_preprocessed_using(os.cpp_override_path,src.path,ss.str());
+  }
   // suffix the build options so that line numbers all map correctly
   // (when we decide to support #line directives)
   cpp_inp +=

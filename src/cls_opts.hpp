@@ -33,7 +33,7 @@ struct filtered_stream {
 };
 
 struct opts {
-  int                         verbosity = 0;
+  std::string                 cpp_override_path;
   std::vector<std::string>    input_files; // regular arg
   std::string                 input_expr; // -e
   bool                        list_devices = false;
@@ -45,6 +45,7 @@ struct opts {
   bool                        save_preprocessed = false;
   bool                        save_binaries = false;
   bool                        use_kernel_arg_info = false; // OpenCL 1.2+
+  int                         verbosity = 0;
 
   filtered_stream warning() const{
     std::cout << text::ANSI_YELLOW << "WARNING:" << text::ANSI_RESET << " ";

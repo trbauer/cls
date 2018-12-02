@@ -197,7 +197,7 @@ static std::vector<std::string> list_dir_elems(
   std::vector<std::string> elems;
 #if defined(USE_CPP17_STD_FILESYSTEM)
   for (auto &p : fs::directory_iterator(path)) {
-    if (return_full_paths) 
+    if (return_full_paths)
       elems.emplace_back(p.path().string());
     else
       elems.emplace_back(p.path().filename().string());
@@ -349,7 +349,7 @@ std::string sys::find_exe(const char *exe)
   std::string filename_exe = exe;
 #ifdef _WIN32
   // "foo" -> "foo.exe"
-  if (strlen(exe) > 4 && strncmp(".exe",exe + strlen(exe) - 4,4) != 0) {
+  if (strlen(exe) < 4 && strncmp(".exe",exe + strlen(exe) - 4,4) != 0) {
     filename_exe += ".exe";
   }
 #endif
@@ -382,8 +382,8 @@ std::string sys::find_exe(const char *exe)
       possible_path += sys::path_separator;
     }
     possible_path += filename_exe;
-    if (sys::file_exists(filename_exe))
-      return filename_exe;
+    if (sys::file_exists(possible_path))
+      return possible_path;
   }
   return "";
 }

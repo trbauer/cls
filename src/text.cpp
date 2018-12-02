@@ -467,18 +467,27 @@ static const std::string &findPreprocessorExe()
   return ppc_exe;
 }
 
-
 std::string text::load_c_preprocessed(
   const std::string &inp_path,
   const std::string &args)
 {
   auto pp_exe = findPreprocessorExe();
   if (pp_exe.empty()) {
-    WARNING("text::load_c_preprocessed: no preprocessor found on system\n");
-    // punt, and just return the .cl contents
-    return sys::read_file_text(inp_path);
+    pp_exe = sys::find_exe("cpp");
+    if (pp_exe.empty()) {
+      WARNING("[cls]  text::load_c_preprocessed: no preprocessor found on system\n");
+      // punt, and just return the .cl contents
+      return sys::read_file_text(inp_path);
+    }
   }
+  return load_c_preprocessed_using(pp_exe, inp_path, args);
+}
 
+std::string text::load_c_preprocessed_using(
+  const std::string &cpp_path,
+  const std::string &inp_path,
+  const std::string &args)
+{
   // MSVC
   // this works all the way back to VS2013 at least
   // % cl -E examples\vec.cl -D TYPE=int
@@ -505,7 +514,7 @@ std::string text::load_c_preprocessed(
 
 #ifdef USE_TEMP_FILE
   auto tmp_file = sys::get_temp_path(".ppc");
-  if (pp_exe.find("cl.exe") != std::string::npos) {
+  if (cpp_path.find("cl.exe") != std::string::npos) {
     p_args.push_back("/P");
     p_args.push_back("/Fi:" + tmp_file);
   }
@@ -515,7 +524,7 @@ std::string text::load_c_preprocessed(
   }
 #endif
 
-  auto pr = sys::process_read(pp_exe, p_args);
+  auto pr = sys::process_read(cpp_path, p_args);
   if (!pr.succeeded()) {
     // punt, and just return the .cl contents
     WARNING("text::load_c_preprocessed: unable to preprocess\n");

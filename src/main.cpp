@@ -109,6 +109,17 @@ int main(int argc, const char **argv)
       }
       sys::desired_message_verbosity = opts.verbosity;
     });
+  opts::Group<cls::opts> &xGrp =
+    cmdspec.defineGroup("X", "Experimental Options");
+  xGrp.defineOpt(
+      "cpp-path",
+      nullptr,
+      "PATH",
+      "path to the GNU C-Preprocessor",
+      "This is the full path to the GNU C Preprocessor.  "
+        "During kernel analysis we use this path.  ",
+      opts::OptAttrs::NONE,
+      os.cpp_override_path);
 
   if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);

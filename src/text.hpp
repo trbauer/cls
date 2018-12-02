@@ -182,6 +182,10 @@ namespace text
   std::string   load_c_preprocessed(
     const std::string &inp,
     const std::string &args);
+  std::string   load_c_preprocessed_using(
+    const std::string &cpp_path,
+    const std::string &inp,
+    const std::string &args);
 
   /////////////////////////////////////////////////////////////////////////////
   // TEXT TABLES
