@@ -388,7 +388,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
       if (is_pre && so->spec->print_pre ||
         !is_pre && (so->spec->print_post || so->spec->save_post))
       {
-        bool is_print = so->spec->print_pre || so->spec->print_post;
+        bool is_print = is_pre && so->spec->print_pre || so->spec->print_post;
         bool is_image = so->skind == surface_object::SO_IMAGE;
         const type &t = std::get<1>(sinfo);
         const arg_info &ai = std::get<2>(sinfo);
@@ -396,10 +396,6 @@ void compiled_script_impl::execute(dispatch_command &dc)
 
         std::cout << ai.type.syntax() << "  " << ai.name << " = " <<
           so->str() << "\n";
-
-        int elems_per_row = is_pre ?
-          so->spec->print_pre_elems_per_row :
-          so->spec->print_post_elems_per_row;
 
         if (is_image) {
           withImageMapRead(
@@ -421,7 +417,10 @@ void compiled_script_impl::execute(dispatch_command &dc)
             at,
             so,
             [&] (const void *host_ptr) {
-              if (so->spec->print_post) {
+              if (is_print) {
+                int elems_per_row = is_pre ?
+                  so->spec->print_pre_elems_per_row :
+                  so->spec->print_post_elems_per_row;
                 formatBuffer(
                   std::cout,
                   host_ptr,
@@ -429,7 +428,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
                   t,
                   elems_per_row);
                 std::cout << "\n";
-              } else { // so->spec->save_post
+              } else { // is_save
                 saveBuffer(dc.spec->defined_at, this, so, host_ptr);
               }
             });

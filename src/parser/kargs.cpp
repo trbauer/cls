@@ -14,6 +14,46 @@ using namespace cls::k;
 using namespace cls;
 
 
+std::string cls::k::arg_info::typeSyntax() const
+{
+  std::stringstream ss;
+  const char *sep = "";
+
+  if (type_qual & CL_KERNEL_ARG_TYPE_CONST) {
+    ss << sep << "const";
+    sep = " ";
+  }
+  if (type_qual & CL_KERNEL_ARG_TYPE_RESTRICT) {
+    ss << sep << "restrict";
+    sep = " ";
+  }
+  if (type_qual & CL_KERNEL_ARG_TYPE_VOLATILE) {
+    ss << sep << "volatile";
+    sep = " ";
+  }
+  if (type_qual & CL_KERNEL_ARG_TYPE_PIPE) {
+    ss << sep << "pipe";
+    sep = " ";
+  }
+
+  switch (addr_qual) {
+  case CL_KERNEL_ARG_ADDRESS_GLOBAL:     ss << sep << "global"; break;
+  case CL_KERNEL_ARG_ADDRESS_LOCAL:      ss << sep << "local"; break;
+  case CL_KERNEL_ARG_ADDRESS_CONSTANT:   ss << sep << "constant"; break;
+  case CL_KERNEL_ARG_ADDRESS_PRIVATE:    ss << sep << "private"; break;
+  }
+  switch (accs_qual) {
+  case CL_KERNEL_ARG_ACCESS_READ_ONLY:   ss << " read_only"; break;
+  case CL_KERNEL_ARG_ACCESS_WRITE_ONLY:  ss << " write_only"; break;
+  case CL_KERNEL_ARG_ACCESS_READ_WRITE:  ss << " read_write"; break;
+  case CL_KERNEL_ARG_ACCESS_NONE: break;
+  }
+  ss << " " << type.syntax();
+
+  return ss.str();
+}
+
+
 struct karg_parser : cls::parser
 {
   program_info  &p;
@@ -66,11 +106,34 @@ struct karg_parser : cls::parser
     consume(RPAREN);
   }
 
+  int parseTypeQualsOpt() {
+    int qs = CL_KERNEL_ARG_TYPE_NONE;
+    while (true) {
+      if (consumeIfIdentEq("const")) {
+        qs |= CL_KERNEL_ARG_TYPE_CONST;
+      } else if (consumeIfIdentEq("const")) {
+        qs |= CL_KERNEL_ARG_TYPE_RESTRICT;
+      } else if (consumeIfIdentEq("restrict")) {
+        qs |= CL_KERNEL_ARG_TYPE_VOLATILE;
+      } else if (consumeIfIdentEq("pipe")) {
+        qs |= CL_KERNEL_ARG_TYPE_PIPE;
+      } else {
+        break;
+      }
+    }
+    return qs;
+  }
+
   void parseArg(kernel_info &k) {
     k.args.emplace_back();
     arg_info &a = k.args.back();
 
-    a.is_const|= consumeIfIdentEq("const");
+    bool is_const = false;
+    bool is_volatile = false;
+    bool is_restrict = false;
+    bool is_pipe = false;
+
+    a.type_qual |= parseTypeQualsOpt();
 
     if (consumeIfIdentEq("global","__global")) {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_GLOBAL;
@@ -84,7 +147,7 @@ struct karg_parser : cls::parser
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
     }
 
-    a.is_const |= consumeIfIdentEq("const");
+    a.type_qual |= parseTypeQualsOpt();
 
     if (consumeIfIdentEq("read_only","__read_only")) {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_READ_ONLY;
@@ -117,20 +180,13 @@ struct karg_parser : cls::parser
     if (consumeIf(MUL)) {
       p.pointer_types.emplace_back(t,bytes_per_addr);
       a.type = type(p.pointer_types.back());
-    }
-    while (true) {
-      // int
-      if (consumeIfIdentEq("const")) {
-        a.addr_qual |= CL_KERNEL_ARG_TYPE_CONST;
-      } else if (consumeIfIdentEq("restrict")) {
-        a.addr_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
-      } else if (consumeIfIdentEq("volatile")) {
-        a.addr_qual |= CL_KERNEL_ARG_TYPE_VOLATILE;
-      } else if (consumeIfIdentEq("pipe")) {
-        a.addr_qual |= CL_KERNEL_ARG_TYPE_PIPE;
-      } else {
-        break;
-      }
+
+      // this allows (global char *const *name)
+      //                           ^^^^^
+      // maybe useful for SVM
+      //
+      // we discard it because it's not an attribute of the outermost pointer
+      (void)parseTypeQualsOpt();
     }
 
     if (lookingAtIdent()) {

@@ -387,6 +387,17 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       CL_COMMAND(ps->defined_at,
         clGetProgramInfo,
           po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
+
+//      int err_x = 0;
+//    CL_COMMAND_CREATE(po.program, ps->defined_at,
+//      clCreateProgramWithBinary,
+//        ctx,
+//        1,
+//        &dev,
+//        &bits_len,
+//        (const unsigned char **)&bits,
+//        &err_x);
+
       os.verbose() << "dumping binary " << bin_path << "\n";
       sys::write_bin_file(bin_path,bits,bits_len);
     }
@@ -768,6 +779,25 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
   }
 }
 
+static std::string kernelArgsErrorMessage(
+  const kernel_object &ko,
+  const char *msg)
+{
+  const auto &ais = ko.kernel_info->args;
+
+  std::stringstream ss;
+  ss << msg << "; arguments should be:\n";
+  for (cl_uint arg_index = 0;
+    arg_index < (cl_uint)ais.size();
+    arg_index++)
+  {
+    const arg_info &ai = ais[arg_index];
+    ss << "  - " << std::setw(24) << std::left << ai.typeSyntax();
+    ss << "  " << ai.name << "\n";
+  }
+  return ss.str();
+}
+
 dispatch_command *script_compiler::compileDispatchArgs(
   const dispatch_spec *ds)
 {
@@ -775,7 +805,8 @@ dispatch_command *script_compiler::compileDispatchArgs(
   kernel_object &ko = *dc.kernel;
   const auto &ais = ko.kernel_info->args;
   if (ais.size() != ds->arguments.size()) {
-    fatalAt(ds->defined_at, "wrong number of arguments to kernel");
+    fatalAt(ds->defined_at,
+      kernelArgsErrorMessage(ko, "wrong number of arguments to kernel"));
   }
   size_t ptr_size = ko.program->device->pointer_size;
   for (cl_uint arg_index = 0;

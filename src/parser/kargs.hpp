@@ -43,14 +43,12 @@ namespace cls
 
     // global int *foo, ...
     struct arg_info {
-      bool                             is_const = false;
-      bool                             is_volatile = false;
-      bool                             is_restrict = false;
       cl_kernel_arg_address_qualifier  addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
       cl_kernel_arg_access_qualifier   accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
       cl_kernel_arg_type_qualifier     type_qual = CL_KERNEL_ARG_TYPE_NONE;
       std::string                      name;
       type                             type;
+      std::string typeSyntax() const;
     };
 
     // a kernel definition from the source
