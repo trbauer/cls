@@ -9,7 +9,7 @@ using namespace cls;
 #define DEFINE_PRIM_TYPE_VEC(N,IDENT,SYMBOL,CATEGORY,SIZE) \
   constexpr type_struct TS_ ## IDENT ## N{SYMBOL #N,SIZE,&(T_ ## IDENT),N}; \
   constexpr type T_ ## IDENT ## N{TS_ ## IDENT ## N}; \
-  const type & cls:: IDENT ## N () {return T_ ## IDENT ## N;}
+  constexpr const type & cls:: IDENT ## N () {return T_ ## IDENT ## N;}
 
 #define DEFINE_PRIM_TYPE(IDENT,SYMBOL,CATEGORY,SIZE) \
   constexpr type_num TN_ ## IDENT{type_num{SYMBOL,type_num::CATEGORY,SIZE}}; \
@@ -35,24 +35,24 @@ DEFINE_PRIM_TYPE( LONG,  "long",     SIGNED, 8);
 DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
 
 constexpr type_builtin TBI_IMAGE1D_32b(type_builtin::IMAGE1D,4);
-const type T_IMAGE1D_32b(TBI_IMAGE1D_32b);
+constexpr type T_IMAGE1D_32b(TBI_IMAGE1D_32b);
 constexpr type_builtin TBI_IMAGE1D_64b(type_builtin::IMAGE1D,8);
-const type T_IMAGE1D_64b(TBI_IMAGE1D_64b);
+constexpr type T_IMAGE1D_64b(TBI_IMAGE1D_64b);
 //
 constexpr type_builtin TBI_IMAGE2D_32b(type_builtin::IMAGE2D,4);
-const type T_IMAGE2D_32b(TBI_IMAGE2D_32b);
+constexpr type T_IMAGE2D_32b(TBI_IMAGE2D_32b);
 constexpr type_builtin TBI_IMAGE2D_64b(type_builtin::IMAGE2D,8);
 const type T_IMAGE2D_64b(TBI_IMAGE2D_64b);
 //
 constexpr type_builtin TBI_IMAGE3D_32b(type_builtin::IMAGE3D,4);
-const type T_IMAGE3D_32b(TBI_IMAGE3D_32b);
+constexpr type T_IMAGE3D_32b(TBI_IMAGE3D_32b);
 constexpr type_builtin TBI_IMAGE3D_64b(type_builtin::IMAGE3D,8);
-const type T_IMAGE3D_64b(TBI_IMAGE3D_64b);
+constexpr type T_IMAGE3D_64b(TBI_IMAGE3D_64b);
 //
 constexpr type_builtin TBI_SAMPLER_32b(type_builtin::SAMPLER,4);
-const type T_SAMPLER_32b(TBI_SAMPLER_32b);
+constexpr type T_SAMPLER_32b(TBI_SAMPLER_32b);
 constexpr type_builtin TBI_SAMPLER_64b(type_builtin::SAMPLER,8);
-const type T_SAMPLER_64b(TBI_SAMPLER_64b);
+constexpr type T_SAMPLER_64b(TBI_SAMPLER_64b);
 
 // TODO: others ...
 

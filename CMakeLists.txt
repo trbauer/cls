@@ -42,6 +42,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/lodepng/lodepng.cpp" AND
   add_definitions("-DUSE_LODE_PNG")
   set(LODE_PNG_SRC "deps/lodepng/lodepng.h" "deps/lodepng/lodepng.cpp")
 else()
+  set(USE_LODE_PNG 0)
   message("== OMITTING LodePNG for PNG support")
   message("==   fetch https://lodev.org/lodepng/ and place in deps/lodepng/lodepng.{h,cpp})")
 endif()
