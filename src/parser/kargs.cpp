@@ -1,3 +1,4 @@
+#include "intel_gen_binary_decoder.hpp"
 #include "kargs.hpp"
 #include "parser.hpp"
 #include "../cl_headers.hpp"
