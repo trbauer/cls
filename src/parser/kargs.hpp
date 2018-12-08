@@ -66,32 +66,42 @@ namespace cls
       std::vector<arg_info>  args;
     };
 
+    // This keeps track of kernels and custom types etc...
+    //
     // struct foo {...};
     // kernel void bar(...)
     // enum baz {...};
     // kernel void qux(...)
+    //
     struct program_info {
-      std::vector<kernel_info>    kernels;
-      std::vector<type>           types;
-      // memory allocation
-      std::vector<type_ptr>       pointer_types;
+      std::vector<kernel_info>     kernels;
+
+      std::vector<type*>           types;
+      std::vector<type_ptr*>       pointer_types;
+
+      // default constructible, not copyable
+      program_info() { }
+      program_info(const program_info &) = delete;
+      program_info& operator=(program_info const&) = delete;
+      ~program_info();
+
+      const type &pointerTo(const type &t, size_t ptr_size);
     };
 
     /////////////////////////////////////////////////////////////////////////////
     // API
 
-    program_info parseProgramInfo(
+    program_info *parseProgramInfo(
       const cls::opts &os,
       const cls::fatal_handler *fh, cls::loc at,
       const cls::program_source &src,
-      size_t bytes_per_addr);
+      cl_device_id dev_id);
 
-    program_info parseProgramInfoFromAPI(
+    program_info *parseProgramInfoFromAPI(
       const cls::opts &os,
       const cls::fatal_handler *fh, cls::loc at,
       cl_program program,
-      cl_device_id dev_id,
-      size_t bytes_per_addr);
+      cl_device_id dev_id);
 
     // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
     // __attribute__((vec_type_hint(<type>)))

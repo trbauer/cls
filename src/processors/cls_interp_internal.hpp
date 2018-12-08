@@ -27,23 +27,24 @@ using namespace cls::k;
 //
 struct device_object {
   const device_spec *spec; // first definition of this device; SPECIFY: others?
-  cl::Device         device;
+  cl_device_id       device;
   std::string        callback_prefix; // e.g. "[1.2: Intel HD]: "
   size_t             pointer_size; // in bytes
 
-  device_object(const device_spec *_spec, cl::Device dev)
-    : spec(_spec), device(dev)
+  device_object(const device_spec *_spec, cl_device_id dev_id)
+    : spec(_spec), device(dev_id)
   {
     std::stringstream ss;
     ss << "[" << spec->defined_at.line << "." <<
       spec->defined_at.column << "]: ";
     callback_prefix = ss.str();
-    pointer_size = dev.getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
+    pointer_size = cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
   }
   // device_object(const device_object &) = delete;
   // device_object &operator=(const device_object &) = delete;
   ~device_object() {std::cerr << "destructing!\n";}
 
+  // TODO: elminate cl.hpp usage
   cl::Context *context = nullptr;
   cl::CommandQueue *queue = nullptr;
 
@@ -61,9 +62,10 @@ struct program_object {
   const program_spec     *spec;
   device_object          *device;
   cl_program              program = nullptr;
-  cls::k::program_info    program_info;
+  cls::k::program_info   *program_info = nullptr;
   program_object(const program_spec *_spec, device_object *_device)
     : spec(_spec), device(_device) { }
+  program_object() {delete program_info;}
 };
 struct kernel_object {
   const kernel_spec     *spec;
@@ -158,7 +160,8 @@ struct dispatch_command {
   std::string str() const {
     std::stringstream ss;
     ss << "#" <<
-      kernel->program->device->device.getInfo<CL_DEVICE_NAME>().c_str();
+      cl::Device(kernel->program->device->device).
+        getInfo<CL_DEVICE_NAME>().c_str();
     ss << "`";
     cl_program p = kernel->program->program;
     ss << p << "`" << (*kernel->kernel)();

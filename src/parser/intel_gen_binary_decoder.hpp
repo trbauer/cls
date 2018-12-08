@@ -5,14 +5,14 @@
 #include "../cls_opts.hpp"
 #include "../fatal.hpp"
 
+#include <string>
 
 namespace cls
 {
-  program_info parseProgramInfoBinaryGEN(
+  cls::k::program_info *parseProgramInfoBinaryGEN(
     const opts &os,
     const fatal_handler *fh, loc at,
-    const std::string &path)
+    const std::string &path);
 }
-
 
 #endif

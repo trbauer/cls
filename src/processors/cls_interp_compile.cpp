@@ -114,8 +114,8 @@ static void emitCompiledKernelProperties(
   fatal_handler *fh, kernel_object &ko)
 {
   cl_kernel kernel = (*ko.kernel)();
-  cl_device_id device = ko.program->device->device();
-  cl_spec spec = getDeviceSpec(ko.program->device->device);
+  cl_device_id device = ko.program->device->device;
+  cl_spec spec = getDeviceSpec(device);
 
   // units are an optional last parameter
 #define KERNEL_PROPERTY(MINSPEC,PARAM,TYPE) \
@@ -192,7 +192,7 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   }
 
   // find the kernel info from the program info
-  for (kernel_info &ki : po->program_info.kernels) {
+  for (kernel_info &ki : po->program_info->kernels) {
     if (ki.name == ko.spec->name) {
       ko.kernel_info = &ki;
       break;
@@ -208,7 +208,7 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   CL_COMMAND(ks->defined_at,
     clGetKernelWorkGroupInfo,
       (*ko.kernel)(),
-      po->device->device(),
+      po->device->device,
       CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
       sizeof(ko.kernel_info->reqd_word_group_size),
       ko.kernel_info->reqd_word_group_size,
@@ -292,7 +292,8 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   }
   auto fatalHere =
     [&](const char *do_what, const char *with_what, cl_int err) {
-      auto dev_nm = po.device->device.getInfo<CL_DEVICE_NAME>().c_str();
+      auto dev_nm =
+        cl::Device(po.device->device).getInfo<CL_DEVICE_NAME>().c_str();
       fatalAt(ps->defined_at,
         ps->path, ": failed to ", do_what, " with ", with_what,
         " (", status_to_symbol(err), ") on device [",dev_nm,"]");
@@ -302,7 +303,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   std::string build_opts_with_arg_info = build_opts;
   auto vend = getDeviceVendor(po.device->device);
   if (os.use_kernel_arg_info) {
-    if (is_bin && vend != cl_vendor::CL_INTEL)
+    if (is_bin && vend != vendor::INTEL)
       os.warning() <<
         "trying to use kernel argument info on non-Intel binary\n";
     if (getDeviceSpec(po.device->device) <  cl_spec::CL_1_2)
@@ -320,7 +321,6 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   src.is_binary = is_bin;
 
   cl_context ctx = (*po.device->context)();
-  cl_device_id dev = po.device->device();
 
   if (is_bin) {
     auto bits = sys::read_file_binary(ps->path);
@@ -331,7 +331,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       clCreateProgramWithBinary,
         ctx,
         1,
-        &dev,
+        &po.device->device,
         &len,
         &bins,
         &bs_errs);
@@ -339,7 +339,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       clBuildProgram,
         po.program,
         1,
-        &dev,
+        &po.device->device,
         build_opts.empty() ? nullptr : build_opts.c_str(),
         nullptr,
         nullptr);
@@ -352,21 +352,28 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         ctx,1,&src,&len);
 
     cl_int bp_err =
-      clBuildProgram(po.program, 1, &dev, build_opts.c_str(), nullptr, nullptr);
+      clBuildProgram(po.program, 1, &po.device->device,
+        build_opts.c_str(), nullptr, nullptr);
     if (bp_err == CL_BUILD_PROGRAM_FAILURE) {
       std::stringstream ss;
       ss << "failed to build source:\n";
-      ss << getLabeledBuildLog(ps->defined_at, po.program, dev) << "\n";
+      ss << getLabeledBuildLog(
+        ps->defined_at,
+        po.program,
+        po.device->device) << "\n";
       fatalAt(ps->defined_at,ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
-      os.debug() << getLabeledBuildLog(ps->defined_at, po.program, dev);
+      os.debug() << getLabeledBuildLog(
+        ps->defined_at,
+        po.program,
+        po.device->device);
     } else if (bp_err != CL_SUCCESS) {
       fatalAt(
-        ps->defined_at, "failed to biuld program ", status_to_symbol(bp_err));
+        ps->defined_at, "failed to build program ", status_to_symbol(bp_err));
     }
     if (os.save_binaries) {
       std::string bin_ext;
-      if (vend == cl_vendor::CL_NVIDIA)
+      if (vend == vendor::NVIDIA)
         bin_ext = "ptx";
       else // INTC AMD are usually ELF format
         bin_ext = "bin";
@@ -405,8 +412,6 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
 
   ////////////////////////////////////////////////
   // kernel info
-  size_t bytes_per_addr =
-    po.device->device.getInfo<CL_DEVICE_ADDRESS_BITS>() / 8;
   if (os.use_kernel_arg_info) {
     // use clGetKernelArgInfo* for types etc...
     po.program_info = parseProgramInfoFromAPI(
@@ -414,16 +419,15 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       this,
       ps->defined_at,
       po.program,
-      po.device->device(),
-      bytes_per_addr);
+      po.device->device);
   } else {
     // use kargs library
-    po.program_info = cls::k::parseProgramInfo(
+    po.program_info = parseProgramInfo(
       os,
       this,
       ps->defined_at,
       src,
-      bytes_per_addr);
+      po.device->device);
   }
 
   return po;
@@ -484,19 +488,19 @@ static void test(cl_context ctx, cl_command_queue cq)
 
 device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
-  cl::Device dev;
+  cl_device_id dev_id;
   switch (ds->skind) {
   case device_spec::BY_DEFAULT:
-    dev = getDeviceDefault(os);
+    dev_id = getDeviceDefault(os);
     break;
   case device_spec::BY_INDEX:
-    if (!getDeviceByIndex(os, ds->by_index_value, dev)) {
+    if (!getDeviceByIndex(os, ds->by_index_value, dev_id)) {
       fatalAt(ds->defined_at,"invalid device index");
     }
     break;
   case device_spec::BY_NAME: {
     std::string err_msg;
-    if (!getDeviceByName(os, ds->by_name_value, dev, err_msg))
+    if (!getDeviceByName(os, ds->by_name_value, dev_id, err_msg))
       fatalAt(ds->defined_at, "invalid device specification ", err_msg);
     break;
   }
@@ -505,30 +509,31 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
     break;
   }
 
-  auto dev_key = device_key(dev(),ds->instance);
+  auto dev_key = device_key(dev_id, ds->instance);
   auto itr = csi->devices.find(dev_key);
   if (itr != csi->devices.find_end()) {
     return *itr->second;
   }
 
-  device_object &dobj = csi->devices.emplace_back(dev_key, ds, dev);
-  try {
-    std::vector<cl::Device> devs{dev};
-    dobj.context = new cl::Context(
-      devs,
+  device_object &dobj = csi->devices.emplace_back(dev_key, ds, dev_id);
+  cl_context context;
+  // const cl_context_properties props{...};
+  CL_COMMAND_CREATE(context, ds->defined_at,
+    clCreateContext,
       nullptr,
+      1,
+      &dev_id,
       dispatchContextNotify,
       (void *)&dobj);
-  } catch (const cl::Error &err) {
-    fatalAt(ds->defined_at,"clCreateContext: ",status_to_symbol(err.err()));
-  }
+  dobj.context = new cl::Context(context);
   if (os.verbosity >= 2) {
     debug(ds->defined_at,
-      "created context on ",dobj.device.getInfo<CL_DEVICE_NAME>().c_str());
+      "created context on ",
+      cl::Device(dobj.device).getInfo<CL_DEVICE_NAME>().c_str());
   }
 
   cl_command_queue cq;
-  auto cl_err = makeCommandQueue(os.prof_time, dev(), (*dobj.context)(), cq);
+  auto cl_err = makeCommandQueue(os.prof_time, dev_id, (*dobj.context)(), cq);
   if (cl_err != CL_SUCCESS) {
     fatalAt(
       ds->defined_at,

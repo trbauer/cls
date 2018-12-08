@@ -54,6 +54,26 @@ std::string cls::k::arg_info::typeSyntax() const
   return ss.str();
 }
 
+program_info::~program_info()
+{
+  for (type *t : types)
+    delete t;
+  for (type_ptr *pt : pointer_types)
+    delete pt;
+}
+
+const type &program_info::pointerTo(const type &t_ref, size_t ptr_size)
+{
+  for (const type *t : types) {
+    if (t->is<type_ptr>() && t->as<type_ptr>().element_type == &t_ref) {
+      return *t;
+    }
+  }
+  pointer_types.push_back(new type_ptr(&t_ref,ptr_size));
+  types.push_back(new type(*pointer_types.back()));
+  return *types.back();
+}
+
 
 struct karg_parser : cls::parser
 {
@@ -112,9 +132,9 @@ struct karg_parser : cls::parser
     while (true) {
       if (consumeIfIdentEq("const")) {
         qs |= CL_KERNEL_ARG_TYPE_CONST;
-      } else if (consumeIfIdentEq("const")) {
-        qs |= CL_KERNEL_ARG_TYPE_RESTRICT;
       } else if (consumeIfIdentEq("restrict")) {
+        qs |= CL_KERNEL_ARG_TYPE_RESTRICT;
+      } else if (consumeIfIdentEq("volatile")) {
         qs |= CL_KERNEL_ARG_TYPE_VOLATILE;
       } else if (consumeIfIdentEq("pipe")) {
         qs |= CL_KERNEL_ARG_TYPE_PIPE;
@@ -178,10 +198,8 @@ struct karg_parser : cls::parser
       fatalAt(type_loc,"unrecognized type");
     }
     a.type = *t;
-    if (consumeIf(MUL)) {
-      p.pointer_types.emplace_back(t,bytes_per_addr);
-      a.type = type(p.pointer_types.back());
-
+    while (consumeIf(MUL)) {
+      a.type = p.pointerTo(*t,bytes_per_addr);
       // this allows (global char *const *name)
       //                           ^^^^^
       // maybe useful for SVM
@@ -199,7 +217,7 @@ struct karg_parser : cls::parser
   }
 };
 
-static cls::k::program_info parseProgramInfoText(
+static cls::k::program_info *parseProgramInfoText(
   const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
   const cls::program_source &src,
@@ -260,8 +278,8 @@ static cls::k::program_info parseProgramInfoText(
     of << cpp_inp;
   }
 
-  program_info p;
-  karg_parser kp(cpp_inp, p, bytes_per_addr);
+  program_info *pi = new program_info();
+  karg_parser kp(cpp_inp, *pi, bytes_per_addr);
   try {
     kp.parse();
   } catch (const diagnostic &d) {
@@ -274,41 +292,49 @@ static cls::k::program_info parseProgramInfoText(
     ss << "SEE: debug-out.cl";
     fh->fatalAt(at,ss.str());
   }
-  return p;
+  return pi;
 }
 
-static program_info parseProgramInfoBinary(
+static program_info *parseProgramInfoBinary(
   const opts &os,
   const fatal_handler *fh, loc at,
-  const std::string &path)
+  const std::string &path,
+  cl_device_id dev_id)
 {
-  auto bits = sys::read_file_binary(path);
+  // auto bits = sys::read_file_binary(path);
   // TODO: parse PTX or GEN binary
-  fh->fatalAt(at,
-    "parseProgramInfoBinary: "
-    "argument info from binaries not supported yet");
-  return program_info();
+  auto ma = getDeviceMicroArchitecture(dev_id);
+  if (isIntelGEN(ma)) {
+    return parseProgramInfoBinaryGEN(os, fh, at, path);
+  } else {
+    fh->fatalAt(at,
+      "parseProgramInfoBinary: "
+      "argument info from binaries not supported yet on this device");
+    return nullptr;
+  }
 }
 
-program_info cls::k::parseProgramInfo(
+program_info *cls::k::parseProgramInfo(
   const opts &os,
   const fatal_handler *fh, loc at,
   const program_source &src,
-  size_t bytes_per_addr)
+  cl_device_id dev_id)
 {
+
   if (src.is_binary) {
-    return parseProgramInfoBinary(os, fh, at, src.path);
+    return parseProgramInfoBinary(os, fh, at, src.path, dev_id);
   } else {
+    size_t bytes_per_addr =
+      cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
     return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
   }
 }
 
-program_info cls::k::parseProgramInfoFromAPI(
+program_info *cls::k::parseProgramInfoFromAPI(
   const cls::opts &os,
   const cls::fatal_handler *fh, cls::loc at,
   cl_program program,
-  cl_device_id dev_id,
-  size_t bytes_per_addr)
+  cl_device_id dev_id)
 {
   cl_uint ks_len = 0;
   auto err = clCreateKernelsInProgram(program, 0, nullptr, &ks_len);
@@ -325,13 +351,16 @@ program_info cls::k::parseProgramInfoFromAPI(
       status_to_symbol(err));
   }
 
-  program_info pi;
-  pi.kernels.reserve(ks_len);
+  program_info *pi = new program_info();
+  pi->kernels.reserve(ks_len);
+
+  size_t bytes_per_addr =
+    cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
 
   for (cl_uint k_ix = 0; k_ix < ks_len; k_ix++) {
     char knm_buf_static[256];
-    pi.kernels.emplace_back();
-    kernel_info &ki = pi.kernels.back();
+    pi->kernels.emplace_back();
+    kernel_info &ki = pi->kernels.back();
 
     size_t knm_len = 0;
     err = clGetKernelInfo(
@@ -454,8 +483,8 @@ program_info cls::k::parseProgramInfoFromAPI(
       }
       ai.type = *t;
       for (size_t i = star; i < full_type_name.size(); i++) {
-        pi.pointer_types.emplace_back(t,bytes_per_addr);
-        ai.type = type(pi.pointer_types.back());
+        if (full_type_name[i] == '*')
+          ai.type = pi->pointerTo(ai.type, bytes_per_addr);
       }
 
       err = clGetKernelArgInfo(

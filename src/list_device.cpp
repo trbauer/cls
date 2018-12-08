@@ -373,10 +373,8 @@ static void emitParamName(const char *prop)
 
 
 void listDeviceInfoForDevice(
-  const cls::opts &os, const cl::Device &d, int dev_ix)
+  const cls::opts &os, cl_device_id dev_id, int dev_ix)
 {
-  cl_device_id dev = d();
-
 #if defined(__GNUC__) && __GNUC__>=6
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
@@ -392,7 +390,7 @@ void listDeviceInfoForDevice(
 #define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
   do { \
     emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,FORMATTER,UNITS); \
+    emitDeviceInfo<TYPE>(std::cout,dev_id,PARAM,FORMATTER,UNITS); \
     std::cout << "\n"; \
   } while (0)
 #define DEVICE_INFO(PARAM,TYPE,...) \
@@ -404,7 +402,7 @@ void listDeviceInfoForDevice(
 #define DEVICE_INFO_MEMSIZE(PARAM,TYPE) \
   do { \
     emitParamName(#PARAM); \
-    emitDeviceInfoMem<TYPE>(std::cout,dev,PARAM); \
+    emitDeviceInfoMem<TYPE>(std::cout,dev_id,PARAM); \
     std::cout << "\n"; \
   } while (0)
 
@@ -416,7 +414,7 @@ void listDeviceInfoForDevice(
 #define DEVICE_INFO_ARRAY_WITH0(PARAM_STR,PARAM,TYPE,PARAM_LEN,FORMATTER) \
   do { \
     emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev,PARAM,PARAM_LEN,FORMATTER); \
+    emitDeviceInfo<TYPE>(std::cout,dev_id,PARAM,PARAM_LEN,FORMATTER); \
     std::cout << "\n"; \
   } while (0)
 #define DEVICE_INFO_ARRAY_WITH(PARAM,TYPE,PARAM_LEN,FORMATTER) \
@@ -427,7 +425,7 @@ void listDeviceInfoForDevice(
   do { \
     emitParamName(#PARAM); \
     emitDeviceInfoArray<TYPE>(\
-      std::cout, dev, PARAM, PARAM_LEN, DELIM, default_formatter<TYPE>); \
+      std::cout, dev_id, PARAM, PARAM_LEN, DELIM, default_formatter<TYPE>); \
     std::cout << "\n"; \
   } while (0)
   //
@@ -435,10 +433,10 @@ void listDeviceInfoForDevice(
   if (dev_ix >= 0) {
     std::cout << "DEVICE[" << dev_ix << "]: ";
   }
-  auto vend = getDeviceVendor(d);
-  bool is_intc = vend == cl_vendor::CL_INTEL;
-  bool is_nvda = vend == cl_vendor::CL_NVIDIA;
-  bool is_amd =  vend == cl_vendor::CL_AMD;
+  auto vend = getDeviceVendor(dev_id);
+  bool is_intc = vend == vendor::INTEL;
+  bool is_nvda = vend == vendor::NVIDIA;
+  bool is_amd =  vend == vendor::AMD;
 
   if (is_intc) {
     std::cout << ANSI_COLOR_INTEL_BLUE;
@@ -447,11 +445,12 @@ void listDeviceInfoForDevice(
   } else if (is_amd) {
     std::cout << ANSI_COLOR_AMD_ORANGE;
   }
-  std::string device_name = d.getInfo<CL_DEVICE_NAME>().c_str();
+  std::string device_name =
+    cl::Device(dev_id).getInfo<CL_DEVICE_NAME>().c_str();
   std::cout << std::setw(48) << std::left << device_name;
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
-    auto dev_type = d.getInfo<CL_DEVICE_TYPE>();
+    auto dev_type = cl::Device(dev_id).getInfo<CL_DEVICE_TYPE>();
     std::cout << " " << std::setw(4);
     switch (dev_type) {
     case CL_DEVICE_TYPE_CPU: std::cout << "CPU"; break;
@@ -462,12 +461,12 @@ void listDeviceInfoForDevice(
     }
     std::cout <<
       "    " <<
-      d.getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str() << "\n";
+      cl::Device(dev_id).getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str() << "\n";
     return;
   }
   std::cout << "\n";
 
-  auto spec = getDeviceSpec(d);
+  auto spec = getDeviceSpec(dev_id);
 
   bool is_2_2_plus = spec >= cl_spec::CL_2_2;
   bool is_2_1_plus = spec >= cl_spec::CL_2_1;
@@ -475,7 +474,8 @@ void listDeviceInfoForDevice(
   bool is_1_2_plus = spec >= cl_spec::CL_1_2;
   bool is_1_1_plus = spec >= cl_spec::CL_1_1;
 
-  std::string extensions_string = d.getInfo<CL_DEVICE_EXTENSIONS>().c_str();
+  std::string extensions_string =
+    cl::Device(dev_id).getInfo<CL_DEVICE_EXTENSIONS>().c_str();
   auto hasExtension = [&](const char *ext) {
     return extensions_string.find(ext) != std::string::npos;
   };

@@ -37,7 +37,7 @@ struct opts {
   std::vector<std::string>    input_files; // regular arg
   std::string                 input_expr; // -e
   bool                        list_devices = false;
-  std::vector<cl::Device>     list_devices_specific;
+  std::vector<cl_device_id>   list_devices_specific;
   int                         iterations = 1;
   bool                        wall_time = false;
   bool                        parse_only = false;

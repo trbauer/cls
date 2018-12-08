@@ -1,29 +1,41 @@
 #ifndef DECODER_HPP
 #define DECODER_HPP
 
-#include "fatal.hpp"
-#include "text.hpp"
+#include "../fatal.hpp"
+#include "../text.hpp"
 
 #include <cstdint>
 
 namespace cls {
-  struct decoder : fatal_handler {
-    loc            at;
-    const uint8_t *bits;
-    size_t         bits_length;
+  struct decoder {
+    const fatal_handler  &fh;
+    loc                   at;
+    const uint8_t        *bits;
+    size_t                bits_length;
 
-    size_t         off = 0;
+    size_t                off = 0;
 
-    decoder(loc _at, const uint8_t *_bits, size_t _bits_length)
-      : at(loc), bits(_bits), bits_length(_bits_length) {}
+    decoder(
+      const fatal_handler &_fh,
+      loc _at,
+      const uint8_t *_bits,
+      size_t _bits_length)
+      : fh(_fh), at(_at), bits(_bits), bits_length(_bits_length) { }
 
-    template <typename..Ts>
-    void fatal(Ts...ts)
+    template <typename...Ts>
+    void fatalHere(Ts...ts) const
     {
       std::stringstream ss;
       ss << "at binary offset " << off << ": ";
       text::format_to(ss, ts...);
-      fatalAt(at, ss.str());
+      fh.fatalAt(at, ss.str());
+    }
+    template <typename...Ts>
+    void fatal(Ts...ts) const
+    {
+      std::stringstream ss;
+      text::format_to(ss, ts...);
+      fh.fatalAt(at, ss.str());
     }
 
     void skip(size_t len) {
@@ -31,7 +43,7 @@ namespace cls {
     }
     void seek(size_t new_off) {
       if (new_off > bits_length)
-        fatal("premature end of file (trying to seek to ",len,"B)");
+        fatal("premature end of file (trying to seek to ",new_off,")");
       off = new_off;
     }
 
@@ -40,26 +52,27 @@ namespace cls {
     template <typename T>
     T peek() const {
       T val;
-      peekBuf(&val, sizeof(T));
+      peekInto(&val, sizeof(T));
       return val;
     }
-    void peekBuf(const void *val, size_t len) const {
+    void peekInto(void *val, size_t len) const {
       if (len - off < len)
         fatal("premature end of file");
-      memcpy(&val, bits + off, len);
+      memcpy(val, bits + off, len);
+      std::cout << " ";
     }
     ///////////////////////////////////////////////////////////////////////////
     // Read and advance
     template <typename T> T decode() {
       T val;
-      decodeBuf(&val, sizeof(T));
+      decodeInto(&val, sizeof(T));
       return val;
     }
-    void decodeBuf(const void *val, size_t len) {
-      peek(val, len);
+    void decodeInto(void *val, size_t len) {
+      peekInto(val, len);
       skip(len);
     }
-  }
+  }; // struct decoder
 }
 
 

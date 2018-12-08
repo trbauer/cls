@@ -9,7 +9,7 @@ using namespace cls;
 #define DEFINE_PRIM_TYPE_VEC(N,IDENT,SYMBOL,CATEGORY,SIZE) \
   constexpr type_struct TS_ ## IDENT ## N{SYMBOL #N,SIZE,&(T_ ## IDENT),N}; \
   constexpr type T_ ## IDENT ## N{TS_ ## IDENT ## N}; \
-  constexpr const type & cls:: IDENT ## N () {return T_ ## IDENT ## N;}
+  const type & cls:: IDENT ## N () {return T_ ## IDENT ## N;}
 
 #define DEFINE_PRIM_TYPE(IDENT,SYMBOL,CATEGORY,SIZE) \
   constexpr type_num TN_ ## IDENT{type_num{SYMBOL,type_num::CATEGORY,SIZE}}; \
@@ -42,7 +42,7 @@ constexpr type T_IMAGE1D_64b(TBI_IMAGE1D_64b);
 constexpr type_builtin TBI_IMAGE2D_32b(type_builtin::IMAGE2D,4);
 constexpr type T_IMAGE2D_32b(TBI_IMAGE2D_32b);
 constexpr type_builtin TBI_IMAGE2D_64b(type_builtin::IMAGE2D,8);
-const type T_IMAGE2D_64b(TBI_IMAGE2D_64b);
+constexpr type T_IMAGE2D_64b(TBI_IMAGE2D_64b);
 //
 constexpr type_builtin TBI_IMAGE3D_32b(type_builtin::IMAGE3D,4);
 constexpr type T_IMAGE3D_32b(TBI_IMAGE3D_32b);
