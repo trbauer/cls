@@ -55,7 +55,7 @@ void diagnostic::str(std::ostream &os) const {
     message);
 }
 
-void diagnostic::default_exit() const {
+void diagnostic::exit_with_error() const {
   str(std::cerr);
   if (internal_error) {
     exit(EXIT_INTERNAL_ERROR);

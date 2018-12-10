@@ -27,16 +27,15 @@ namespace cls
       SEMI,  // ;
       COLON, // :
       BACKTICK, // `
-
-      // source modifiers and saturation
-      // NEG (see SUB), // -       negation (src modifier)
-      TILDE, // ~       bitwise complement
-
-      // reserved symbols
+      TILDE, // ~
       BANG, // !
       AT,   // @
       HASH, // #
       EQ,   // =
+
+      // reserved symbols
+      QUESTION, // ?
+      DOLLAR, // $
 
       // operators (reserved for future arithmetic)
       MUL, // *

@@ -87,7 +87,7 @@ struct igb_decoder : decoder {
 
   void decodeKernelArgument(kernel_info &ki, size_t ptr_size) {
     auto arg_ix = (int)decode<uint32_t>();
-    if (ki.args.size() <= arg_ix) {
+    if (ki.args.size() <= (size_t)arg_ix) {
       ki.args.resize(arg_ix + 1);
     }
     arg_info &ai = ki.args[arg_ix];
@@ -136,7 +136,7 @@ struct igb_decoder : decoder {
 
     ki.args[arg_ix].name = decodeString(arg_name_len);
 
-    // they store pointers "uint*;8"
+    // they store pointers as in the following example "uint*;8"
     auto type_name = decodeString(type_name_len);
     size_t semi = type_name.find(';');
     size_t star = type_name.find('*');
@@ -151,7 +151,7 @@ struct igb_decoder : decoder {
       // something like "uint*;8";
       // but handle harder stuff too like "uint***;8"
       for (size_t i = star; i < std::min(semi,type_name.size()); i++) {
-        if (i == '*') {
+        if (type_name[i] == '*') {
           t = &pi.pointerTo(*t, ptr_size);
         }
       }
@@ -270,6 +270,8 @@ struct igb_decoder : decoder {
         } else {
           skip(patch_size - 8);
         }
+        //
+        patch_bytes_read += patch_size;
       } //
     }
   } //

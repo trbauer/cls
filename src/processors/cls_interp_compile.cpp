@@ -88,10 +88,10 @@ static void emitCompiledKernelProperty(
 
 typedef cl_int (*clGetKernelSubGroupInfo_TYPE) (
   cl_kernel,
- 	cl_device_id,
- 	cl_kernel_sub_group_info,
- 	size_t, const void *,
- 	size_t, void * , size_t *);
+  cl_device_id,
+  cl_kernel_sub_group_info,
+  size_t, const void *,
+  size_t, void * , size_t *);
 
 clGetKernelSubGroupInfo_TYPE findSubgroupFunction()
 {

@@ -74,7 +74,7 @@ namespace cls
 
     // default handler emits to std::cerr and exits with EXIT_INTERNAL_ERROR
     [[noreturn]]
-    void          default_exit() const;
+    void          exit_with_error() const;
   }; // diagnostic
 
   using warning_list = std::vector<std::tuple<loc,std::string>>;

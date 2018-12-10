@@ -56,8 +56,8 @@ using namespace sys;
 ///////////////////////////////////////////////////////////////////////////////
 // COLORED TEXT
 bool sys::is_tty(std::ostream &os) {
-    return &os == &std::cerr ? IS_STDERR_TTY :
-        &os == &std::cout ? IS_STDOUT_TTY :
+  return &os == &std::cerr ? IS_STDERR_TTY :
+         &os == &std::cout ? IS_STDOUT_TTY :
         false;
 }
 
@@ -127,7 +127,7 @@ void sys::message_for_level(int this_level, const char *patt, ...)
 void sys::fatal_exit()
 {
     if (IsDebuggerPresent()) {
-	    sys::debug_break();
+        sys::debug_break();
     }
     exit(-1);
 //  abort();
@@ -317,7 +317,6 @@ std::string sys::get_temp_path(const char *sfx)
   ss << exe << "_" << pid;
   std::string pfx = get_temp_dir() + sys::path_separator + ss.str() + "_";
 
-  // protect this part under a mutex
   std::lock_guard<std::mutex> guard(temp_path_mutex);
   static int i = 0;
   while (1) {
@@ -328,7 +327,7 @@ std::string sys::get_temp_path(const char *sfx)
     if (!file_exists(file.c_str())) {
       // technically should touch the path to create file, but we take a
       // weak assumption that we're the only process modifying this file
-      // currently (pretty safe given that we use a pid in it and a
+      // currently (pretty safe given that we also use a pid in it and a
       // monotonically increasing integer)
       return file;
     }
@@ -432,13 +431,13 @@ std::string sys::read_file_text(std::string fname)
 void sys::write_bin_file(
     std::string fname, const void *buf, size_t buflen)
 {
-    std::ofstream of(fname, std::ios::binary);
-    if (!of.good())
-        FATAL("%s: failed to open output buffer file for writing",
-            fname.c_str());
-    of.write((const char *)buf, buflen);
-    if (!of.good())
-        FATAL("%s: error writing file", fname.c_str());
+  std::ofstream of(fname, std::ios::binary);
+  if (!of.good())
+    FATAL("%s: failed to open output buffer file for writing",
+      fname.c_str());
+  of.write((const char *)buf, buflen);
+  if (!of.good())
+    FATAL("%s: error writing file", fname.c_str());
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -554,7 +553,8 @@ process_result sys::process_read(
   std::vector<std::string> args,
   std::string input)
 {
-  // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/creating-a-child-process-with-redirected-input-and-output
+  // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/
+  //        creating-a-child-process-with-redirected-input-and-output
   process_result pr;
   memset(&pr, 0, sizeof(pr));
 
@@ -565,16 +565,17 @@ process_result sys::process_read(
   std::string cmdline = exe;
   for (std::string a : args)
     cmdline += " " + a;
-	// has to be writable...
-	char *cmdline_buffer = (char *)alloca(cmdline.size() + 1024);
-	memset(cmdline_buffer, 0, cmdline.size() + 1024);
-  STRNCPY(cmdline_buffer, cmdline.size() + 1024, cmdline.c_str(), cmdline.size());
+    // has to be writable...
+    char *cmdline_buffer = (char *)alloca(cmdline.size() + 1024);
+    memset(cmdline_buffer, 0, cmdline.size() + 1024);
+    STRNCPY(cmdline_buffer,
+      cmdline.size() + 1024, cmdline.c_str(), cmdline.size());
 
-	STARTUPINFOA si;
-	PROCESS_INFORMATION pi;
-	ZeroMemory(&si, sizeof(si));
-	si.cb = sizeof(si);
-	ZeroMemory(&pi, sizeof(pi));
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
 
   SECURITY_ATTRIBUTES sa;
   ZeroMemory(&sa,sizeof(sa));
@@ -610,37 +611,37 @@ process_result sys::process_read(
   si.hStdInput = stdin_read_handle;
   si.dwFlags = STARTF_USESTDHANDLES;
 
-	if (!CreateProcessA(
-		NULL,
-		cmdline_buffer,
-		NULL,
-		NULL,
-		FALSE,
-		0,
-		NULL,
-		NULL,
-		&si,
-		&pi))
-	{
-		auto err = GetLastError();
-	  pr.startup_status =  (int)err;
-	  // if (err == ERROR_FILE_NOT_FOUND) {
-  	// 	WARNING("exec_process: cpp.exe not found in %%PATH%%\n");
-		// } else {
-		// 	WARNING("exec_process: CreateProcess failed (GLE: %d)\n", (int)err);
-		//  }
-    // close the pipes (both sides)
-    // ours
-    (void)CloseHandle(stdout_read_handle);
-    (void)CloseHandle(stderr_read_handle);
-    (void)CloseHandle(stdin_write_handle);
-    // theirs
-    (void)CloseHandle(stdout_write_handle);
-    (void)CloseHandle(stderr_write_handle);
-    (void)CloseHandle(stdin_read_handle);
-    // bail
-		return pr;
-	}
+    if (!CreateProcessA(
+        NULL,
+        cmdline_buffer,
+        NULL,
+        NULL,
+        FALSE,
+        0,
+        NULL,
+        NULL,
+        &si,
+        &pi))
+    {
+      auto err = GetLastError();
+      pr.startup_status =  (int)err;
+      // if (err == ERROR_FILE_NOT_FOUND) {
+      //  WARNING("exec_process: cpp.exe not found in %%PATH%%\n");
+      // } else {
+      //  WARNING("exec_process: CreateProcess failed (GLE: %d)\n", (int)err);
+      //  }
+      // close the pipes (both sides)
+      // ours
+      (void)CloseHandle(stdout_read_handle);
+      (void)CloseHandle(stderr_read_handle);
+      (void)CloseHandle(stdin_write_handle);
+      // theirs
+      (void)CloseHandle(stdout_write_handle);
+      (void)CloseHandle(stderr_write_handle);
+      (void)CloseHandle(stdin_read_handle);
+      // bail
+      return pr;
+    }
   // CreateProcess at least succeeded
   pr.startup_status = 0;
 
@@ -661,15 +662,15 @@ process_result sys::process_read(
   std::thread thr_in(process_writer, process_io_args(stdin_write_handle, input));
 
   // fetch the exit code and release the process object
-	auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
-	if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
-		WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
+    auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
+    if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
+      WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
     pr.exit_code = -1;
-	} else {
-		DWORD exit_code = 0;
-		(void)GetExitCodeProcess(pi.hProcess, &exit_code);
-		pr.exit_code = (int)exit_code;
-	}
+    } else {
+      DWORD exit_code = 0;
+      (void)GetExitCodeProcess(pi.hProcess, &exit_code);
+      pr.exit_code = (int)exit_code;
+    }
   (void)CloseHandle(pi.hProcess);
   // wait for the IO threads to complete
   thr_in.join();

@@ -13,12 +13,15 @@ import System.Process
 import Text.Printf
 import qualified Data.ByteString as BS
 
+import qualified System.Console.ANSI as SCA -- cabal install ansi-terminal
+
 data Opts =
   Opts {
     oVerbosity :: !Int
   , oFailFast :: !Bool
   , oDeviceIndex :: !Int
   , oResults :: !(IORef (Int,Int))
+  , oClsExe :: !FilePath
   }
 oVerbose :: Opts -> Bool
 oVerbose = (>0) . oVerbosity
@@ -34,12 +37,17 @@ mkDftOpts = do
     , oFailFast = True
     , oDeviceIndex = 0
     , oResults = ior
+    , oClsExe = cls64_exe
     }
 
 cls64_exe :: FilePath
 cls64_exe = "builds/vs2017-64/Debug/cls64.exe"
+cls32_exe :: FilePath
+cls32_exe = "builds/vs2017-32/Debug/cls32.exe"
 
 
+preCheck :: IO ()
+preCheck = mkDftOpts >>= preCheckForOpts
 
 default_arguments :: [String]
 default_arguments = []
@@ -49,6 +57,8 @@ parseOpts []     os = return os
 parseOpts (a:as) os =
     case a of
       "-q" -> continue $ os{oVerbosity = -1}
+      "-32" -> continue $ os{oClsExe = cls32_exe}
+      "-64" -> continue $ os{oClsExe = cls64_exe}
       "-v" -> continue $ os{oVerbosity = 1}
       "-v2" -> continue $ os{oVerbosity = 2}
       "-F" -> continue $ os{oFailFast = False}
@@ -68,29 +78,79 @@ parseOpts (a:as) os =
         badOpt :: String -> IO a
         badOpt msg = die (a ++ ": " ++ msg)
 
-
 main :: IO ()
 main = getArgs >>= run
 
 run :: [String] -> IO ()
 run as = do
-  z <- doesFileExist cls64_exe
-  unless z $
-    die $ cls64_exe ++ ": file not found"
   dft_opts <- mkDftOpts
-  parseOpts as dft_opts >>= runWithOpts
+  os <- parseOpts as dft_opts
+  preCheckForOpts os
+  runWithOpts os
 
+putStrLnWarning :: String -> IO ()
+putStrLnWarning s = putStrX SCA.Yellow (s ++ "\n")
+putStrGreen :: String -> IO ()
+putStrGreen = putStrX SCA.Green
+putStrRed :: String -> IO ()
+putStrRed = putStrX SCA.Red
+putStrX c s = do
+  SCA.setSGR [SCA.SetColor SCA.Foreground SCA.Vivid c]
+  putStr s
+  SCA.setSGR [SCA.Reset]
 
--- dimensionParsing: have get_global_id(0) write out get_global_size, get_local_size
---   <1024>
---   <1024x768>
---   <1024,32>
---   <1024x768,32x1>
+preCheckForOpts :: Opts -> IO ()
+preCheckForOpts os = do
+  z <- doesFileExist (oClsExe os)
+  unless z $
+    die $ oClsExe os ++ ": file not found"
+  -- ensure the executable is newer than the source files
+  mt_exe <- getModificationTime (oClsExe os)
+
+  let checkAgainstFile :: FilePath -> IO Bool
+      checkAgainstFile fp
+        | any (`isSuffixOf`fp) [".cpp",".hpp",".flex"] = do
+          fstr <- readFile fp
+          length fstr `seq` return ()
+          let mAX_COLS = 120
+          let lns = zip [1..] (lines fstr) :: [(Int,String)]
+          let bad_lines_too_long = filter ((>=mAX_COLS) . length . snd) lns
+              bad_lines_tabs = filter (('\t'`elem`) . snd) lns
+              bad_lines_trailing_ws = filter ((" "`isSuffixOf`) . snd) lns
+          forM_ bad_lines_too_long $ \(lno,ln) -> do
+            putStrLnWarning $ fp ++ ":" ++ show lno ++ ": line exceeds max cols"
+          forM_ bad_lines_tabs $ \(lno,ln) -> do
+            putStrLnWarning $ fp ++ ":" ++ show lno ++ ": line has tab space"
+          forM_ bad_lines_trailing_ws $ \(lno,ln) -> do
+            putStrLnWarning $ fp ++ ":" ++ show lno ++ ": line has trailing whitespace"
+          mt_fp <- getModificationTime fp
+          when (mt_exe < mt_fp) $
+            putStrLnWarning $ fp ++ ": source file is newer than executable (recompile or touch exe)"
+          return (all null [bad_lines_too_long,bad_lines_tabs,bad_lines_trailing_ws] && mt_exe >= mt_fp)
+        | otherwise = return True -- ignore file
+
+      checkAgainstDir dir = do
+        fs <- listDirectory dir
+        let checkPath p = do
+              let fp = dir ++ "/" ++ p
+              z <- doesDirectoryExist fp
+              if z then checkAgainstDir fp
+                else checkAgainstFile fp
+        and <$> mapM checkPath fs
+  z1 <- checkAgainstFile "CMakeLists.txt"
+  z2 <- checkAgainstDir "src"
+  unless (z1 && z2) $ do
+    die "pre-check failed"
 
 
 runWithOpts :: Opts -> IO ()
 runWithOpts os = run_tests >> print_summary >> exit
   where run_tests = do
+          putStrLn $ "running with " ++ oClsExe os ++ " on device " ++ show (oDeviceIndex os)
+          oup <- readProcess (oClsExe os) ["-l"] ""
+          putStr oup
+          putStrLn "==============================================="
+
           -- MISC
           runSyntaxErrorTestCL os
           runSyntaxErrorTestCLS os
@@ -540,7 +600,7 @@ runInitRandomTests os = do
   randTypeTest "uint" (2^16 + 1) (2^16 + 20 :: Int)
   randTypeTest "long" (-10) (10 :: Int)
   randTypeTest "ulong" (2^32 + 1) (2^32 + 10 :: Integer)
-  oup <- readProcess cls64_exe ["-l="++show (oDeviceIndex os),"-v"] ""
+  oup <- readProcess (oClsExe os) ["-l="++show (oDeviceIndex os),"-v"] ""
   let has_fp16 = "cl_khr_fp16" `isInfixOf` oup
   when has_fp16 $
     randTypeTest "half" (-2.0 :: Float) (2.0 :: Float)
@@ -646,7 +706,7 @@ runSyntaxErrorTestCLS os = do
 --
 runProgramBinariesTest :: Opts -> IO ()
 runProgramBinariesTest os = do
-  dev_out <- readProcess cls64_exe ["-l"] ""
+  dev_out <- readProcess (oClsExe os) ["-l"] ""
   let dev_info_line = filter (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isPrefixOf`) (lines dev_out)
 
   when (null dev_info_line) $
@@ -676,7 +736,7 @@ runProgramBinariesTest os = do
   removeIfExists program_binary
   --
   runScriptWith
-    cls64_exe
+    (oClsExe os)
     ["-B"]
     os
     ("dump program binaries (" ++ program_binary ++ ")")
@@ -795,7 +855,7 @@ removeIfExists fp = do
   when z $ removeFile fp
 
 runScript :: Opts -> String -> Matcher -> String -> IO ()
-runScript = runScriptWith cls64_exe []
+runScript os = runScriptWith (oClsExe os) [] os
 
 runScriptWith :: FilePath -> [String] -> Opts -> String -> Matcher -> String -> IO ()
 runScriptWith exe extra_opts os tag match script = do
@@ -815,12 +875,12 @@ runScriptWith exe extra_opts os tag match script = do
 
   case r of
     Nothing -> do
-      putStrLn $ "  PASSED"
+      putStrGreen $ "  PASSED\n"
       when (oDebug os) $
         emitOutput
       modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed + 1)
     Just msg -> do
-      putStrLn "  FAILED"
+      putStrRed "  FAILED\n"
       putStrLn $ msg
       emitOutput
       hFlush stdout

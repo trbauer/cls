@@ -36,17 +36,26 @@ namespace cls {
   // (MinGW GCC 7.2 rejects as method, VS 2017 accepts)
   //
   // I was using I tokenString() within the body.
-  template <typename T> void parseIntegralBody(std::string str, int base, T &val);
-  template <> inline void parseIntegralBody(std::string str, int base, int64_t &val) {
+  template <typename T> void parseIntegralBody(
+    std::string str, int base, T &val);
+  template <> inline void parseIntegralBody(
+    std::string str, int base, int64_t &val)
+  {
     val = std::stoll(str,nullptr,base);
   }
-  template <> inline void parseIntegralBody(std::string str, int base, uint64_t &val) {
+  template <> inline void parseIntegralBody(
+    std::string str, int base, uint64_t &val)
+  {
     val = std::stoull(str,nullptr,base);
   }
-  template <> inline void parseIntegralBody(std::string str, int base, int32_t &val) {
+  template <> inline void parseIntegralBody(
+    std::string str, int base, int32_t &val)
+  {
     val = std::stol(str,nullptr,base);
   }
-  template <> inline void parseIntegralBody(std::string str, int base, uint32_t &val) {
+  template <> inline void parseIntegralBody(
+    std::string str, int base, uint32_t &val)
+  {
     val = std::stoul(str,nullptr,base);
   }
 
@@ -55,13 +64,31 @@ namespace cls {
     size_t              m_offset;
     token               m_eof;
   private:
-    // template <typename...Ts> bool lookingAtSeqHelper(int ix) const {return true;}
+    // template <typename...Ts> bool lookingAtSeqHelper(int ix) const {
+    //  return true;
+    // }
     // GCC 7.2 rules require non-empty unpack
-    template <typename...Ts> bool lookingAtSeqHelper(int ix, lexeme lxm) const {return lookingAt(lxm,ix);}
-    template <typename...Ts> bool lookingAtSeqHelper(int ix, const char *lxm) const {return lookingAtIdentEq(lxm,ix);}
+    template <typename...Ts> bool lookingAtSeqHelper(
+      int ix, lexeme lxm) const
+    {
+      return lookingAt(lxm,ix);
+    }
+    template <typename...Ts> bool lookingAtSeqHelper(
+      int ix, const char *lxm) const
+    {
+      return lookingAtIdentEq(lxm,ix);
+    }
     //
-    template <typename...Ts> bool lookingAtSeqHelper(int ix, lexeme lxm, Ts...ts) const {return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
-    template <typename...Ts> bool lookingAtSeqHelper(int ix, const char *lxm, Ts...ts) const {return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);}
+    template <typename...Ts> bool lookingAtSeqHelper(
+      int ix, lexeme lxm, Ts...ts) const
+    {
+      return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+    }
+    template <typename...Ts> bool lookingAtSeqHelper(
+      int ix, const char *lxm, Ts...ts) const
+    {
+      return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+    }
   public:
     parser(const std::string &input, bool omit_newlines = false)
       : fatal_handler(input)

@@ -79,6 +79,8 @@ If extra context needed:
 \@                    return cls::lexemes::AT;
 \#                    return cls::lexemes::HASH;
 \=                    return cls::lexemes::EQ;
+\?                    return cls::lexemes::QUESTION;
+\$                    return cls::lexemes::DOLLAR;
 
 \%                    return cls::lexemes::MOD;
 \*                    return cls::lexemes::MUL;

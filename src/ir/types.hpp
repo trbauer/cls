@@ -239,9 +239,12 @@ namespace cls
 
   struct type_union {
     const char                 *name;
-    int                         aligned = 0; // __attribute__ ((aligned (8))); (technically this can work on other types too, but we don't support it)
-    bool                        is_packed = false; // __attribute__ ((packed))
-
+    // __attribute__ ((aligned (8)));
+    // (technically this can work on other types too, but we don't support it)
+    int                         aligned = 0;
+    // __attribute__ ((packed))
+    bool                        is_packed = false;
+    //
     const type                 *elements_memory[2];
     const type                **elements = elements_memory;
     size_t                      elements_length = 0;

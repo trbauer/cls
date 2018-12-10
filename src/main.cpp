@@ -172,7 +172,7 @@ static void runFile(
       exit(EXIT_SUCCESS);
     }
   } catch (const cls::diagnostic &d) {
-    d.default_exit();
+    d.exit_with_error();
   }
 
   cls::compiled_script cs;
@@ -180,7 +180,7 @@ static void runFile(
     os.verbose() << "============ compiling script\n";
     cs = cls::compile(os, s);
   } catch (const cls::diagnostic &d) {
-    d.default_exit();
+    d.exit_with_error();
   }
 
   sampler execute_times;
@@ -201,7 +201,7 @@ static void runFile(
           std::chrono::high_resolution_clock::now() - start_execute);
       execute_times.add(duration_exec.count()/1000.0/1000.0);
     } catch (const cls::diagnostic &d) {
-      d.default_exit();
+      d.exit_with_error();
     }
   }
 

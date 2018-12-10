@@ -514,7 +514,7 @@ void listDeviceInfoForDevice(
   DEVICE_INFO(CL_DEVICE_MAX_COMPUTE_UNITS,cl_uint);
   DEVICE_INFO(CL_DEVICE_PROFILING_TIMER_RESOLUTION,size_t,"ns");
   DEVICE_INFO_BOOL(CL_DEVICE_ENDIAN_LITTLE);
-  // e.g. block_motion_estimate_intel;block_advanced_motion_estimate_check_intel;block_advanced_motion_estimate_bidirectional_check_intel;
+  // e.g. block_motion_estimate_intel;...
   DEVICE_INFO_STRING(CL_DEVICE_BUILT_IN_KERNELS);
   DEVICE_INFO_WITH(
     CL_DEVICE_SINGLE_FP_CONFIG, cl_device_fp_config, formatDeviceFpConfig);

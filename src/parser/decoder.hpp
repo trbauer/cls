@@ -59,7 +59,6 @@ namespace cls {
       if (len - off < len)
         fatal("premature end of file");
       memcpy(val, bits + off, len);
-      std::cout << " ";
     }
     ///////////////////////////////////////////////////////////////////////////
     // Read and advance
