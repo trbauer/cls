@@ -84,8 +84,8 @@
 #ifndef CL_AVC_ME_VERSION_1_INTEL
 #define CL_AVC_ME_VERSION_1_INTEL                           0x1
 #endif
-              
-                           
+
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_planar_yuv
@@ -195,9 +195,36 @@
 #define CL_DEVICE_PAGE_SIZE_QCOM                0x40A1
 #endif
 
-
-            
-                           
+#ifndef CL_DEVICE_PARENT_DEVICE_EXT
+#define CL_DEVICE_PARENT_DEVICE_EXT                     0x4054
+#endif
+#ifndef CL_DEVICE_PARITION_TYPES_EXT
+#define CL_DEVICE_PARITION_TYPES_EXT                    0x4055
+#endif
+#ifndef CL_DEVICE_AFFINITY_DOMAINS_EXT
+#define CL_DEVICE_AFFINITY_DOMAINS_EXT                  0x4056
+#endif
+#ifndef CL_DEVICE_REFERENCE_COUNT_EXT
+#define CL_DEVICE_REFERENCE_COUNT_EXT                   0x4057
+#endif
+#ifndef CL_DEVICE_PARTITION_STYLE_EXT
+#define CL_DEVICE_PARTITION_STYLE_EXT                   0x4058
+#endif
+#ifndef CL_DEVICE_PARTITION_EQUALLY_EXT
+#define CL_DEVICE_PARTITION_EQUALLY_EXT             0x4050
+#endif
+#ifndef CL_DEVICE_PARTITION_BY_COUNTS_EXT
+#define CL_DEVICE_PARTITION_BY_COUNTS_EXT           0x4051
+#endif
+#ifndef CL_DEVICE_PARTITION_BY_NAMES_EXT
+#define CL_DEVICE_PARTITION_BY_NAMES_EXT            0x4052
+#endif
+#ifndef CL_DEVICE_PARTITION_BY_NAMES_INTEL
+#define CL_DEVICE_PARTITION_BY_NAMES_INTEL          0x4052
+#endif
+#ifndef CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT
+#define CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT  0x4053
+#endif
 
 /*
 // cl_khr_il_program

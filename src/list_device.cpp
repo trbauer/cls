@@ -440,7 +440,7 @@ static void emitParamName(const char *prop)
 }
 
 static std::string getDeviceInfoString(
-  cl_device_id dev_id, 
+  cl_device_id dev_id,
   const char *what,
   cl_device_info param)
 {
@@ -467,7 +467,7 @@ static std::string getDeviceInfoString(
   return std::string(value);
 }
 static std::string getPlatformInfoString(
-  cl_platform_id plt_id, 
+  cl_platform_id plt_id,
   const char *what,
   cl_platform_info param)
 {
@@ -522,7 +522,7 @@ void listDeviceInfoForDevice(
   const cls::opts &os, cl_device_id dev_id, int dev_ix)
 {
   cl_platform_id plt_id = nullptr;
-  auto plt_res = 
+  auto plt_res =
     clGetDeviceInfo(dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
 
 
@@ -622,7 +622,7 @@ void listDeviceInfoForDevice(
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
     cl_device_type dev_type;
-    auto dt_err = 
+    auto dt_err =
       clGetDeviceInfo(dev_id,CL_DEVICE_TYPE,sizeof(dev_type),&dev_type,nullptr);
     if (dt_err) {
       std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " <<
@@ -742,7 +742,7 @@ void listDeviceInfoForDevice(
   DEVICE_INFO_UNITS(CL_DEVICE_MAX_PARAMETER_SIZE,size_t,"B");
   DEVICE_INFO(CL_DEVICE_MAX_CONSTANT_ARGS,cl_uint);
 
-  
+
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("WORKGROUPS");
   DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_GROUP_SIZE,size_t,"items");
@@ -803,7 +803,7 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_IMAGE_PITCH_ALIGNMENT,cl_uint);
     DEVICE_INFO(CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT,cl_uint);
   }
-  
+
   DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS,cl_uint);
   DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS,cl_uint);
   DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
@@ -925,9 +925,37 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM, size_t);
     DEVICE_INFO(CL_DEVICE_PAGE_SIZE_QCOM, size_t);
   }
+  if (hasExtension("cl_altera_device_temperature")) {
+    // https://www.khronos.org/registry/OpenCL/extensions/altera/cl_altera_device_temperature.txt
+    DEVICE_INFO_UNITS(CL_DEVICE_CORE_TEMPERATURE_ALTERA,cl_int,"degrees C");
+  }
+
+  if (hasExtension("cl_ext_device_fission")) {
+    // https://www.khronos.org/registry/OpenCL/extensions/ext/cl_ext_device_fission.txt
+    // CL_DEVICE_PARENT_DEVICE_EXT
+    DEVICE_INFO_WITH(CL_DEVICE_PARENT_DEVICE_EXT,cl_device_id,
+      [&] (std::ostream &os, cl_device_id par_dev) {
+        os << "0x" << std::hex << (const void *)par_dev;
+        os << "(" << getDeviceInfoString(par_dev,"CL_DEVICE_NAME",CL_DEVICE_NAME) << ")";
+      });
+    // CL_DEVICE_PARTITION_TYPES_EXT
+    /*
+    auto formatDPPE = [](std::ostream &os, cl_device_partition_property_ext p) {
+        switch (p) {
+        case CL_DEVICE_PARTITION_EQUALLY_EXT: os << "CL_DEVICE_PARTITION_EQUALLY_EXT"; break;
+        case CL_DEVICE_PARTITION_BY_COUNTS_EXT: os << "CL_DEVICE_PARTITION_BY_COUNTS_EXT"; break;
+        case CL_DEVICE_PARTITION_BY_NAMES_EXT: os << "CL_DEVICE_PARTITION_BY_NAMES_EXT"; break;
+        // is an alias of above
+        // case CL_DEVICE_PARTITION_BY_NAMES_INTEL: os << "CL_DEVICE_PARTITION_BY_NAMES_INTEL"; break;
+        case CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT: os << "CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT"; break;
+        default: os << (int)p << "?";
+        }
+    };*/
+  }
 
   /////////////////////////////////////////////////////////////////////////////
   std::cout << "  === DEVICE EXTENSIONS:\n";
   listExtensions(std::cout,extensions_string);
 }
+
 
