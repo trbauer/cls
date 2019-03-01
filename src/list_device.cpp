@@ -179,6 +179,7 @@ static void emitDeviceInfo(
 
   std::stringstream ss;
   format_value(ss, value);
+
   os << DEVICE_INFO_VALUE_COLOR <<
     std::setw(DEVICE_INFO_COLS) <<
     std::right <<
@@ -263,6 +264,73 @@ void emitDeviceInfo(
 }
 
 
+template <typename T>
+static void emitPlatformInfo(
+  std::ostream &os,
+  cl_platform_id plt_id,
+  cl_platform_info param,
+  Formatter<T> format_value,
+  const char *units = nullptr)
+{
+  T value;
+  auto err = clGetPlatformInfo(plt_id, param, sizeof(T), &value, nullptr);
+  if (err != CL_SUCCESS) {
+    os <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err) << "]" <<
+      ANSI_RESET;
+    return;
+  }
+
+  std::stringstream ss;
+  format_value(ss, value);
+  os << DEVICE_INFO_VALUE_COLOR <<
+    std::setw(DEVICE_INFO_COLS) <<
+    std::right <<
+    ss.str();
+  os << ANSI_RESET;
+
+  if (units)
+    std::cout << " " << units;
+}
+
+template <>
+void emitPlatformInfo(
+  std::ostream &os,
+  cl_platform_id plt_id,
+  cl_platform_info param,
+  Formatter<char*> format_value,
+  const char *units)
+{
+  size_t size;
+  auto err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  if (err1 != CL_SUCCESS) {
+    os <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
+      ANSI_RESET;
+    return;
+  }
+
+  char *value = (char *)alloca(size + 1);
+  auto err2 = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  if (err2 != CL_SUCCESS) {
+    os <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
+      ANSI_RESET;
+    return;
+  }
+  value[size] = 0;
+
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right;
+  format_value(os, value);
+  os << ANSI_RESET;
+
+  if (units)
+    std::cout << " " << units;
+}
+
 // array version
 template <typename T>
 static void emitDeviceInfo(
@@ -316,19 +384,19 @@ static void emitDeviceInfoArray(
   std::ostream &os,
   cl_device_id dev_id,
   cl_device_info param,
-  cl_device_info param_length,
+//  cl_device_info param_length,
   const char *list_delimiter,
   Formatter<T> format_element_value)
 {
-  size_t size_needed = 0;
-  auto err1 = clGetDeviceInfo(dev_id, param_length, 0, nullptr, &size_needed);
+  size_t bytes_needed = 0;
+  auto err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
   if (err1 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
       "[ERROR: " << cls::status_to_symbol(err1) << " (query)]" <<
       ANSI_RESET;
     return;
-  } else if (size_needed % sizeof(T) != 0) {
+  } else if (bytes_needed % sizeof(T) != 0) {
     os <<
       ANSI_RED <<
       "[ERROR: array size returned is not a multiple of element type]" <<
@@ -336,10 +404,10 @@ static void emitDeviceInfoArray(
     return;
   }
 
-  T *value = (T *)alloca(size_needed * sizeof(T));
-  memset(value, 0, size_needed);
+  T *values = (T *)alloca(bytes_needed * sizeof(T));
+  memset(values, 0, bytes_needed);
 
-  auto err2 = clGetDeviceInfo(dev_id, param, size_needed, value, nullptr);
+  auto err2 = clGetDeviceInfo(dev_id, param, bytes_needed, values, nullptr);
   if (err2 != CL_SUCCESS) {
     os <<
       ANSI_RED <<
@@ -351,10 +419,10 @@ static void emitDeviceInfoArray(
   std::stringstream ss;
   if (list_delimiter)
     ss << "{";
-  for (cl_uint i = 0; i < size_needed/sizeof(T); i++) {
+  for (cl_uint i = 0; i < bytes_needed/sizeof(T); i++) {
     if (i > 0 && list_delimiter)
-      ss << ", ";
-    format_element_value(ss, value[i]);
+      ss << list_delimiter << " ";
+    format_element_value(ss, values[i]);
   }
   if (list_delimiter)
     ss << "}";
@@ -371,13 +439,113 @@ static void emitParamName(const char *prop)
     std::cout << ' ';
 }
 
+static std::string getDeviceInfoString(
+  cl_device_id dev_id, 
+  const char *what,
+  cl_device_info param)
+{
+  size_t size = 0;
+  auto err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
+  if (err1 != CL_SUCCESS) {
+    std::cerr << "clGetDeviceInfo(" << what << "): " <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
+      ANSI_RESET;
+    return "";
+  }
+
+  char *value = (char *)alloca(size + 1);
+  auto err2 = clGetDeviceInfo(dev_id, param, size, value, nullptr);
+  if (err2 != CL_SUCCESS) {
+    std::cerr << "clGetDeviceInfo(" << what << "): " <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
+      ANSI_RESET;
+    return "";
+  }
+  value[size] = 0;
+  return std::string(value);
+}
+static std::string getPlatformInfoString(
+  cl_platform_id plt_id, 
+  const char *what,
+  cl_platform_info param)
+{
+  size_t size = 0;
+  auto err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  if (err1 != CL_SUCCESS) {
+    std::cerr << "clGetPlatformInfo(" << what << "): " <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
+      ANSI_RESET;
+    return "";
+  }
+
+  char *value = (char *)alloca(size + 1);
+  auto err2 = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  if (err2 != CL_SUCCESS) {
+    std::cerr << "clGetPlatformInfo(" << what << "): " <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
+      ANSI_RESET;
+    return "";
+  }
+  value[size] = 0;
+  return std::string(value);
+}
+
+static void listExtensions(std::ostream &os, std::string exts)
+{
+  std::istringstream iss(exts);
+  std::vector<std::string> extensions;
+  std::copy(std::istream_iterator<std::string>(iss),
+    std::istream_iterator<std::string>(),
+    std::back_inserter(extensions));
+  std::sort(extensions.begin(), extensions.end());
+
+  for (auto ext : extensions) {
+    os << "        ";
+    if (ext.find("cl_intel_") != std::string::npos)
+      os << ANSI_COLOR_INTEL_BLUE;
+    else if (ext.find("cl_nv_") != std::string::npos)
+      os << ANSI_COLOR_NVIDIA_GREEN;
+    else if (ext.find("cl_amd_") != std::string::npos)
+      os << ANSI_COLOR_AMD_ORANGE;
+    else
+      os << DEVICE_INFO_VALUE_COLOR;
+    os << ext << "\n";
+  }
+  os << ANSI_RESET;
+}
 
 void listDeviceInfoForDevice(
   const cls::opts &os, cl_device_id dev_id, int dev_ix)
 {
+  cl_platform_id plt_id = nullptr;
+  auto plt_res = 
+    clGetDeviceInfo(dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
+
+
 #if defined(__GNUC__) && __GNUC__>=6
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
+  // TODO: https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/clGetPlatformInfo.html
+
+#define PLATFORM_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
+  do { \
+    emitParamName(PARAM_STR); \
+    emitPlatformInfo<TYPE>(std::cout,plt_id,PARAM,FORMATTER,UNITS); \
+    std::cout << "\n"; \
+  } while (0)
+#define PLATFORM_INFO_STRING(PARAM) \
+  PLATFORM_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>,nullptr)
+#define PLATFORM_INFO_UNITS(PARAM,TYPE,UNITS) \
+  PLATFORM_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,UNITS)
+#define PLATFORM_INFO(PARAM,TYPE) \
+  PLATFORM_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,nullptr)
+#define GET_PLATFORM_INFO_STRING(P)\
+  getPlatformInfoString(plt_id,#P,P)
+
 
   // This was really sexy until I tried to support GCC
   // I had a cool overloading trick with __VA_ARGS__, but GCC
@@ -393,7 +561,7 @@ void listDeviceInfoForDevice(
     emitDeviceInfo<TYPE>(std::cout,dev_id,PARAM,FORMATTER,UNITS); \
     std::cout << "\n"; \
   } while (0)
-#define DEVICE_INFO(PARAM,TYPE,...) \
+#define DEVICE_INFO(PARAM,TYPE) \
   DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,nullptr)
 #define DEVICE_INFO_UNITS(PARAM,TYPE,UNITS) \
   DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,UNITS)
@@ -410,24 +578,28 @@ void listDeviceInfoForDevice(
   DEVICE_INFO_WITH0(#PARAM,PARAM,cl_bool,formatBool,nullptr)
 #define DEVICE_INFO_STRING(PARAM) \
   DEVICE_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>,nullptr)
+#define GET_DEVICE_INFO_STRING(P)\
+  getDeviceInfoString(dev_id,#P,P)
 
-#define DEVICE_INFO_ARRAY_WITH0(PARAM_STR,PARAM,TYPE,PARAM_LEN,FORMATTER) \
+#define DEVICE_INFO_ARRAY_WITH0(PARAM_STR,PARAM,TYPE,DELIM,FORMATTER) \
   do { \
     emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev_id,PARAM,PARAM_LEN,FORMATTER); \
+    emitDeviceInfoArray<TYPE>(std::cout,dev_id,PARAM,DELIM,FORMATTER); \
     std::cout << "\n"; \
   } while (0)
-#define DEVICE_INFO_ARRAY_WITH(PARAM,TYPE,PARAM_LEN,FORMATTER) \
-  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,PARAM_LEN,FORMATTER)
-#define DEVICE_INFO_ARRAY(PARAM,TYPE,PARAM_LEN) \
-  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,PARAM_LEN,default_formatter<TYPE>)
-#define DEVICE_INFO_ARRAY2(PARAM,TYPE,PARAM_LEN,DELIM) \
+// #define DEVICE_INFO_ARRAY_WITH(PARAM,TYPE,FORMATTER) \
+//  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,",",FORMATTER)
+#define DEVICE_INFO_ARRAY(PARAM,TYPE) \
+  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,",",default_formatter<TYPE>)
+/*
+#define DEVICE_INFO_ARRAY_WITH_DELIM(PARAM,TYPE,DELIM) \
   do { \
     emitParamName(#PARAM); \
     emitDeviceInfoArray<TYPE>(\
-      std::cout, dev_id, PARAM, PARAM_LEN, DELIM, default_formatter<TYPE>); \
+      std::cout, dev_id, PARAM, DELIM, default_formatter<TYPE>); \
     std::cout << "\n"; \
   } while (0)
+*/
   //
   //
   if (dev_ix >= 0) {
@@ -445,23 +617,31 @@ void listDeviceInfoForDevice(
   } else if (is_amd) {
     std::cout << ANSI_COLOR_AMD_ORANGE;
   }
-  std::string device_name =
-    cl::Device(dev_id).getInfo<CL_DEVICE_NAME>().c_str();
+  std::string device_name = GET_DEVICE_INFO_STRING(CL_DEVICE_NAME);
   std::cout << std::setw(48) << std::left << device_name;
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
-    auto dev_type = cl::Device(dev_id).getInfo<CL_DEVICE_TYPE>();
-    std::cout << " " << std::setw(4);
-    switch (dev_type) {
-    case CL_DEVICE_TYPE_CPU: std::cout << "CPU"; break;
-    case CL_DEVICE_TYPE_GPU: std::cout << "GPU"; break;
-    case CL_DEVICE_TYPE_ACCELERATOR: std::cout << "ACCELERATOR"; break;
-    case CL_DEVICE_TYPE_DEFAULT: std::cout << "DEFAULT"; break;
-    default: std::cout << "0x" << std::hex << dev_type << "?\n"; break;
+    cl_device_type dev_type;
+    auto dt_err = 
+      clGetDeviceInfo(dev_id,CL_DEVICE_TYPE,sizeof(dev_type),&dev_type,nullptr);
+    if (dt_err) {
+      std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " <<
+        ANSI_RED <<
+        "[ERROR: " << cls::status_to_symbol(dt_err) << "]" <<
+        ANSI_RESET;
+    } else {
+      std::cout << " " << std::setw(4);
+      switch (dev_type) {
+      case CL_DEVICE_TYPE_CPU: std::cout << "CPU"; break;
+      case CL_DEVICE_TYPE_GPU: std::cout << "GPU"; break;
+      case CL_DEVICE_TYPE_ACCELERATOR: std::cout << "ACCELERATOR"; break;
+      case CL_DEVICE_TYPE_DEFAULT: std::cout << "DEFAULT"; break;
+      default: std::cout << "0x" << std::hex << dev_type << "?"; break;
+      }
     }
     std::cout <<
       "    " <<
-      cl::Device(dev_id).getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str() << "\n";
+      GET_DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION) << "\n";
     return;
   }
   std::cout << "\n";
@@ -474,8 +654,7 @@ void listDeviceInfoForDevice(
   bool is_1_2_plus = spec >= cl_spec::CL_1_2;
   bool is_1_1_plus = spec >= cl_spec::CL_1_1;
 
-  std::string extensions_string =
-    cl::Device(dev_id).getInfo<CL_DEVICE_EXTENSIONS>().c_str();
+  std::string extensions_string = GET_DEVICE_INFO_STRING(CL_DEVICE_EXTENSIONS);
   auto hasExtension = [&](const char *ext) {
     return extensions_string.find(ext) != std::string::npos;
   };
@@ -484,6 +663,26 @@ void listDeviceInfoForDevice(
     std::cout << "  === " <<  name << ":\n";
   };
 
+  /////////////////////////////////////////////////////////////////////////////
+  START_GROUP("PLATFORM");
+  if (plt_res == CL_SUCCESS) {
+    PLATFORM_INFO_STRING(CL_PLATFORM_PROFILE);
+    PLATFORM_INFO_STRING(CL_PLATFORM_VERSION);
+    PLATFORM_INFO_STRING(CL_PLATFORM_NAME);
+    PLATFORM_INFO_STRING(CL_PLATFORM_VENDOR);
+    emitParamName("CL_PLATFORM_EXTENSIONS"); std::cout << "\n";
+    auto platform_exts = GET_PLATFORM_INFO_STRING(CL_PLATFORM_EXTENSIONS);
+    listExtensions(std::cout,platform_exts);
+    if (is_2_1_plus)
+      PLATFORM_INFO_UNITS(CL_PLATFORM_HOST_TIMER_RESOLUTION,cl_ulong,"ns");
+    if (is_2_0_plus || platform_exts.find("cl_khr_icd") != std::string::npos)
+      PLATFORM_INFO_STRING(CL_PLATFORM_ICD_SUFFIX_KHR);
+  } else {
+    std::cout <<
+      ANSI_RED <<
+      "[ERROR: " << cls::status_to_symbol(plt_res) << "]" <<
+      ANSI_RESET;
+  }
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("DEVICE");
   DEVICE_INFO_WITH(CL_DEVICE_TYPE,cl_device_type,formatDeviceType);
@@ -507,12 +706,16 @@ void listDeviceInfoForDevice(
   if (is_2_1_plus || hasExtension("cl_khr_il_program")) {
     DEVICE_INFO_STRING(CL_DEVICE_IL_VERSION);
   }
+  if (hasExtension("cl_khr_spir")) {
+    DEVICE_INFO_STRING(CL_DEVICE_SPIR_VERSIONS);
+  }
+
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("COMPUTE");
-  DEVICE_INFO(CL_DEVICE_MAX_CLOCK_FREQUENCY,cl_uint,"MHz");
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_CLOCK_FREQUENCY,cl_uint,"MHz");
   DEVICE_INFO(CL_DEVICE_MAX_COMPUTE_UNITS,cl_uint);
-  DEVICE_INFO(CL_DEVICE_PROFILING_TIMER_RESOLUTION,size_t,"ns");
+  DEVICE_INFO_UNITS(CL_DEVICE_PROFILING_TIMER_RESOLUTION,size_t,"ns");
   DEVICE_INFO_BOOL(CL_DEVICE_ENDIAN_LITTLE);
   // e.g. block_motion_estimate_intel;...
   DEVICE_INFO_STRING(CL_DEVICE_BUILT_IN_KERNELS);
@@ -536,30 +739,28 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE,cl_uint);
     DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE,cl_uint);
   }
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_PARAMETER_SIZE,size_t,"B");
+  DEVICE_INFO(CL_DEVICE_MAX_CONSTANT_ARGS,cl_uint);
 
+  
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("WORKGROUPS");
-  DEVICE_INFO(CL_DEVICE_MAX_WORK_GROUP_SIZE,size_t,"items");
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_GROUP_SIZE,size_t,"items");
   // DEVICE_INFO(CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS,cl_uint,"dimensions");
-  DEVICE_INFO_ARRAY(
-    CL_DEVICE_MAX_WORK_ITEM_SIZES, size_t, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS);
+  DEVICE_INFO_ARRAY(CL_DEVICE_MAX_WORK_ITEM_SIZES, size_t);
   if (is_2_1_plus || hasExtension("cl_khr_subgroups")) {
     DEVICE_INFO(CL_DEVICE_MAX_NUM_SUB_GROUPS,cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS);
   }
   if (hasExtension("cl_intel_required_subgroup_size")) {
-    DEVICE_INFO_ARRAY2(
-      CL_DEVICE_SUB_GROUP_SIZES_INTEL,
-      size_t,
-      CL_DEVICE_SUB_GROUP_SIZES_INTEL,
-      ",");
+    DEVICE_INFO_ARRAY(CL_DEVICE_SUB_GROUP_SIZES_INTEL, size_t);
   }
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("MEMORY");
   if (is_1_2_plus)
     DEVICE_INFO_MEMSIZE(CL_DEVICE_PRINTF_BUFFER_SIZE,size_t);
-  DEVICE_INFO(CL_DEVICE_ADDRESS_BITS,cl_uint,"b");
+  DEVICE_INFO_UNITS(CL_DEVICE_ADDRESS_BITS,cl_uint,"b");
   DEVICE_INFO_MEMSIZE(CL_DEVICE_MEM_BASE_ADDR_ALIGN,cl_uint);
   DEVICE_INFO_MEMSIZE(CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE,cl_ulong);
   DEVICE_INFO_MEMSIZE(CL_DEVICE_LOCAL_MEM_SIZE,cl_ulong);
@@ -581,29 +782,36 @@ void listDeviceInfoForDevice(
       CL_DEVICE_SVM_CAPABILITIES,
       cl_device_svm_capabilities,
       formatDeviceSvmCapabilities);
-    DEVICE_INFO(CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT,cl_uint,"B");
-    DEVICE_INFO(CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT,cl_uint,"B");
-    DEVICE_INFO(CL_DEVICE_PIPE_MAX_PACKET_SIZE,cl_uint);
+    DEVICE_INFO_UNITS(CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT,cl_uint,"B");
+    DEVICE_INFO_UNITS(CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT,cl_uint,"B");
+
+    DEVICE_INFO(CL_DEVICE_MAX_PIPE_ARGS,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PIPE_MAX_ACTIVE_RESERVATIONS,cl_uint);
+    DEVICE_INFO_MEMSIZE(CL_DEVICE_PIPE_MAX_PACKET_SIZE,cl_uint);
   }
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("IMAGES");
   DEVICE_INFO_BOOL(CL_DEVICE_IMAGE_SUPPORT);
-  DEVICE_INFO(CL_DEVICE_IMAGE2D_MAX_HEIGHT,size_t,"px");
-  DEVICE_INFO(CL_DEVICE_IMAGE2D_MAX_WIDTH,size_t,"px");
-  DEVICE_INFO(CL_DEVICE_IMAGE3D_MAX_HEIGHT,size_t,"px");
-  DEVICE_INFO(CL_DEVICE_IMAGE3D_MAX_WIDTH,size_t,"px");
-  DEVICE_INFO(CL_DEVICE_IMAGE3D_MAX_DEPTH,size_t,"px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_HEIGHT,size_t,"px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_WIDTH,size_t,"px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_HEIGHT,size_t,"px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_WIDTH,size_t,"px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_DEPTH,size_t,"px");
   DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
   if (is_2_0_plus) {
     DEVICE_INFO(CL_DEVICE_IMAGE_PITCH_ALIGNMENT,cl_uint);
     DEVICE_INFO(CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT,cl_uint);
   }
+  
+  DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS,cl_uint);
+  DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS,cl_uint);
+  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
 
   if (hasExtension("cl_intel_planar_yuv")) {
     START_GROUP("cl_intel_planar_yuv");
-    DEVICE_INFO(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL,size_t,"px");
-    DEVICE_INFO(CL_DEVICE_PLANAR_YUV_MAX_HEIGHT_INTEL,size_t,"px");
+    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL,size_t,"px");
+    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_HEIGHT_INTEL,size_t,"px");
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -612,8 +820,7 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL, cl_uint);
     DEVICE_INFO_ARRAY(
       CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL,
-      cl_uint,
-      CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL);
+      cl_uint);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -630,6 +837,26 @@ void listDeviceInfoForDevice(
         }
       });
   }
+  /////////////////////////////////////////////////////////////////////////////
+  if (hasExtension("cl_intel_device_side_avc_motion_estimation")) {
+    START_GROUP("cl_intel_device_side_avc_motion_estimation");
+
+    DEVICE_INFO_WITH(CL_DEVICE_AVC_ME_VERSION_INTEL,cl_uint,
+      [&] (std::ostream &os, cl_uint v) {
+        switch (v) {
+        case CL_AVC_ME_VERSION_1_INTEL: os << "CL_AVC_ME_VERSION_1_INTEL"; break;
+        default: os << v << " (unknown version code)"; break;
+        }
+      });
+    DEVICE_INFO_BOOL(CL_DEVICE_AVC_ME_SUPPORTS_TEXTURE_SAMPLER_USE_INTEL);
+    DEVICE_INFO_BOOL(CL_DEVICE_AVC_ME_SUPPORTS_PREEMPTION_INTEL);
+  }
+  /////////////////////////////////////////////////////////////////////////////
+  if (hasExtension("cl_arm_core_id")) {
+    START_GROUP("cl_arm_core_id");
+    DEVICE_INFO(CL_DEVICE_COMPUTE_UNITS_BITFIELD_ARM, cl_ulong);
+  }
+
 
   /////////////////////////////////////////////////////////////////////////////
   // if (hasExtension("cl_intel_XXXXX")) {
@@ -662,7 +889,7 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV,cl_uint);
     DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV,cl_uint);
     DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
-    DEVICE_INFO(CL_DEVICE_WARP_SIZE_NV,cl_uint,"channels");
+    DEVICE_INFO_UNITS(CL_DEVICE_WARP_SIZE_NV,cl_uint,"channels");
     DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_GPU_OVERLAP_NV);
     DEVICE_INFO_BOOL(CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV);
@@ -690,28 +917,17 @@ void listDeviceInfoForDevice(
     DEVICE_INFO(CL_DEVICE_PCIE_ID_AMD, cl_uint);
     // TODO: others ...
   }
+  if (hasExtension("cl_qcom_ext_host_ptr")) {
+    // https://www.khronos.org/registry/OpenCL/extensions/qcom/cl_qcom_ext_host_ptr.txt
+    // the extension doesn't define the types, but another extension has sample
+    // code that we draw from:
+    // https://www.khronos.org/registry/OpenCL/extensions/qcom/cl_qcom_ion_host_ptr.txt
+    DEVICE_INFO(CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM, size_t);
+    DEVICE_INFO(CL_DEVICE_PAGE_SIZE_QCOM, size_t);
+  }
 
   /////////////////////////////////////////////////////////////////////////////
-  std::cout << "  === EXTENSIONS:\n";
-  std::istringstream iss(extensions_string);
-  std::vector<std::string> extensions;
-  std::copy(std::istream_iterator<std::string>(iss),
-    std::istream_iterator<std::string>(),
-    std::back_inserter(extensions));
-  std::sort(extensions.begin(), extensions.end());
-
-  for (auto ext : extensions) {
-    std::cout << "        ";
-    if (ext.find("cl_intel_") != std::string::npos)
-      std::cout << ANSI_COLOR_INTEL_BLUE;
-    else if (ext.find("cl_nv_") != std::string::npos)
-      std::cout << ANSI_COLOR_NVIDIA_GREEN;
-    else if (ext.find("cl_amd_") != std::string::npos)
-      std::cout << ANSI_COLOR_AMD_ORANGE;
-    else
-      std::cout << DEVICE_INFO_VALUE_COLOR;
-    std::cout << ext << "\n";
-  }
-  std::cout << ANSI_RESET;
+  std::cout << "  === DEVICE EXTENSIONS:\n";
+  listExtensions(std::cout,extensions_string);
 }
 

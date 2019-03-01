@@ -2,6 +2,10 @@
 #define CL_EXTS_HPP
 
 ///////////////////////////////////////////////////////////////////////////////
+// C.f. https://www.khronos.org/registry/OpenCL/extensions/
+// Some of these are untested...
+
+///////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
 #ifndef CL_INVALID_SPEC_ID
 #define CL_INVALID_SPEC_ID                          -71
@@ -65,6 +69,23 @@
 #ifndef CL_ME_VERSION_ADVANCED_VER_2_INTEL
 #define CL_ME_VERSION_ADVANCED_VER_2_INTEL              0x2
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_intel_device_side_avc_motion_estimation
+#ifndef CL_DEVICE_AVC_ME_VERSION_INTEL
+#define CL_DEVICE_AVC_ME_VERSION_INTEL                      0x410B
+#endif
+#ifndef CL_DEVICE_AVC_ME_SUPPORTS_TEXTURE_SAMPLER_USE_INTEL
+#define CL_DEVICE_AVC_ME_SUPPORTS_TEXTURE_SAMPLER_USE_INTEL 0x410C
+#endif
+#ifndef CL_DEVICE_AVC_ME_SUPPORTS_PREEMPTION_INTEL
+#define CL_DEVICE_AVC_ME_SUPPORTS_PREEMPTION_INTEL          0x410D
+#endif
+#ifndef CL_AVC_ME_VERSION_1_INTEL
+#define CL_AVC_ME_VERSION_1_INTEL                           0x1
+#endif
+              
+                           
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_planar_yuv
@@ -158,6 +179,25 @@
 #ifndef CL_DEVICE_GFXIP_MINOR_AMD
 #define CL_DEVICE_GFXIP_MINOR_AMD 0x404B
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_arm_core_id
+#ifndef CL_DEVICE_COMPUTE_UNITS_BITFIELD_ARM
+#define CL_DEVICE_COMPUTE_UNITS_BITFIELD_ARM 0x404B
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_qcom_ext_host_ptr
+#ifndef CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM
+#define CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM 0x40A0
+#endif
+#ifndef CL_DEVICE_PAGE_SIZE_QCOM
+#define CL_DEVICE_PAGE_SIZE_QCOM                0x40A1
+#endif
+
+
+            
+                           
 
 /*
 // cl_khr_il_program
