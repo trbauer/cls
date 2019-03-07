@@ -885,10 +885,8 @@ void listDeviceInfoForDevice(
     // NVidia device properties
     // https://www.khronos.org/registry/cl/extensions/nv/cl_nv_device_attribute_query.txt
     START_GROUP("cl_nv_device_attribute_query");
-
     DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV,cl_uint);
     DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV,cl_uint);
-    DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
     DEVICE_INFO_UNITS(CL_DEVICE_WARP_SIZE_NV,cl_uint,"channels");
     DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_GPU_OVERLAP_NV);
@@ -896,7 +894,6 @@ void listDeviceInfoForDevice(
     DEVICE_INFO_BOOL(CL_DEVICE_INTEGRATED_MEMORY_NV);
     DEVICE_INFO(CL_DEVICE_PCI_BUS_ID_NV,cl_uint);
     DEVICE_INFO(CL_DEVICE_PCI_SLOT_ID_NV,cl_uint);
-
     DEVICE_INFO(CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV,cl_uint);
   }
 
@@ -907,7 +904,7 @@ void listDeviceInfoForDevice(
     // #define CL_DEVICE_TOPOLOGY_AMD 0x4037
     // topology.raw.type == CL_DEVICE_TOPOLOGY_TYPE_PCIE_AMD
     //
-  START_GROUP("cl_amd_device_attribute_query");
+    START_GROUP("cl_amd_device_attribute_query");
     DEVICE_INFO(CL_DEVICE_SIMD_PER_COMPUTE_UNIT_AMD, cl_uint);
     DEVICE_INFO(CL_DEVICE_SIMD_WIDTH_AMD, cl_uint);
     DEVICE_INFO(CL_DEVICE_SIMD_INSTRUCTION_WIDTH_AMD, cl_uint);
