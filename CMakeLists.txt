@@ -6,7 +6,9 @@ project(cls)
 # TODO: valid build arguments with default values
 # https://stackoverflow.com/questions/6787371/how-do-i-specify-build-options-for-cmake-based-projects
 # option(INCLUDE_LodePNG "includes png support via LodePNG" True)
-set(VERSION_STRING "0.9.3")
+#
+#####################################################
+set(VERSION_STRING "0.9.4")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   set(TARGET_MODIFIER "32")

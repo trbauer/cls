@@ -191,12 +191,13 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
         } else {
           arch = microarch::INTEL_GEN9P5;
         }
+      } else if (nameHasAny({" 910"," 915"," 920"," 930"," 940"," 950"})) {
+          arch = microarch::INTEL_GEN11;
       } else {
-        // unclear what ICL uses
-        // TODO: get clinfo output from that machine when one comes available
+        // TODO: later architectures
       }
     } else if(nameHas("Intel(R) Core(TM)")) {
-      // TODO: no thanks
+      // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...
     }
   } else if (vend == vendor::NVIDIA) {
     if (nameHasAny({"GTX 950","GTX 960","GTX 970","GTX 980"})) {
@@ -206,11 +207,13 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
     } else if (nameHasAny({})) {
       // not sure what Volta used (no GTX parts?)
       arch = microarch::NVIDIA_VOL;
-    } else if (nameHasAny({"RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
+    } else if (nameHasAny({"GTX 1660","RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
       arch = microarch::NVIDIA_TUR;
     }
     // TODO: non GTX parts
     arch = microarch::OTHER;
+  // } else if (vend == vendor::AMD) {
+  // TODO:
   }
   return arch;
 }
