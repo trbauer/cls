@@ -9,6 +9,294 @@
 
 using namespace cls;
 
+#define SLIT(X) "\033[1;36m" X "\033[0m"
+#define SVAR(X) "\033[2;36m" "<" X ">" "\033[0m"
+
+///////////////////////////////////////////////////////////////////////////////////
+const char *cls::CLS_SYNTAX =
+  "CLS Syntax\n"
+  "Nonterminals are in " SVAR("nonterm") "\n"
+  "terminals or literal syntax are given as " SLIT("term") " and "
+  "meta syntax shows as normal"
+  "\n"
+  "************* COMMON SYNTAX *************\n"
+  SVAR("INT") " is an integer; e.g. " SLIT("32") " or " SLIT("0x20") "\n"
+  SVAR("STR") " is a string literal in either single or double quotes);\n"
+  "      e.g. " SLIT("\"foo\"") " or " SLIT("'foo'") "\n"
+  SVAR("PATH") " is an unescaped path; e.g. " SLIT("foo/bar/baz.cl") "\n"
+  SVAR("IDENT") " an identifier (alphanumeric sequence); e.g. " SLIT("foo") "\n"
+  SVAR("DIMS") " is 1d, 2d, or 3d dimension; e.g. "
+      SLIT("16x16") " or " SLIT("800x600x2") "\n"
+  SVAR("TYPE") " = is an OpenCL C built-in type\n"
+  "  e.g." SLIT("float") " or " SLIT("ulong8") "\n"
+  "\n"
+  "************* STATEMENTS *************\n"
+  SVAR("Script")    " = a sequence of lines or ; separated <CLSStatement>s\n"
+  SVAR("Statement") " = "
+    SVAR("Dispatch") " | " SVAR("Builtin") " | "
+    SVAR("Let") " | " SVAR("DispatchLet") "\n"
+  "\n"
+  "************* DISPATCH STATEMENTS *************\n"
+  SVAR("Dispatch") " = (" SVAR("Device") SVAR("CommandQueueId") "?" SLIT("`") ")? " SVAR("Program") " ` "
+      SVAR("KernelName") " " SVAR("KernelDims") " " SVAR("KernelArgs") "\n"
+  "  - if the device is omitted, CLS uses first device\n"
+  "  - if the command queue ID is omitted, we use a uniform"
+  "\n"
+  SVAR("Device") " = " SLIT("#") " " SVAR("INT") " | " SLIT("#") " " SVAR("STR") "\n"
+  "  The " SVAR("INT") " variant selects the device by index\n"
+  "    (linear order with platforms flattened out)\n"
+  "    (use -l to list device indices)\n"
+  "  " SVAR("STR") " matches based on a substring of CL_DEVICE_NAME\n"
+  "    (the substring must be unique)\n"
+  "  e.g. " SLIT("#0") " or " SLIT("#\"GTX\"") "\n"
+  "\n"
+  SVAR("CommandQueueId") " = " SLIT("#") SVAR("IDENT") "\n"
+  "  A context identifier allows two dispatches to share the same context and\n"
+  "command queue\n"
+  "  e.g. " SLIT("#0#A`prog1.cl`foo...`; #0#A`prog2.cl`bar...")
+  " dispatches two different kernels to the same queue\n"
+  "\n"
+  SVAR("Program") " = " SVAR("ProgramPath") " "
+    SLIT("[") " " SVAR("BuildOpts") " " SLIT("]") "?\n"
+  "   the build options may be omitted (CLS passes nullptr to clBuildProgram)\n"
+  "  " SVAR("ProgramPath") " = " SVAR("STR") " | " SVAR("PATH") "\n"
+  "    a program path doesn't need to be escaped as long as it doesn't conflict\n"
+  "    with any other symbols\n"
+  "     e.g. " SLIT("foo/bar/baz.cl") " or " SLIT("\"../foo/bar/baz.cl\"") "\n"
+  "\n"
+  "  " SVAR("BuildOpts") " = (anything but right bracket)* | " SVAR("STR") "\n"
+  "    " SLIT("-cl-mad-enable -cl-fp32-correctly-rounded-divide-sqrt") "\n"
+  "    " SLIT("\"-cl-denorms-are-zero -DTYPE=int4\"") "\n"
+  "\n"
+  SVAR("KernelName") " = " SVAR("IDENT") "\n"
+  "  the name of the kernel within the program to dispatch\n"
+  "\n"
+  SVAR("KernelDims") " = "
+       SLIT("<") " " SVAR("Dims") SLIT(">") " | "
+      SLIT("<") " " SVAR("Dims") " " SLIT(",") " " SVAR("Dims") " " SLIT(">") "\n"
+  "  the first argument specifies the global dimensions\n"
+  "  the optional second argument specifies the local dimension\n"
+  "  if local dimension are omitted, then we use nullptr (the driver chooses)\n"
+  "  e.g. " SLIT("<1024x768>") " or " SLIT("<1024x768,32x16>") "\n"
+  "  e.g. " SLIT("<1024*1024,32>") "\n"
+  "\n"
+  SVAR("Dims") " = " SVAR("DIMS") " | " SVAR("Expr") " " "\n"
+  "  e.g. " SLIT("1024") " or " SLIT("1024x768x2") " or " SLIT("(2*1024)x(2*768)") "\n"
+  "\n\n"
+  SVAR("KernelArgs") " = a comma separated list of " SVAR("KernelArg") "\n"
+  SVAR("KernelArg") " = "
+    SVAR("MemInitExpr") " | "
+    SVAR("Expr") " | "
+    SVAR("LetVar") "\n"
+  SVAR("LetVar") " = " SVAR("IDENT") "\n"
+  "  a symbol defined in a " SLIT("let") " command"
+  "\n"
+  SVAR("DispatchLet") " = " SVAR("IDENT") "\n"
+  "  executes a dispatch bound to a variable\n"
+  "  e.g. " SLIT("let D=file.cl`kernel<1024>(...); D; D") " executes a dispatch twice\n"
+  "\n"
+  "************* SCALAR EXPRESSIONS *************\n"
+  SVAR("Expr") " a usual C-style numeric expression\n"
+  "  - most C operators as well as some many built-in C++ STL functions are\n"
+  "    allowed"
+  "  - the usual arithmetic operators are supported including:\n"
+  "    bitwise logical, bit shifting, additive, multiplicative (incl. mod (" SLIT("%") "),\n"
+  "    negation (" SLIT("-") "), and bitwise complement (" SLIT("~") ")\n"
+  "  - type conversions and coercions attempt to mimic most C/C++ rules\n"
+  "    at least: " SLIT("float(..)") ", " SLIT("int(..)") ", "
+                   SLIT("signed(..)") ", " SLIT("unsigned(..)") " are supported\n"
+  "      e.g. " SLIT("unsigned(pi)") " evaluates to 3\n"
+  "    we also permit type conversions; e.g. " SLIT("unsigned(x)") "\n"
+  "    the constants " SLIT("E") " and " SLIT("PI") " are also defined\n"
+  "  - the unary C++ STL functions are:\n"
+  "      " SLIT("abs") ", " SLIT("fabs") ", " SLIT("sqrt") ", " SLIT("cbrt") ",\n"
+  "      " SLIT("exp") ", " SLIT("exp2") ", " SLIT("expm1") ", "
+           SLIT("log") ", " SLIT("log2") ", " SLIT("log10") ", " SLIT("log1p") ",\n"
+  "      " SLIT("sin") ", " SLIT("cos") ", " SLIT("tan") ", "
+           SLIT("asin") ", " SLIT("acos") ", " SLIT("atan") ", "
+           SLIT("sinh") ", " SLIT("cosh") ", " SLIT("tanh") ", "
+           SLIT("asinh") ", " SLIT("acosh") ", " SLIT("atanh") ",\n"
+  "      " SLIT("erf") ", " SLIT("erfc") ", " SLIT("tgamma") ", " SLIT("lgamma") ",\n"
+  "      " SLIT("ceil") ", " SLIT("floor") ", " SLIT("trunc") ", " SLIT("round") ",\n"
+  "      " SLIT("isfinite") ", " SLIT("isinf") ", " SLIT("isnan") ", " SLIT("isnormal") ",\n"
+  "      " SLIT("nearbyint") ", " SLIT("nearbyint_rde") ", " SLIT("nearbyint_rdd") ", "
+                                  SLIT("nearbyint_rdu") ", " SLIT("nearbyint_rtz") "\n"
+  "  - the binary functions are:\n"
+  "      " SLIT("fmod") ", " SLIT("atan2") ", " SLIT("fdim") ", "
+           SLIT("hypot") ", " SLIT("pow") ", "
+           SLIT("min") ", " SLIT("max") ", "
+           SLIT("gcd") ", " SLIT("lcm") "\n"
+  "       e.g. " SLIT("float(1<<10)") " generates 1024.0f\n"
+  "       e.g. " SLIT("4*1024*(1024 + max(4,16)/sizeof(float))") "\n"
+  "       e.g. " SLIT("int(max(pi*pi,2*e*e)") "\n"
+  "   - structures and vector types (e.g. float4) are represented via {..} syntax\n"
+  "       e.g. " SLIT("{1,2,3,4*5}") "\n"
+  "   - some host-side OpenCL enumerations may also be supported\n"
+  "   - kernel arguments expressions may also refernce some built-in variables\n"
+  "     defined as the NDRange size\n"
+  "     " SLIT("g.x") ", " SLIT("g.y") ", and " SLIT("g.z") " reference global dimensions\n"
+  "     " SLIT("l.x") ", " SLIT("l.y") ", and " SLIT("l.z") " reference local dimensions\n"
+  "\n"
+  "************* MEMORY INITIALIZER EXPRESSIONS *************\n"
+  SVAR("MemInitExpr") " = "
+    SVAR("MemElementInitExpr") SLIT(":") SVAR("MemObjSize") "?" SVAR("MemProps") "\n"
+  "  Defines a memory object's initial contents;\n"
+  "    if " SVAR("MemObjSize") " is absent, then CLS infers the size based on the\n"
+  "    dimension (one element per global work item)\n"
+  "\n"
+  "  " SVAR("MemElementInitExpr") "\n"
+  "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("RandExpr")
+    " | " SVAR("FileExpr") " | " SVAR("ImgExpr") "\n"
+  "    the memory object element initializer\n"
+  "\n"
+  "  " SVAR("MemObjSize") " = " SLIT("[") SVAR("Expr") SLIT("]") "\n"
+  "      forces the buffer to be a specific size (in bytes)"
+  "      e.g. " SLIT("0:[2*g.x*sizeof(float)]rw") " dedicates 2 floats per workitem"
+  "           for a 1D kernel (e.g. instead of using float2)\n"
+  "\n"
+  "  " SVAR("MemProps") " = a sequence of characters specifying memory object properties\n"
+  "    - access - " SLIT("r") ", " SLIT("w") ", or " SLIT("rw") " meaning:\n"
+  "            CL_MEM_READ_ONLY, CL_MEM_READ_WRITE, and CL_MEM_READ_WRITE,\n"
+  "            respectively\n"
+  "               e.g. " SLIT("0:wr") " creates a zero-initialized buffer with\n"
+  "            CL_MEM_READ_WRITE access\n"
+// TODO: enable
+//  "    - transfer - \n"
+//  "        " SLIT("m") " accesses the memory by buffer mapping (e.g. for zero copy)\n"
+//  "            e.g. " SLIT("1:mr") " creates a buffer initialized with 1's\n"
+//  "                 with CL_MEM_READ_ONLY access and initializes it via\n"
+//  "                 clEnqueue{Unmap,Map}Buffer\n"
+//  "        " SLIT("c") " uses buffer copy commands\n"
+//  "        " SLIT("sc") " uses coarse-grained SVM\n"
+//  "        " SLIT("sf") " uses fine-grained SVM\n"
+  "    - saving - " SLIT("S") " - saves the memory contents before enqueue\n"
+  "    - printing - " SLIT("P") " and " SLIT("p") " print memory objects before and after enqueue\n"
+  "       these may be suffixed with an integer to override elements per row\n"
+  "       e.g. " SLIT("..P16p8..") " prints a buffer before with 16 elements per console row\n"
+  "            and 8 elements per row after\n"
+  "       this is generally meant for debugging;\n"
+  "       also see the " SLIT("print") " built-in command\n"
+  "\n"
+  SVAR("ConstExpr")   " = " SVAR("Expr") "\n"
+  "  initializes a memory object a constant value\n"
+  "  built-in dispatch variable sizes are permitted in the expression\n"
+  "\n"
+  SVAR("SeqExpr")   " = "
+  SLIT("seq(") SLIT(")")
+  " | " SLIT("seq(") SVAR("Expr") SLIT(")")
+  " | " SLIT("seq(") SVAR("Expr") SLIT(",") SVAR("Expr") SLIT(")") "\n"
+  "  initializes a memory object to an arithmetic sequence of numbers;\n"
+  "  an optional base and delta are given\n"
+  "  e.g. " SLIT("seq()") " generates 0, 1, 2, ...\n"
+  "  e.g. " SLIT("seq(17)") " generates 17, 18, ...\n"
+  "  e.g. " SLIT("seq(1,3)") " generates 1, 4, 7, ...\n"
+  "\n"
+  SVAR("RandExpr")  " = "
+  SLIT("random") SLIT("(") SVAR("RandBounds") "?" SLIT(")")
+  " | " SLIT("random<") SVAR("EXPR") SLIT(">") SLIT("(") SVAR("RandBounds") "?" SLIT(")")
+  "\n"
+  "  randomly initializes a buffer with an optional seed and bounds\n"
+  "  " SVAR("RandBounds") " = " SVAR("EXPR") "(" SLIT(",") " " SVAR("EXPR")")?\n"
+  "  zero arguments lets CLS specify the low and high bounds\n"
+  "  one argument sets the high bound and uses zero as the low bound\n"
+  "  two argument sets the bounds as low and high bounds\n"
+  "\n"
+  SVAR("FileExpr")  " =\n"
+  "    " SVAR("FileBinExpr") " | " SVAR("FileTxtExpr") " | " SVAR("FileTxtColExpr") "\n"
+  "  initializes a memory object's contents from a binary or text file\n"
+  "  " SVAR("FileBinExpr") " = " SLIT("file<bin>(") SLIT("STR") SLIT(")") "\n"
+///////////////////////////////////////////////////////////////////////////////////
+  "    element width is determined by the memory objects's type\n"
+  "    (e.g. global float4* would be 16B each);\n"
+  "    file overflow or underflow lead to undefined results\n"
+  "  " SVAR("FileTxtExpr")
+  " = " SLIT("file<txt>(") SVAR("STR") SLIT(")")
+  " | " SLIT("file<txt,") SVAR("INT") SLIT(">(") SVAR("STR") SLIT(")") "\n"
+  "    loads from text file tokens ;elements are separated by spaces\n"
+  "    parsing logic is influenced by the memory object's element type\n"
+  "      e.g. a global float * will parse floats, and a global int * parses ints\n"
+  "  " SVAR("FileTxtColExpr") "\n"
+  "    = " SLIT("file<txt_col>") SLIT("(") SVAR("STR") SLIT(")") "\n"
+  "    | " SLIT("file<txt_col") SLIT(",") SVAR("INT") SLIT(">")
+            SLIT("(") SVAR("STR") SLIT(")") "\n"
+  "    | " SLIT("file<txt_col") SLIT(",") SVAR("INT") SLIT(",") SVAR("STR") SLIT(">")
+            SLIT("(") SVAR("STR") SLIT(")") "\n"
+  "    loads from a column of a text file\n"
+  "      e.g. " SLIT("<txt_col>") " uses column 0 and ' ' as the column separator\n"
+  "      e.g. " SLIT("<txt_col,2>") " uses column 2 and ' ' as the column separator\n"
+  "      e.g. " SLIT("<txt_col,2,','>") " uses column 2 and ',' as the column separator\n"
+  "                      (i.e. simple CSV)\n"
+  "\n"
+  SVAR("ImgExpr")
+  " = " SLIT("image<") " " SVAR("ChannelOrder") SLIT(", ") SVAR("DataType") " " SLIT(">") "\n"
+  "   <ChannelOrder> = an image channel order\n"
+  "     https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/cl_image_format.html\n"
+  "     as well as some shorthands; drop 3 characters and switch to lower case\n"
+  "     e.g. both " SLIT("CL_sRGBx") " and " SLIT("srgbx") " mean the same thing\n"
+  "   <DataType> = is a image data type; the usual OpenCL enums are permitted\n"
+  "     as well as shorthands such as:\n"
+  "       " SLIT("u16") " meaning CL_UNSIGNED_INT16)\n"
+  "       " SLIT("un8") " meaning CL_UNORM_INT8)\n"
+  "       " SLIT("s32") " meaning CL_SIGNED_INT32)\n"
+  "       " SLIT("un565") " meaning CL_UNORM_SHORT_565)\n"
+  "       " SLIT("un101010_2") " meaning CL_UNORM_INT_101010_2)\n"
+  "       " SLIT("f32") " meaning CL_FLOAT\n"
+  "       " SLIT("f16") " meaning CL_HALF_FLOAT\n"
+  "       " "... and many more (c.f. cls_parser.cpp)\n"
+  "\n"
+  "  e.g. " SLIT("image<rgb,un8>('foo.bmp')") " and "
+  SLIT("image<CL_RGB,CL_UNORM_INT8>('foo.bmp')") "\n"
+  "       both load foo.png and convert it to an CL_RGB image with CL_UNORM_INT8\n"
+  "       .bmp will load as a bitmap\n"
+  "       .ppm will load a PPM file\n"
+#ifdef USE_LODE_PNG
+  "       .png loads as PNG format\n"
+#endif
+  "\n"
+  "************* BUILT-IN STATEMENTS *************\n"
+  SVAR("Builtin")
+  " = " SVAR("Barrier")
+  " | " SVAR("Diff")
+  " | " SVAR("Print")
+  " | " SVAR("Save")
+  "\n"
+  "  " SVAR("Barrier") " = " SLIT("barrier") " | " SLIT("barrier") SLIT("(") SLIT(")") "\n"
+  "  waits until all dispatches complete before proceeding\n"
+// TODO: update this
+  "  (currently a nop because kernel dispatches are currently synchronous)\n"
+    "\n"
+    "  " SVAR("Diff") "\n"
+    "  = " SLIT("diff")
+            SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
+            SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
+// TODO: update this when max diffs are allowed
+    "  diffs two memory object or one against a replicated scalar value;\n"
+    "  if a type argument is present, CLS will reinterpret elements as that type\n"
+    "  NOTE: the program will exit with failure upon diff failure\n"
+    "        use -Xno-exit-on-diff-fail to override this\n"
+    "  e.g. " SLIT("let A=1:rw; #0`file.cl`kernel<1024>(A); diff<int>(A,0)") "\n"
+    "       diffs buffer " SLIT("A") " with 0 as integer's\n"
+    "  e.g. " SLIT("let A=1:rw; let B=2:rw; #0`file.cl`kernel<1024>(A,B); diff(A,B)") "\n"
+    "       diffs buffers " SLIT("A") " and " SLIT("B") " element by element\n"
+    "\n"
+    "  " SVAR("Print") "\n"
+    "  = " SLIT("print") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("print") SLIT("<") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(",") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "  prints a memory object; an optional type interprets the surface's elements;\n"
+    "  an optional integer argument overrides columns per line in output\n"
+    "  e.g. " SLIT("let A = 1:w; #0`file.cl`kernel<1024>(A); print<float4>(A)") "\n"
+    "       prints buffer A as float4's\n"
+  "\n"
+  "************* LET STATEMENTS *************\n"
+  SVAR("Let") " = " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
+  "  binds a symbol to a value;\n"
+  "  use this to share buffers in multiple dispatch statements\n"
+  ;
+
+
 // a rough solution to enable use to read tokens including spaces
 // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
 //       ^^^^^^^^^^^^^^^^^^^^^^
@@ -179,7 +467,8 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
       at.extend_to(p.nextLoc());
       return new init_spec_symbol(at, id);
     } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
-      id == "sizeof" || id == "random" || id == "seq" || id == "file" || id == "image")
+      id == "sizeof" || id == "random" ||
+      id == "seq" || id == "file" || id == "image")
     {
       // foo<...  (e.g. random<12007>(...))
       // or
@@ -244,10 +533,11 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
         return func;
       } else if (id == "file") {
         //
-        // file('foo.bin'):r
-        // file<bin>('foo.bin'):r
+        // file('foo.bin'):r                 // binary
+        // file<bin>('foo.bin'):r            // binary
         //
-        // file<text>('foo.txt'):r           // all tokens
+        // file<text>('foo.txt'):r           // all tokens using sep = ' '
+        // file<text,','>('foo.txt'):r       // all tokens using sep = ','
         //
         //
         // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
@@ -264,6 +554,13 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
               flv = init_spec_file::BIN;
             } else if (flv_str == "text") {
               flv = init_spec_file::TXT;
+              if (p.consumeIf(COMMA)) {
+                if (!p.lookingAt(STRLIT)) {
+                  p.fatal("expected separator string (literal)");
+                }
+                sep = p.tokenStringLiteral();
+                p.skip();
+              }
             } else if (flv_str == "text_col") {
               flv = init_spec_file::TXT_COL;
               if (p.consumeIf(COMMA)) {
@@ -698,6 +995,8 @@ static init_spec *parseInit(parser &p,script &s)
             // assume coarse if only one char given
             setTx(init_spec_mem::transfer::TX_SVM_COARSE);
           }
+        } else {
+          setTx(init_spec_mem::transfer::TX_SVM_COARSE);
         }
         break;
       case 'm':
@@ -1042,6 +1341,7 @@ static void parseDispatchStatementWhereClause(
 }
 
 // #1`path/foo.cl
+// #1#a`path/foo.cl
 static program_spec *parseDispatchStatementDeviceProgramPart(
   parser &p,
   script &s)
@@ -1233,7 +1533,11 @@ static refable<init_spec> parseInitResolved(parser &p, script &s)
 }
 
 
-// barrier | diff(X,Y) | print(X) | save(sym,X)
+// EXAMPLES
+// barrier
+// diff(X,Y) | diff<float>(X,Y)
+// print(X) | print<float>(X)
+// save(sym,X)
 static bool parseBuiltIn(parser &p, script &s)
 {
   auto loc = p.nextLoc();

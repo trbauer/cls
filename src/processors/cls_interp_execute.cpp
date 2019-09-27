@@ -504,33 +504,16 @@ void compiled_script_impl::execute(
       elem_type->syntax());
   }
 
-  size_t total_elems = dfc.so_sut->size_in_bytes / elem_type->size();
+  size_t total_elems = dfc.so_sut->size_in_bytes/elem_type->size();
   const uint8_t *ref_host_ptr8 = (const uint8_t*)ref_host_ptr;
   const uint8_t *sut_host_ptr8 = (const uint8_t*)sut_host_ptr;
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
-    if (memcmp(
+    executeDiffElem(
+      dfc.spec->defined_at,
+      elem_ix,
+      elem_type,
       ref_host_ptr8 + elem_ix*elem_type->size(),
-      sut_host_ptr8 + elem_ix*elem_type->size(),
-      elem_type->size()))
-    {
-      std::cerr << "mismatch on element "
-        << elem_ix << " (type " << elem_type->syntax() << ")\n";
-      std::cerr << "============== vs. (SUT) ==============\n";
-      formatBufferElement(
-        std::cerr,
-        *elem_type,
-        sut_host_ptr8 + elem_ix*elem_type->size());
-      std::cerr << "\n";
-      std::cerr << "============== vs. (REF) ==============\n";
-      formatBufferElement(
-        std::cerr,
-        *elem_type,
-        ref_host_ptr8 + elem_ix*elem_type->size());
-      std::cerr << "\n";
-      fatalAt(
-        dfc.spec->defined_at,
-        "mismatch on element ",elem_ix," (type ",elem_type->syntax(),")");
-    } // if mismatch
+      sut_host_ptr8 + elem_ix*elem_type->size());
   }
 }
 
@@ -565,33 +548,56 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
       "buffer size is not a multiple of diff element type ",
       elem_type->syntax());
   }
-  size_t total_elems = dfc.so->size_in_bytes / elem_type->size();
+  size_t total_elems = dfc.so->size_in_bytes/elem_type->size();
   const uint8_t *host_ptr8 = (const uint8_t*)host_ptr;
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
-    if (memcmp(
-      host_ptr8 + elem_ix*elem_type->size(),
+    executeDiffElem(
+      dfc.spec->defined_at,
+      elem_ix,
+      elem_type,
       ab_ref.base,
-      elem_type->size()))
-    {
-      std::cerr << "mismatch on element "
-        << elem_ix << " (type " << elem_type->syntax() << ")\n";
-      std::cerr << "============== vs. (SUT) ==============\n";
-      formatBufferElement(
-        std::cerr,
-        *elem_type,
-        host_ptr8 + elem_ix*elem_type->size());
-      std::cerr << "\n";
-      std::cerr << "============== vs. (REF) ==============\n";
-      formatBufferElement(
-        std::cerr,
-        *elem_type,
-        ab_ref.base);
-      std::cerr << "\n";
-      fatalAt(
-        dfc.spec->defined_at,
-        "mismatch on element ",elem_ix," (type ",elem_type->syntax(),")");
-    } // if mismatch
+      host_ptr8 + elem_ix*elem_type->size());
   } // for elems
+}
+
+void compiled_script_impl::executeDiffElem(
+  loc defined_at,
+  size_t elem_ix,
+  const type *elem_type,
+  const void *elem_ref,
+  const void *elem_sut)
+{
+  // TODO: diff by type so we can enable error margins
+  // diff<float,0.001>(0.0,A)
+  if (memcmp(
+    elem_ref,
+    elem_sut,
+    elem_type->size()))
+  {
+    std::cerr << "mismatch on element "
+      << elem_ix << " (type " << elem_type->syntax() << ")\n";
+    std::cerr << "============== vs. (SUT) ==============\n";
+    formatBufferElement(
+      std::cerr,
+      *elem_type,
+      elem_sut);
+    std::cerr << "\n";
+    std::cerr << "============== vs. (REF) ==============\n";
+    formatBufferElement(
+      std::cerr,
+      *elem_type,
+      elem_ref);
+    std::cerr << "\n";
+    if (os.no_exit_on_diff_fail) {
+      warningAt(
+        defined_at,
+        "mismatch on element ", elem_ix, " (type ", elem_type->syntax(), ")");
+    } else {
+      fatalAt(
+        defined_at,
+        "mismatch on element ", elem_ix, " (type ", elem_type->syntax(), ")");
+    }
+  } // if mismatch
 }
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)

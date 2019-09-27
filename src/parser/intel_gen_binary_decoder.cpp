@@ -3,6 +3,14 @@
 #include "intel_gen_binary_decoder.hpp"
 #include "../system.hpp"
 
+///////////////////////////////////////////////////////////////////////////////
+// C.f. https://github.com/intel/intel-graphics-compiler/blob/master/IGC/AdaptorOCL/ocl_igc_shared/executable_format/patch_list.h
+//      https://github.com/intel/intel-graphics-compiler/blob/master/IGC/AdaptorOCL/ocl_igc_shared/executable_format/patch_shared.h
+// This works as of about ICBE 1060.
+//
+// Rarely, the format headers will change sufficiently that we'll need to
+// adjust.  The patches change often, but they have their size encoded
+// and we can skip most of them.
 using namespace cls;
 using namespace cls::k;
 
@@ -10,7 +18,6 @@ using namespace cls::k;
 struct igb_decoder : decoder {
   const uint32_t INTEL_GEN_DEVICE_BINARY_SH_TYPE = 0xFF000005;
   const uint32_t INTEL_GEN_DEVICE_BINARY_MAGIC = 0x494E5443; // "CTNI"
-//  const uint32_t INTEL_GEN_DEVICE_BINARY_MAGIC = 0x43544E49; // "CTNI"
   const uint32_t ELF_MAGIC = 0x464C457F; // "\7FELF"
 
   program_info &pi;

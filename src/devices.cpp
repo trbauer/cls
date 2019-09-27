@@ -157,8 +157,8 @@ vendor           getDeviceVendor(cl_device_id d)
 
 microarch getDeviceMicroArchitecture(cl_device_id d)
 {
-  auto vend = getDeviceVendor(d);
-  std::string nm =  cl::Device(d).getInfo<CL_DEVICE_NAME>().c_str();
+  const auto vend = getDeviceVendor(d);
+  const std::string nm =  cl::Device(d).getInfo<CL_DEVICE_NAME>().c_str();
   auto nameHas = [&] (const char *substr) {
     return nm.find(substr) != std::string::npos;
   };
@@ -178,11 +178,11 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
         arch = microarch::INTEL_GEN7P5;
       } else if (
         nameHasAny({" 5300"," 5500"," 5600", " 5700",
-          " 6000", " 6100", " 6200", " 6300"}))
+          " 6000", " 6100", " 6200", " 6300", " Gen8"}))
       {
         arch = microarch::INTEL_GEN8;
       } else if (
-        nameHasAny({" 510"," 515"," 520"," 530"," 540"," 550"," 580"}))
+        nameHasAny({" 510"," 515"," 520"," 530"," 540"," 550"," 580", "Gen9"}))
       {
         arch = microarch::INTEL_GEN9;
       } else if (nameHasAny({" 610"," 615"," 620"," 630"," 640"," 650"})) {
@@ -191,10 +191,13 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
         } else {
           arch = microarch::INTEL_GEN9P5;
         }
-      } else if (nameHasAny({" 910"," 915"," 920"," 930"," 940"," 950"})) {
+      } else if (nameHasAny({" 910"," 915"," 920"," 930"," 940"," 950", " Gen11"})) {
           arch = microarch::INTEL_GEN11;
+      } else if (nameHasAny({" Gen12LP"})) {
+          // I'm guessing on this one, I don't really know the product names
+          arch = microarch::INTEL_GEN12;
       } else {
-        // TODO: later architectures
+          // TODO: later architectures
       }
     } else if(nameHas("Intel(R) Core(TM)")) {
       // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...
@@ -219,7 +222,7 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
 }
 
 
-bool              hasExtension(cl_device_id dev, const char *ext)
+bool hasExtension(cl_device_id dev, const char *ext)
 {
   cl::Device devobj(dev);
   std::string s = devobj.getInfo<CL_DEVICE_EXTENSIONS>().c_str();

@@ -47,10 +47,17 @@ int main(int argc, const char **argv)
     "  % " EXE_NAME " script.cls\n"
   );
   cmdspec.defineArg(
-    "EXPR","a cls expression", "", opts::NONE,
+    "FILE","a cls script file",
+    "A cls script.  Use -e to specify an expression "
+    "on the command line.  Use -h=syntax for cls syntax.", opts::NONE,
     os.input_files);
   cmdspec.defineOpt(
-    "e","expression","EXPR","pass an expression as an argument","",opts::NONE,
+    "e","expression",
+      "EXPR", "pass an expression as an argument",
+      "Execute the given expression on the command line "
+      "(instead of using the script file argument).  "
+      "Use -h=syntax for a cls syntax cheatsheet.",
+      opts::NONE,
     os.input_expr);
   cmdspec.defineOpt(
     "i","iterations","INT","number of samples to execute","",opts::NONE,
@@ -72,6 +79,8 @@ int main(int argc, const char **argv)
     " -l=0       lists device 0\n"
     " -l=GTX     lists the device with \"GTX\" as a substring of "
     "its CL_DEVICE_NAME\n"
+    "\n"
+    "(Use -h=h for more info)"
     "",
     opts::ALLOW_MULTI|opts::FLAG_VALUE,
     [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
@@ -85,6 +94,14 @@ int main(int argc, const char **argv)
         os.list_devices_specific.push_back(getDeviceByName(os, value));
       }
   });
+  cmdspec.defineFlag(
+      "q", "quiet", "lower verbosity", "generate minimal output", opts::NONE,
+      [] (const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
+          opts.verbosity = -1;
+      });
+  cmdspec.defineExtraHelpSection("syntax", "syntax information",
+    cls::CLS_SYNTAX);
+
   auto &g = cmdspec.defineGroup("t", "profiling options");
   g.defineFlag("W",nullptr,"profiles with wall timers", "", opts::NONE,
     os.wall_time);
@@ -92,7 +109,7 @@ int main(int argc, const char **argv)
     os.prof_time);
   cmdspec.defineFlag(
     nullptr,"use-kernel-arg-info",
-    "uses OpenCL 1.2+ kernel arg info in argument inference.",
+    "uses OpenCL 1.2+ kernel arg info in argument inference",
     "This can fail if there are typedefs or custom types.  "
     "By default we attempt to parse the source."
     "",
@@ -112,15 +129,30 @@ int main(int argc, const char **argv)
   opts::Group<cls::opts> &xGrp =
     cmdspec.defineGroup("X", "Experimental Options");
   xGrp.defineOpt(
-      "cpp-path",
-      nullptr,
-      "PATH",
-      "path to the GNU C-Preprocessor",
-      "This is the full path to the GNU C Preprocessor.  "
-        "During kernel analysis we use this path.  ",
-      opts::OptAttrs::NONE,
-      os.cpp_override_path);
-
+    "cpp-path",
+    nullptr,
+    "PATH",
+    "path to the GNU C-Preprocessor",
+    "This is the full path to the GNU C Preprocessor.  "
+    "During kernel analysis we use this path.",
+    opts::OptAttrs::NONE,
+    os.cpp_override_path);
+  xGrp.defineFlag(
+    "no-exit-on-diff-fail",
+    nullptr,
+    "diff commands will not trigger an exit failure",
+    "Normally a memory object diff mismatch will exit immediately.  "
+    "This overrides that behavior.",
+    opts::OptAttrs::NONE,
+    os.no_exit_on_diff_fail);
+  xGrp.defineFlag(
+    "show-init-times",
+    nullptr,
+    "include times for non-kernel operations",
+    "This option enables times for non-kernel dispatches.  "
+    "For instances memory object initialization will be included here.",
+    opts::OptAttrs::NONE,
+    os.show_init_times);
   if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);
   }
@@ -249,11 +281,14 @@ static void runFile(
       }
     }
   };
-  emitStats("TOTAL",execute_times,std::nullopt);
-  if (os.prof_time) {
-    std::cout << "PROF=================================================\n";
-  } else {
-    std::cout << "WALL=================================================\n";
+  if (os.show_init_times)
+    emitStats("TOTAL", execute_times, std::nullopt);
+  if (os.verbosity >= 0) {
+    if (os.prof_time) {
+        std::cout << "PROF=================================================\n";
+    } else {
+        std::cout << "WALL=================================================\n";
+    }
   }
   auto dispatch_times =
     os.prof_time ? cs.get_prof_times() : cs.get_wall_times();
@@ -263,10 +298,12 @@ static void runFile(
     const sampler &ts = std::get<1>(p_ds);
     emitStats(ds.spec::str(), ts, std::make_optional(total));
   }
-  for (const auto &dt : cs.get_init_times()) {
-    const cls::init_spec_mem &im = *std::get<0>(dt);
-    const sampler &ts = std::get<1>(dt);
-    emitStats("INIT(" + im.spec::str() + ")", ts, std::make_optional(total));
+  if (os.show_init_times) {
+    for (const auto &dt : cs.get_init_times()) {
+      const cls::init_spec_mem &im = *std::get<0>(dt);
+      const sampler &ts = std::get<1>(dt);
+      emitStats("INIT(" + im.spec::str() + ")", ts, std::make_optional(total));
+    }
   }
   t.str(std::cout);
 }

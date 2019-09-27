@@ -631,4 +631,11 @@ struct compiled_script_impl : interp_fatal_handler {
   void execute(diffs_command &dfc, const void *buf_ref, const void *buf_sut);
   void execute(print_command &prc, const void *buf);
   void execute(save_command &svc, const void *buf);
+private:
+  void executeDiffElem(
+    loc defined_at,
+    size_t elem_ix,
+    const type *elem_type,
+    const void *elem_ref,
+    const void *elem_sut);
 }; // compiled_script_impl

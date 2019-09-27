@@ -1,20 +1,21 @@
 #ifndef _OPTS_HPP_
 #define _OPTS_HPP_
 
+#include "system.hpp"
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <stdio.h>
-#include <string.h>
 #include <string>
 #include <vector>
 
-#include "system.hpp"
 
-#define OPTS_INVALID_SPEC(M)                                                  \
-  FATAL("INTERNAL ERROR: INVALID SPEC given to "                              \
-        "opts.hpp\n" #M)
+#define INVALID_SPEC(M) \
+  FATAL("INTERNAL ERROR: INVALID SPEC given to opts.hpp\n" #M)
 
 namespace opts
 {
@@ -46,7 +47,8 @@ namespace opts
 
     void operator()(const std::string &msg) const
     {
-      FATAL("%s\n", msg.c_str());
+        sys::message_for_level(2, msg.c_str());
+        sys::fatal_exit();
     }
     void operator()(const std::string &msg, const std::string &usage) const
     {
@@ -86,8 +88,6 @@ namespace opts
                         // which can be -h or -h=foo
     // HIDDEN = 0x10    // for a hidden option (hidden from help message)
   };
-
-  static inline int maxInt(int a, int b) { return a >= b ? a : b; }
 
   // An option specification specifies all the info about an option
   // It has lambda functions for parsing and setting the value as well as
@@ -290,7 +290,7 @@ namespace opts
       int         grLen         = (int)strlen(groupName);
       auto autoScaleColumnWidth = [&](int &cw, int baseCw, const char *colStr) {
         if (colStr)
-          cw = maxInt(cw, maxInt(baseCw, (int)strlen(colStr) + grLen));
+          cw = std::max(cw, std::max(baseCw, (int)strlen(colStr) + grLen));
         else
           cw = baseCw;
       };
@@ -423,8 +423,8 @@ namespace opts
         Setter<O>   setVal)
     {
       // TODO: validateOptNames(sNm, lNm); have to link to parent
-      validateOptPrefix(sNm);
-      validateOptPrefix(lNm);
+      ensureUnique(sNm);
+      ensureUnique(lNm);
       Opt<O> temp(prefix, sNm, lNm, "", desc, extDesc, attrs | FLAG, setVal);
       members.emplace_back(temp);
     }
@@ -490,8 +490,8 @@ namespace opts
         Setter<O>   setVal)
     {
       // TODO: validateOptNames(sNm, lNm); have to link to parent
-      validateOptPrefix(sNm);
-      validateOptPrefix(lNm);
+      ensureUnique(sNm);
+      ensureUnique(lNm);
       Opt<O> temp(prefix, sNm, lNm, type, desc, extDesc, attrs, setVal);
       members.emplace_back(temp);
     }
@@ -508,8 +508,8 @@ namespace opts
         Setter<O>        setVal,
         DefaultSetter<O> setDftVal)
     {
-      validateOptPrefix(sNm);
-      validateOptPrefix(lNm);
+      ensureUnique(sNm);
+      ensureUnique(lNm);
       Opt<O> temp(
           prefix, sNm, lNm, type, desc, extDesc, attrs, setVal, setDftVal);
       members.emplace_back(temp);
@@ -531,24 +531,25 @@ namespace opts
       return false;
     }
 
-    void validateOptPrefix(const char *nm)
+    void ensureUnique(const char *nm)
     {
 #ifdef _DEBUG
       if (nm == nullptr)
         return;
       // ensure they didn't prefix their own -'s
       if (*nm == '-') {
-        OPTS_INVALID_SPEC("option should not start with (the '-' is implict)");
+        INVALID_SPEC(
+          "name should not start with (the - or -- is implicit)");
       }
       // ensure doesn't collide with main name
       for (auto &o : members) {
         if (o.shortName && streq(nm, o.shortName)) {
-          OPTS_INVALID_SPEC(
-              "option name collides with another (short) option name");
+          INVALID_SPEC(
+            "name collides with another (short) option name");
         }
         if (o.longName && streq(nm, o.longName)) {
-          OPTS_INVALID_SPEC(
-              "option name collides with another (long) option name");
+          INVALID_SPEC(
+            "name collides with another (long) option name");
         }
       }
 #endif
@@ -562,7 +563,7 @@ namespace opts
       int sCw = 4, lCw = 8, tCw = 8;
       for (auto &o : members) {
         auto updateMax = [&](int cw, const char *str) {
-          return str ? maxInt(cw, (int)strlen(str)) : cw;
+          return str ? std::max(cw, (int)strlen(str)) : cw;
         };
         sCw = updateMax(sCw, o.shortName);
         lCw = updateMax(lCw, o.longName);
@@ -575,14 +576,23 @@ namespace opts
     }
   };
 
+  struct ExtraHelp {
+    std::string key;
+    std::string shortDesc;
+    std::string longDesc;
+    ExtraHelp(std::string k, std::string s, std::string l)
+      : key(k), shortDesc(s), longDesc(l) { }
+  };
+
   template<typename O>
   class CmdlineSpec {
     const char *            exeTitle;
     const char *            exeName;
-    Group<O>                opts;      // command line options (top-level)
-    std::vector<Group<O> *> optGroups; // special option groups (e.g. -X....)
+    Group<O>                opts;      // top-level command line options
+    std::vector<Group<O> *> groups;    // special option groups (e.g. -X....)
     std::vector<Opt<O>>     args;      // command line arguments
     const char *            examples;
+    std::vector<ExtraHelp>  extraHelp;
 
   public:
     CmdlineSpec(
@@ -597,33 +607,36 @@ namespace opts
     {
       if (appendHelpOpt) {
         defineFlag(
-            "h",
-            "help",
-            "shows help on an option",
-            "Without any argument -h will print general help on all "
-            "options. "
-            "However, if given an argument, -h will attempt to lookup that "
-            "argument. "
-            "Options are given without preceding - or --.  We check long "
-            "option "
-            "names first, "
-            "short names second, and finally argument indices last.  "
-            "Argument "
-            "indices are "
-            "specified as: \"#1\" for the first argument, \"#2\" for the "
-            "second, "
-            "etc."
-            "",
-            OptAttrs::FLAG_VALUE,
-            [&](const char *inp, const ErrorHandler &err, O &) {
-              CmdlineSpec::handleHelpArgument(
-                  inp, err, exeTitle, exeName, opts, optGroups, args, examples);
-            }); // end  defineFlag(...)
-      }         // end if appendHelpOpt
-    }           // end constructor
+          "h",
+          "help",
+          "shows help on an option",
+          "Without any argument -h will print general help on all "
+          "options. "
+          "However, if given an argument, -h will attempt to lookup that "
+          "argument. "
+          "Options are given without preceding - or --.  We check long "
+          "option "
+          "names first, "
+          "short names second, and finally argument indices last.  "
+          "Argument "
+          "indices are "
+          "specified as: \"#1\" for the first argument, \"#2\" for the "
+          "second, etc.\n"
+          "\n"
+          "EXAMPLES:"
+          "  -h=h  lists this message\n"
+          "  -h=foo lists info on option or flag -foo or --foo\n"
+          "  -h=#0 lists info on the first command line argument (if available)\n"
+          "",
+          OptAttrs::FLAG_VALUE,
+          [&](const char *inp, const ErrorHandler &err, O &) {
+            handleHelpArgument(inp, err);
+          }); // end  defineFlag(...)
+      }       // end if appendHelpOpt
+    }         // end constructor
 
     ///////////////////////////////////////////////////////////////////////////
-    // These just redirect to the parent options
+    // These just redirect to the root group's options
     void defineFlag(
         const char *sNm,
         const char *lNm,
@@ -632,6 +645,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setter)
     {
+      ensureUnique(sNm, lNm);
       opts.defineFlag(sNm, lNm, desc, extDesc, attrs, setter);
     }
     void defineFlag(
@@ -642,6 +656,7 @@ namespace opts
         int         attrs, // OptAttrs
         bool&       var)
     {
+      ensureUnique(sNm, lNm);
       opts.defineFlag(sNm, lNm, desc, extDesc, attrs, var);
     }
     void defineOpt(
@@ -653,6 +668,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setter)
     {
+      ensureUnique(sNm, lNm);
       opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, setter);
     }
     // have to expand these manually
@@ -666,6 +682,7 @@ namespace opts
         int         attrs, // OptAttrs
         T&          ref)
     {
+      ensureUnique(sNm, lNm);
       opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, ref);
     }
     void defineOpt(
@@ -678,6 +695,7 @@ namespace opts
         Setter<O>        setter,
         DefaultSetter<O> defaultSetter)
     {
+      ensureUnique(sNm, lNm);
       opts.defineOpt(
           sNm, lNm, type, desc, extDesc, attrs, setter, defaultSetter);
     }
@@ -733,54 +751,62 @@ namespace opts
       args.emplace_back(temp);
     }
 
-    Group<O> &defineGroup(const char *prefix, const char *name)
-    {
-#ifdef _DEBUG
-      if (prefix) {
-        // ensure they didn't prefix their own -'s
-        if (*prefix == '-') {
-          OPTS_INVALID_SPEC(
-              "group prefix should not start with (the '-' is implicit)");
-        }
-        // ensure name doesn't collide with another top-level option name
-        opts.validateOptPrefix(prefix);
-        // ensure name doesn't collide with another group prefix
-        for (auto &g : optGroups) {
-          if (g->prefix && streq(prefix, g->prefix)) {
-            OPTS_INVALID_SPEC("group prefix collides with another group name");
-          }
-        }
-      }
-#endif
-      optGroups.emplace_back(new Group<O>(prefix, name));
-      return *optGroups.back();
+    Group<O> &defineGroup(const char *prefix, const char *name) {
+      ensureUnique(prefix);
+      groups.emplace_back(new Group<O>(prefix, name));
+      return *groups.back();
     }
 
-    void handleHelpArgument(
-        const char *                   inp,
-        const ErrorHandler &           err,
-        const char *                   exeTitle,
-        const char *                   exeName,
-        const Group<O> &               opts,
-        const std::vector<Group<O> *> &groups,
-        const std::vector<Opt<O>> &    args,
-        const char *                   examples)
+    // extra help sections
+    void defineExtraHelpSection(
+      std::string key,
+      std::string shortDesc,
+      std::string prose)
     {
+      ensureUnique(key.c_str());
+      extraHelp.emplace_back(key, shortDesc, prose);
+    }
+
+private:
+    // ensure option or key names are unique at the root level
+    void ensureUnique(const char *nm1, const char *nm2) {
+      ensureUnique(nm1);
+      ensureUnique(nm2);
+    }
+    void ensureUnique(const char *newKey) {
+#ifdef _DEBUG
+      if (!newKey)
+        return;
+      opts.ensureUnique(newKey);
+      for (const auto &eh : extraHelp) {
+        if (eh.key == newKey)
+          INVALID_SPEC("name conflicts with extra help section");
+      }
+#endif
+    }
+
+    void handleHelpArgument(const char *inp, const ErrorHandler &err) {
       if (!inp || !*inp) {
         // no input given e.g. -h
         if (exeTitle)
           std::cout << exeTitle << "\n";
-        CmdlineSpec::appendUsage(
-            std::cout,
-            sys::is_tty(std::cerr),
-            opts,
-            groups,
-            args,
-            exeName,
-            examples);
+        appendUsage(
+          std::cout,
+          sys::is_tty(std::cerr),
+          exeName,
+          examples);
         exit(EXIT_SUCCESS);
       } else {
         // given input: e.g. -h foo OR -h #1
+        //
+        // first try extra help sections
+        for (const auto &eh : extraHelp) {
+          if (inp == eh.key) {
+            std::cout << eh.longDesc;
+            exit(EXIT_SUCCESS);
+          }
+        }
+        // then descend into option groups
         const Opt<O> *opt       = nullptr;
         auto          scanGroup = [&](const Group<O> &g, bool pfx) {
           int  off   = 0;
@@ -865,6 +891,7 @@ namespace opts
       } // end if *inp != 0
     }
 
+public:
     bool parse(int argc, const char **argv, O &optVal)
     {
       int argIx = 1;
@@ -884,7 +911,7 @@ namespace opts
         matched = opts.tryMatch(argc, argv, argIx, errHandler, optVal);
         if (!matched) {
           // try as grouped option
-          for (auto &g : optGroups) {
+          for (auto &g : groups) {
             if (g->tryMatch(argc, argv, argIx, errHandler, optVal)) {
               matched = true;
               break;
@@ -894,7 +921,7 @@ namespace opts
 
         // try as a group name match (-X is alias for -h=X)
         if (!matched && argv[argIx][0] == '-') {
-          for (auto &g : optGroups) {
+          for (auto &g : groups) {
             if (streq(argv[argIx] + 1, g->prefix)) {
               // recurse
               std::string        helpArg     = std::string("-h=") + g->prefix;
@@ -941,7 +968,7 @@ namespace opts
         }
       };
       setDefaults(opts);
-      for (auto &g : optGroups) {
+      for (auto &g : groups) {
         setDefaults(*g);
       }
 
@@ -956,12 +983,10 @@ namespace opts
       return true;
     }
 
-    static void appendUsage(
+private:
+    void appendUsage(
         std::ostream &                 os,
         bool                           isTty,
-        const Group<O> &               opts,
-        const std::vector<Group<O> *> &groups,
-        const std::vector<Opt<O>> &    args,
         const char *                   exeName,
         const char *                   examples)
     {
@@ -974,34 +999,51 @@ namespace opts
       int gCw = 4;
       for (auto &g : groups) {
         if (g->prefix) {
-          gCw = maxInt(gCw, (int)strlen(g->prefix) + 3);
+          gCw = std::max(gCw, (int)strlen(g->prefix) + 3);
         }
       }
-      os << "\n";
-      for (auto &g : groups) {
-        os << std::setw(3 + gCw) << std::left
-           << concat("  -", g->prefix, "...");
-        os << "  "; // spaces for option long names: should be lCw
-        os << "  " << g->name << " (-" << g->prefix << " for more info)"
-           << "\n";
+      if (!groups.empty()) {
+        os << "\n";
+        for (auto &g : groups) {
+          os << std::setw(3 + gCw) << std::left
+            << concat("  -", g->prefix, "...");
+          os << "  "; // spaces for option long names: should be lCw
+          os << "  " << g->name << " (-" << g->prefix << " for more info)"
+            << "\n";
+        }
       }
 
-      os << "and where ARGS:"
-         << "\n";
-      // autoscale arg type column
-      int atCw = 8;
-      for (auto &a : args) {
-        atCw = maxInt(atCw, a.typeName ? (int)strlen(a.typeName) : 0);
-      }
-      for (auto &a : args) {
-        a.appendHelpMessage(os, gCw, 0, atCw, false);
+      if (!args.empty()) {
         os << "\n";
+        os << " and where ARGS:"
+           << "\n";
+        // autoscale arg type column
+        int atCw = 8;
+        for (auto &a : args) {
+          atCw = std::max(atCw, a.typeName ? (int)strlen(a.typeName) : 0);
+        }
+        for (auto &a : args) {
+          a.appendHelpMessage(os, gCw, 0, atCw, false);
+          os << "\n";
+        }
+        if (examples) {
+          os << "\n"
+             << "EXAMPLES: "
+             << "\n"
+             << examples;
+        }
       }
-      if (examples) {
-        os << "\n"
-           << "EXAMPLES: "
-           << "\n"
-           << examples;
+      if (!extraHelp.empty()) {
+        os << "\n";
+        os << "also see extra help sections:\n";
+        int maxCw = 4;
+        for (const auto &eh : extraHelp) {
+          maxCw = std::max(maxCw, 3 + (int)eh.key.length());
+        }
+        for (const auto &eh : extraHelp) {
+          os << std::setw(3 + gCw) << std::left
+            << concat("  -h=", eh.key) << "\n";
+        }
       }
     }
   }; // class CmdlineSpec
@@ -1017,5 +1059,7 @@ namespace opts
     return path;
   }
 } // namespace opts
+
+#undef INVALID_SPEC
 
 #endif // _OPTS_HPP_

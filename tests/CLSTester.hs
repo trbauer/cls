@@ -4,6 +4,7 @@ import Data.Char
 import Data.List
 import Data.Int
 import Data.IORef
+import Data.List
 import Data.Word
 import System.Environment
 import System.Exit
@@ -45,6 +46,36 @@ cls64_exe = "builds/vs2017-64/Debug/cls64.exe"
 cls32_exe :: FilePath
 cls32_exe = "builds/vs2017-32/Debug/cls32.exe"
 
+help = do
+  putStr $
+    "main - runs tests\n" ++
+    "run [...] - runs with args\n" ++
+    "---------------------------\n" ++
+    "mkDftOpts >>= ...\n" ++
+    "  runSyntaxErrorTestCL\n" ++
+    "  runSyntaxErrorTestCLS\n" ++
+    "  runInitAtomTests\n" ++
+    "  runDimensionTests\n" ++
+    "  runSequentialAddTest os ARG-TYPE [ARGS] EXPECT-VAL - \n" ++
+    "  runPrintCommandTests\n" ++
+    "  runPrintAttributeTests\n" ++
+    "  runSaveTest\n" ++
+    "  runDiffUniformTestMatch\n" ++
+    "  runDiffUniformTestMismatch\n" ++
+    "  runDiffSurfaceTestMatchVar\n" ++
+    "  runDiffSurfaceTestMatchImm\n" ++
+    "  runDiffSurfaceTestMismatchVar\n" ++
+    "  runDiffSurfaceTestMismatchImm\n" ++
+    "  runContextIdentifierTest\n" ++
+    "  runContextIdentifierNegativeTest\n" ++
+    "  runInitConstWithDim\n" ++
+    "  runInitRandomTests\n" ++
+    "  runInitSequenceTests\n" ++
+    "  runInitFileBinTest\n" ++
+    "  runSlmDynamicTest\n" ++
+    "  runSlmStaticTest\n" ++
+    "  runImageTests\n" ++
+    ""
 
 preCheck :: IO ()
 preCheck = mkDftOpts >>= preCheckForOpts
@@ -56,17 +87,27 @@ parseOpts :: [String] -> Opts -> IO Opts
 parseOpts []     os = return os
 parseOpts (a:as) os =
     case a of
-      "-q" -> continue $ os{oVerbosity = -1}
-      "-32" -> continue $ os{oClsExe = cls32_exe}
-      "-64" -> continue $ os{oClsExe = cls64_exe}
-      "-v" -> continue $ os{oVerbosity = 1}
-      "-v2" -> continue $ os{oVerbosity = 2}
-      "-F" -> continue $ os{oFailFast = False}
-      _
-        | "-d=" `isPrefixOf` a ->
+      "-32" -> continue os{oClsExe = cls32_exe}
+      "-64" -> continue os{oClsExe = cls64_exe}
+      e | "-exe="`isPrefixOf`a -> continue os{oClsExe = val_str}
+      d | "-d="`isPrefixOf`a ->
           case reads val_str of
             [(val,"")] -> continue $ os{oDeviceIndex = val}
             _ -> badOpt "malformed device index"
+      d | "-d" `isPrefixOf` a && all isDigit (drop 2 a) -> parseOpts (("-d="++drop 2 a):as) os
+      "-F" -> continue os{oFailFast = False}
+      "-q" -> continue os{oVerbosity = -1}
+      "-v" -> continue os{oVerbosity = 1}
+      "-v2" -> continue os{oVerbosity = 2}
+      "-h" -> do
+        putStr $
+          "-32/-64    tests cls32.exe/cls64.exe\n" ++
+          "-d=INT     tests using a given device index\n" ++
+          "-exe=PATH  overrides path to cls*.exe\n" ++
+          "-F         fail fast\n" ++
+          "-q/-v/v2  sets verbosity\n" ++
+          ""
+        exitSuccess
       ('-':_) -> badOpt "unrecongized option"
       _ -> badOpt "unrecongized argument"
   where val_str :: String
@@ -114,7 +155,11 @@ preCheckForOpts os = do
           length fstr `seq` return ()
           let mAX_COLS = 120
           let lns = zip [1..] (lines fstr) :: [(Int,String)]
-          let bad_lines_too_long = filter ((>=mAX_COLS) . length . snd) lns
+          let isLineTooLong ln =
+                -- allow long lines for special cases
+                length ln >= mAX_COLS &&
+                all (not . (`isInfixOf`ln)) ["http://","https://"]
+              bad_lines_too_long = filter (isLineTooLong . snd) lns
               bad_lines_tabs = filter (('\t'`elem`) . snd) lns
               bad_lines_trailing_ws = filter ((" "`isSuffixOf`) . snd) lns
           forM_ bad_lines_too_long $ \(lno,ln) -> do
@@ -377,7 +422,8 @@ runDiffUniformTestMismatch os = do
         "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
-  runScript os "diff uniform mismatch" (mShouldExit 1 .&&. mStderrContains "element 7") script
+  runScript os "diff uniform mismatch (negative)" (mShouldExit 1 .&&. mStderrContains "element 7") script
+  runScriptExtra ["-Xno-exit-on-diff-fail"] os "diff uniform mismatch (no exit)" (mShouldExit 0 .&&. mStderrContains "element 7") script
 
 runDiffSurfaceTestMatchImm :: Opts -> IO ()
 runDiffSurfaceTestMatchImm os = do
@@ -832,7 +878,7 @@ runContextIdentifierTest os = do
         "diff(6,B)\n" ++
         "diff(A,B)\n" ++
         ""
-  runScript os "context identifiers" (mShouldExit 0) script
+  runScript os "queue identifiers" (mShouldExit 0) script
 
 runContextIdentifierNegativeTest :: Opts -> IO ()
 runContextIdentifierNegativeTest os = do
@@ -843,8 +889,11 @@ runContextIdentifierNegativeTest os = do
         "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
-      passed = mShouldExit 1 .&&. mStderrContains "memory object used across cl_context"
-  runScript os "context identifiers negative test" passed script
+      -- the latter can happen if the surface object belongs to a different context
+      passed =
+        mShouldExit 1 .&&.
+          (mStderrContains "memory object used across cl_context" .||. mStderrContains "CL_INVALID_MEM_OBJECT")
+  runScript os "queue identifiers negative test" passed script
 
 
 -------------------------------------------------------------------------------
@@ -855,7 +904,9 @@ removeIfExists fp = do
   when z $ removeFile fp
 
 runScript :: Opts -> String -> Matcher -> String -> IO ()
-runScript os = runScriptWith (oClsExe os) [] os
+runScript = runScriptExtra []
+runScriptExtra :: [String] -> Opts -> String -> Matcher -> String -> IO ()
+runScriptExtra extra_args os = runScriptWith (oClsExe os) extra_args os
 
 runScriptWith :: FilePath -> [String] -> Opts -> String -> Matcher -> String -> IO ()
 runScriptWith exe extra_opts os tag match script = do
@@ -863,10 +914,16 @@ runScriptWith exe extra_opts os tag match script = do
   let args = default_arguments ++ ["-e",script] ++ extra_opts
   (ec,out,err) <- readProcessWithExitCode exe args ""
   r <- match ec out err
+  let fmtArgList [] = "" -- drop -e arg
+      fmtArgList ("-e":_:as) = fmtArgList as
+      fmtArgList (a:as) = a ++ " " ++ fmtArgList as
   let emitOutput =
         putStrLn $
           "\n\n" ++
           "******************************************\n" ++
+          -- "% " ++ oClsExe os ++ " " ++ intercalate " " args ++ " -e ...\n" ++
+          -- script ++
+          -- "\n" ++
           "***OUT***:\n" ++
           out ++ "\n" ++
           "***ERR***:\n" ++
@@ -887,7 +944,7 @@ runScriptWith exe extra_opts os tag match script = do
       let failed_cls = "failed.cls"
       writeFile failed_cls script
       when (oFailFast os) $
-        die $ "test failed (run " ++ failed_cls ++ ")"
+        die $ "test failed (run " ++ fmtArgList args ++ " " ++ failed_cls ++ ")"
       modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed)
 
 

@@ -65,6 +65,7 @@ enum class microarch {
   INTEL_GEN9P7 = ((static_cast<int>(vendor::INTEL) << 16) | 0x0097), // KBL+
   INTEL_GEN10  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00A0),
   INTEL_GEN11  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00B0),
+  INTEL_GEN12  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00C0),
   //
   // SPECIFY: we could split this up even more GV100, GV102, ... etc...
   // SPECIFY: or even maybe re-arrange by CUDA capability?
@@ -72,6 +73,7 @@ enum class microarch {
   NVIDIA_PAS  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0006),
   NVIDIA_VOL  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0007),
   NVIDIA_TUR  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0008),
+  NVIDIA_AMP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0008),
   //
   OTHER       = 0x7FFF0000,
 };

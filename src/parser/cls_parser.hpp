@@ -11,6 +11,8 @@
 
 namespace cls
 {
+  extern const char *CLS_SYNTAX;
+
   void parse_script(
     const opts &os,
     const std::string &input,

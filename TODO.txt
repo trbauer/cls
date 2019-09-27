@@ -1,0 +1,113 @@
+SEE; https://github.com/trbauer/cls/issues/
+
+
+TODO:
+* ENABLE SPIR-V: clCreateProgramWithIL
+  https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/clCreateProgramWithIL.html
+
+* STUDY: how to use events?
+   E.g. A->B and C->D run in parallel
+* ENABLE:
+   change instance syntax to
+     #0#a to #0:a
+
+* ENABLE: transfer behavior
+   :c and :m
+
+* ENABLE: make dispatches asynchronous (save the event?)
+    #0`prog.cl`foo...
+    #0`prog.cl`foo...
+    #0`prog.cl`foo...
+    #0`prog.cl`foo...
+  no ramp up/down
+
+* Build in Linux
+
+* ENABLE SVM (add sa)
+   dynamically bind to clSVM
+* ENABLE max error diff
+    diff<float,0.001>(...)
+  (requires special handling of half/float/double buffers)
+
+* ENABLE proper nan compare
+   - first make a test case that fails today
+   - then fix NaN bits may differ between different platforms, but we desire
+    any sNAN and qNAN to compare properly (drop payloads)
+
+* CONSIDER "as" bindings;
+   ...`foo<...>(I@...)
+   save(I)
+
+
+* SPECIFY: how to create images such that we can enable 2D/3D/LOD etc...
+  https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/cl_image_desc.html
+
+* BUG
+    diff<int*>(A,B); where A and B come from contexts from devices with different ptr sizes
+  NOTE: should be rare since (int*) would require SVM
+
+* BUG
+  let A=0:[4*8*2]w
+  #2`tests/add.cl[-DT=int2]`add<8>(A,{1,2})
+
+* allow k, m suffixes on dimensions (4k or 4 k) (1k x 1k)
+   lexically will show up as ident
+* remove cl.hpp deps: cl::Kernel cl::Device
+
+* enable different timing units -u=s -u=us -u=ms
+
+* CONSIDER define and implement global buffer reductions (min, max)
+   reduce<min>(A)
+   reduce<max>(A)
+   reduce<sum>(A)
+   reduce<avg>(A)
+  NO => write a kernel to do it
+
+* CONSIDER
+
+cls: help syntax system would be good to emit and keep in sync with all work
+  -h=#0
+
+------------------------
+PROBLEMS:
+* partial applicaiton kernels are incoherent since arguments are
+  associated with OpenCL kernel objects
+    let K = prog.cl`kernel
+    K<1024>(0:w,1);
+    K<1024>(1:w,2);
+  creates two dispatches with the same kernel object
+  the surface objects and scalar arguments are ambiguous
+
+
+
+////////////////////////////////////////////////////
+OPENS
+cls: default kernel    #1`path/foo.cl<1024x1024,16x16>(...)
+cls: default program   #1`kernel<1024x1024,16x16>(...)
+
+////////////////////////////////////////////////////
+DONE
+* support explicit dimensions
+cls: where
+    ...foo<>(...) where A = ...
+cls: rename -L to -l
+cls: enable device index on -l (or -L)
+cls: disable arguments starting with - since we absorb bad options that way...
+
+* BUG: let X=0:[128]wp4 appears as let spec
+* BUG: print(...) before buffer use; crashes (nullptr surface_object*)
+* test static and dynamic SLM
+* test buffers of structures
+cls: per dispatch samplers (timing)
+  using per_dispatch_samples = std::vector<std::tuple<const cls::dispatch_spec *,sampler_t>>;
+  per_dispatch_samples compiled_script::get_per_dispatch_samples();
+
+cls: enable ndr device selection syntax #1`foo.cl and #GTX`...
+
+cls: -tH -tCL dumps times of every call in a table
+   example (with -i=16)
+                 ....                      time (s)    cfv       min (s)     max (s)
+   #0`./foo`kernel1<1024>(0:w,1:r)        0.002310 +- 2.2%      0.002251    0.002421
+   #0`./foo`kernel2<1024>(0:w,1:r)        0.005151 +- 0.6%      0.005251    0.006421
+
+   OPEN: do we affix the device we selected to the syntax unconditionally?

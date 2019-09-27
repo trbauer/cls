@@ -512,8 +512,11 @@ void init_spec_file::str(std::ostream &os, format_opts fopts) const
 {
   os << "file<";
   switch (flavor) {
-  case file_flavor::BIN: os << "bin"; break;
-  case file_flavor::TXT: os << "text"; break;
+  case file_flavor::BIN:
+    os << "bin"; break;
+  case file_flavor::TXT:
+    os << "text" << "," << sep;
+    break;
   case file_flavor::TXT_COL:
     os << "text_col" << "," << col << "," << sep;
     break;
