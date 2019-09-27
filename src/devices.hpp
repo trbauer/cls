@@ -80,7 +80,7 @@ enum class microarch {
 static inline bool isIntelGEN(microarch p) {
   return
     static_cast<int>(p) >= static_cast<int>(microarch::INTEL_GEN7P5) &&
-    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_GEN11);
+    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_GEN12);
 }
 microarch   getDeviceMicroArchitecture(cl_device_id d);
 

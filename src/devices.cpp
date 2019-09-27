@@ -134,7 +134,7 @@ cl_spec getDeviceSpec(cl_device_id d) {
   }
 }
 
-vendor           getDeviceVendor(cl_device_id d)
+vendor getDeviceVendor(cl_device_id d)
 {
   const cl::Device dev(d);
   auto vendor = dev.getInfo<CL_DEVICE_VENDOR_ID>();
