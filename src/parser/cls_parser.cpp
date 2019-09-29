@@ -37,8 +37,8 @@ const char *cls::CLS_SYNTAX =
     SVAR("Let") " | " SVAR("DispatchLet") "\n"
   "\n"
   "************* DISPATCH STATEMENTS *************\n"
-  SVAR("Dispatch") " = (" SVAR("Device") SVAR("CommandQueueId") "?" SLIT("`") ")? " SVAR("Program") " ` "
-      SVAR("KernelName") " " SVAR("KernelDims") " " SVAR("KernelArgs") "\n"
+  SVAR("Dispatch") " = (" SVAR("Device") SVAR("CommandQueueId") "?" SLIT("`") ")? "
+    SVAR("Program") " ` " SVAR("KernelName") " " SVAR("KernelDims") " " SVAR("KernelArgs") "\n"
   "  - if the device is omitted, CLS uses first device\n"
   "  - if the command queue ID is omitted, we use a uniform"
   "\n"
@@ -50,7 +50,7 @@ const char *cls::CLS_SYNTAX =
   "    (the substring must be unique)\n"
   "  e.g. " SLIT("#0") " or " SLIT("#\"GTX\"") "\n"
   "\n"
-  SVAR("CommandQueueId") " = " SLIT("#") SVAR("IDENT") "\n"
+  SVAR("CommandQueueId") " = " SLIT(":") SVAR("IDENT") "\n"
   "  A context identifier allows two dispatches to share the same context and\n"
   "command queue\n"
   "  e.g. " SLIT("#0#A`prog1.cl`foo...`; #0#A`prog2.cl`bar...")
@@ -1341,7 +1341,7 @@ static void parseDispatchStatementWhereClause(
 }
 
 // #1`path/foo.cl
-// #1#a`path/foo.cl
+// #1:a`path/foo.cl
 static program_spec *parseDispatchStatementDeviceProgramPart(
   parser &p,
   script &s)
@@ -1360,13 +1360,13 @@ static program_spec *parseDispatchStatementDeviceProgramPart(
     } else {
       p.fatal("invalid device specification");
     }
-    if (p.consumeIf(HASH)) {
-      dev.instance = p.consumeIdent("instance identifier");
+    if (p.consumeIf(COLON)) {
+      dev.instance = p.consumeIdent("queue identifier");
     }
     dev.defined_at.extend_to(p.nextLoc());
     if (!p.lookingAt(BACKTICK))
       p.fatal("expected ` (dispatch program separator) or "
-        "# (instance identifier)");
+        "# (queue identifier)");
     p.consume(BACKTICK);
   } else {
     dev.skind = device_spec::BY_DEFAULT;

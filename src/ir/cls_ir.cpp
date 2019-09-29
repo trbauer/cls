@@ -163,7 +163,7 @@ void device_spec::str(std::ostream &os, format_opts fopts) const {
   default: os << "device_spec??"; break;
   }
   if (!instance.empty())
-    os << "#" << instance;
+    os << ":" << instance;
 }
 
 void program_spec::str(std::ostream &os, format_opts fopts) const {

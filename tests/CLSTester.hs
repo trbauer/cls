@@ -49,7 +49,7 @@ cls32_exe = "builds/vs2017-32/Debug/cls32.exe"
 help = do
   putStr $
     "main - runs tests\n" ++
-    "run [...] - runs with args\n" ++
+    "run [...] - runs with args (try -h)\n" ++
     "---------------------------\n" ++
     "mkDftOpts >>= ...\n" ++
     "  runSyntaxErrorTestCL\n" ++
@@ -870,10 +870,10 @@ runContextIdentifierTest os = do
       script =
         "let A=1:rw\n" ++
         "let B=1:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(A,2)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,2)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,3)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":a`tests/add.cl[-DT=int]`add<8>(A,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":a`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":b`tests/add.cl[-DT=int]`add<8>(B,2)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":b`tests/add.cl[-DT=int]`add<8>(B,3)\n" ++
         "diff(6,A)\n" ++
         "diff(6,B)\n" ++
         "diff(A,B)\n" ++
@@ -885,8 +885,8 @@ runContextIdentifierNegativeTest os = do
   let script :: String
       script =
         "let B=44:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#a`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "#b`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":a`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ ":b`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
         "diff(44+16,B)\n" ++
         ""
       -- the latter can happen if the surface object belongs to a different context
