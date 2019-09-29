@@ -371,6 +371,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       fatalAt(
         ps->defined_at, "failed to build program ", status_to_symbol(bp_err));
     }
+
     if (os.save_binaries) {
       std::string bin_ext;
       if (vend == vendor::NVIDIA)

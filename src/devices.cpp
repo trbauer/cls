@@ -197,7 +197,7 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
           // I'm guessing on this one, I don't really know the product names
           arch = microarch::INTEL_GEN12;
       } else {
-          // TODO: later architectures
+          // TODO: later GEN architectures
       }
     } else if(nameHas("Intel(R) Core(TM)")) {
       // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...
@@ -212,10 +212,11 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
       arch = microarch::NVIDIA_VOL;
     } else if (nameHasAny({"GTX 1660","RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
       arch = microarch::NVIDIA_TUR;
+    } else {
+      // TODO: non GTX parts
+      arch = microarch::OTHER;
     }
-    // TODO: non GTX parts
-    arch = microarch::OTHER;
-  // } else if (vend == vendor::AMD) {
+  } else if (vend == vendor::AMD) {
   // TODO:
   }
   return arch;
@@ -250,3 +251,36 @@ cl_int makeCommandQueue(
   queue = clCreateCommandQueue(ctx, dev_id, props, &err);
   return err;
 }
+
+#if 0
+// TODO: this function is supposed to resolve a device to the DLL/SO
+// implementing that device.
+//
+// Ideas:
+//  1. Use clGetExtensionFunctionAddressForPlatform to fetch a pointer to
+//     a given driver function (hoping to get the driver's copy of the
+//     function, not the KHR dispatcher).  The hoping to use some system
+//     call (on Windows) to get an HMODULE and then resolve to a path.
+//     Can use /proc on Linux
+//     FAILED: clGetExtensionFunctionAddressForPlatform doesn't skip the KHR
+//     dispatcher as I hoped, and just returns nullptr on nonext functions.
+//
+//  2. Use cl_device_id as a pointer?  Assuming it's global memory in the
+//     .data section, it should be within the DLL/SO.  Use the same approach
+//     as 1.
+//     FAILED: Pointers don't appear to in image range.
+//
+
+const char *getDriverPath(cl_device_id d)
+{
+  cl_platform_id p;
+  auto err = clGetDeviceInfo(d, CL_DEVICE_PLATFORM, sizeof(p), &p, nullptr);
+  if (err != CL_SUCCESS)
+    return "?";
+
+
+  void *ptr = clGetExtensionFunctionAddressForPlatform(p, "clGetDeviceInfo");
+
+  return "?";
+}
+#endif

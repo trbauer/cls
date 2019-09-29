@@ -66,10 +66,16 @@ int main(int argc, const char **argv)
     "E","save-preprocessed","saves the pre-processed source","",opts::NONE,
     os.save_preprocessed);
   cmdspec.defineFlag(
-    "B","save-binaries","saves all program binaries","",opts::NONE,
+    "B", "save-binaries",
+    "saves all program binaries",
+    "This uses clGetProgramInfo(...CL_PROGRAM_BINARIES...)",
+    opts::NONE,
     os.save_binaries);
   cmdspec.defineFlag(
-    "P","parse-only","parses the script only and pretty prints it","",opts::NONE,
+    "P","parse-only",
+    "parses the script only and pretty prints it",
+    "",
+    opts::NONE,
     os.parse_only);
   cmdspec.defineOpt(
     "l","list-devices","DEV?","list the devices by index or name",

@@ -662,6 +662,13 @@ void listDeviceInfoForDevice(
   auto START_GROUP = [](const char *name) {
     std::cout << "  === " <<  name << ":\n";
   };
+  /////////////////////////////////////////////////////////////////////////////
+  START_GROUP("SYSTEM");
+  emitParamName("MICRO_ARCHITECTURE");
+  std::cout << format(getDeviceMicroArchitecture(dev_id)) << "\n";
+  // emitParamName("DRIVER_PATH");
+  // std::cout << getDriverPath(dev_id) << "\n";
+
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("PLATFORM");
