@@ -47,12 +47,12 @@ namespace opts
 
     void operator()(const std::string &msg) const
     {
-        sys::message_for_level(2, msg.c_str());
-        sys::fatal_exit();
+      std::cerr << msg << "\n";
+      sys::fatal_exit();
     }
     void operator()(const std::string &msg, const std::string &usage) const
     {
-      sys::message_for_level(2, msg.c_str());
+      std::cerr << msg << "\n";
       std::cerr << usage;
       sys::fatal_exit();
     }
@@ -789,7 +789,7 @@ private:
       if (!inp || !*inp) {
         // no input given e.g. -h
         if (exeTitle)
-          std::cout << exeTitle << "\n";
+          std::cout << exeTitle << "\n\n";
         appendUsage(
           std::cout,
           sys::is_tty(std::cerr),

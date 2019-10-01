@@ -262,8 +262,8 @@ const char *cls::CLS_SYNTAX =
   "\n"
   "  " SVAR("Barrier") " = " SLIT("barrier") " | " SLIT("barrier") SLIT("(") SLIT(")") "\n"
   "  waits until all dispatches complete before proceeding\n"
-// TODO: update this
-  "  (currently a nop because kernel dispatches are currently synchronous)\n"
+// TODO: update this if we enable async kernels
+  "  (currently a nop because kernel dispatches are synchronous)\n"
     "\n"
     "  " SVAR("Diff") "\n"
     "  = " SLIT("diff")
@@ -291,7 +291,9 @@ const char *cls::CLS_SYNTAX =
     "       prints buffer A as float4's\n"
   "\n"
   "************* LET STATEMENTS *************\n"
-  SVAR("Let") " = " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
+  SVAR("Let")  " =\n"
+    "   " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("MemInitExpr") "\n"
+    " | " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
   "  binds a symbol to a value;\n"
   "  use this to share buffers in multiple dispatch statements\n"
   ;

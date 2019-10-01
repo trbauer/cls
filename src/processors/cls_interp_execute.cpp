@@ -378,6 +378,8 @@ static void saveBuffer(
 
 void compiled_script_impl::execute(dispatch_command &dc)
 {
+  debug(dc.dobj->spec->defined_at, "executing dispatch");
+
   cl_command_queue queue = (*dc.dobj->queue)();
   cl_kernel kernel = (*dc.kernel->kernel)();
   loc dc_at = dc.spec->defined_at;
@@ -454,7 +456,8 @@ void compiled_script_impl::execute(dispatch_command &dc)
       nullptr,
       &enq_evt);
 
-  CL_COMMAND(dc_at,clWaitForEvents,1,&enq_evt);
+  CL_COMMAND(dc_at,
+    clWaitForEvents, 1, &enq_evt);
 
   auto duration_exec =
     std::chrono::duration_cast<std::chrono::microseconds>(
@@ -487,6 +490,8 @@ void compiled_script_impl::execute(
   const void *ref_host_ptr,
   const void *sut_host_ptr)
 {
+  debug(dfc.spec->defined_at, "executing surface diff");
+
   evaluator::context ec;
   if (dfc.so_ref->size_in_bytes == 0)
     return; // zero sized buffers always match
@@ -519,6 +524,8 @@ void compiled_script_impl::execute(
 
 void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 {
+  debug(dfc.spec->defined_at, "executing uniform diff");
+
   evaluator::context ec;
   if (dfc.so->size_in_bytes == 0)
     return; // zero sized buffers always match
@@ -602,6 +609,8 @@ void compiled_script_impl::executeDiffElem(
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 {
+  debug(prc.spec->defined_at, "executing print");
+
   evaluator::context ec;
   if (prc.so && !prc.so->dispatch_uses.empty())
     ec.sizeof_pointer =
@@ -627,6 +636,8 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 
 void compiled_script_impl::execute(save_command &svc, const void *host_ptr)
 {
+  debug(svc.spec->defined_at, "executing save");
+
   std::ofstream of(svc.spec->file,std::ios::binary);
   if (!of.good()) {
     fatalAt(svc.spec->defined_at,"failed to open file");
@@ -774,8 +785,9 @@ void compiled_script_impl::init_surfaces()
 {
   for (surface_object *so : surfaces) {
     if (so->dummy_object)
-      continue;
+      continue; // only used for a diff command
 
+    debug(so->spec->defined_at, "initializing surface");
     auto t_start = std::chrono::high_resolution_clock::now();
 
     dispatch_command *dc = nullptr;
@@ -811,7 +823,7 @@ void compiled_script_impl::init_surfaces()
           }
         });
     } else {
-      internalAt(so->spec->defined_at,"invalid source kind");
+      internalAt(so->spec->defined_at, "invalid surface kind");
     }
 
     auto t_duration =
@@ -920,8 +932,9 @@ void compiled_script_impl::init_surface(
     [[fallthrough]]; // otherwise fall through
   }
   /////////////////////////////////////////////////////////////////////////
-  // Some other expression that needs evaluation
-  // NOTE: this could be a literal or expression requiring evaluation
+  // Fill with a constant value.
+  // this could be a literal or expression (zero is handled above);
+  // but either way it needs evaluation
   default: {
     if (elem_type == nullptr) {
       fatalAt(so.spec->defined_at,
@@ -957,10 +970,11 @@ void compiled_script_impl::init_surface(
   }
 }
 
-void compiled_script::execute(int)
+void compiled_script::execute(int itr)
 {
   compiled_script_impl *csi = (compiled_script_impl *)impl;
-  csi->os.debug() << "compiled_script::execute\n";
+  csi->os.debug() << "compiled_script::execute starting iteration "
+    << itr << "\n";
 
   csi->init_surfaces();
 

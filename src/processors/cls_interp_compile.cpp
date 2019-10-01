@@ -135,7 +135,7 @@ static void emitCompiledKernelProperties(
   if (hasExtension(device,"cl_intel_required_subgroup_size")) {
     KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
     //
-    std::cout << std::setw(48) << "CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL: ";
+    std::cout << std::setw(48) << "CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL" << ": ";
     size_t sbsi = 0;
     auto cl_subgroup_function = findSubgroupFunction();
     if (cl_subgroup_function == nullptr) {
