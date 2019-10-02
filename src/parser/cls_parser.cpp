@@ -4,6 +4,7 @@
 #include "../system.hpp"
 
 #include <cmath>
+#include <optional>
 #include <iostream>
 #include <sstream>
 
@@ -38,7 +39,8 @@ const char *cls::CLS_SYNTAX =
   "\n"
   "************* DISPATCH STATEMENTS *************\n"
   SVAR("Dispatch") " = (" SVAR("Device") SVAR("CommandQueueId") "?" SLIT("`") ")? "
-    SVAR("Program") " ` " SVAR("KernelName") " " SVAR("KernelDims") " " SVAR("KernelArgs") "\n"
+    SVAR("Program") " ` "
+        SVAR("KernelName") " " SVAR("KernelDims") " " SVAR("KernelArgs") "\n"
   "  - if the device is omitted, CLS uses first device\n"
   "  - if the command queue ID is omitted, we use a uniform"
   "\n"
@@ -854,7 +856,7 @@ static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
     return nullptr;
   }
 }
-static init_spec_atom *parseInitAtomUnr(parser &p,script &s)
+static init_spec_atom *parseInitAtomUnr(parser &p, script &s)
 {
   if (p.lookingAt(SUB) || p.lookingAt(TILDE)) {
     auto loc = p.nextLoc();
@@ -869,7 +871,7 @@ static init_spec_atom *parseInitAtomUnr(parser &p,script &s)
     return parseInitAtomPrim(p,s);
   }
 }
-static init_spec_atom *parseInitAtomMul(parser &p,script &s)
+static init_spec_atom *parseInitAtomMul(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomUnr(p,s);
   while (p.lookingAt(MUL) || p.lookingAt(DIV) || p.lookingAt(MOD)) {
@@ -883,7 +885,7 @@ static init_spec_atom *parseInitAtomMul(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtomAdd(parser &p,script &s)
+static init_spec_atom *parseInitAtomAdd(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomMul(p,s);
   while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
@@ -896,7 +898,7 @@ static init_spec_atom *parseInitAtomAdd(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtomShift(parser &p,script &s)
+static init_spec_atom *parseInitAtomShift(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomAdd(p,s);
   while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
@@ -909,7 +911,7 @@ static init_spec_atom *parseInitAtomShift(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseAND(parser &p,script &s)
+static init_spec_atom *parseInitAtomBitwiseAND(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomShift(p,s);
   while (p.consumeIf(AMP)) {
@@ -918,7 +920,7 @@ static init_spec_atom *parseInitAtomBitwiseAND(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseXOR(parser &p,script &s)
+static init_spec_atom *parseInitAtomBitwiseXOR(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomBitwiseAND(p,s);
   while (p.consumeIf(CIRC)) {
@@ -927,7 +929,7 @@ static init_spec_atom *parseInitAtomBitwiseXOR(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtomBitwiseOR(parser &p,script &s)
+static init_spec_atom *parseInitAtomBitwiseOR(parser &p, script &s)
 {
   init_spec_atom *e = parseInitAtomBitwiseXOR(p,s);
   while (p.consumeIf(PIPE)) {
@@ -936,12 +938,12 @@ static init_spec_atom *parseInitAtomBitwiseOR(parser &p,script &s)
   }
   return e;
 }
-static init_spec_atom *parseInitAtom(parser &p,script &s)
+static init_spec_atom *parseInitAtom(parser &p, script &s)
 {
   return parseInitAtomBitwiseOR(p,s);
 }
 
-static init_spec *parseInit(parser &p,script &s)
+static init_spec *parseInit(parser &p, script &s)
 {
   auto l = p.nextLoc();
   init_spec_atom *e = parseInitAtom(p,s);
@@ -987,7 +989,8 @@ static init_spec *parseInit(parser &p,script &s)
           case 'c':
           case 'f':
             if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID)
-              p.fatalAt(l, "invalid svm memory attribute (must be :..sc.. or :..sf..)");
+              p.fatalAt(l,
+                "invalid svm memory attribute (must be :..sc.. or :..sf..)");
             setTx(s[i] == 'c' ?
               init_spec_mem::transfer::TX_SVM_COARSE :
               init_spec_mem::transfer::TX_SVM_FINE);
@@ -1207,23 +1210,24 @@ static void parseDispatchStatementDimensions(
   //                      ^^^^^^^^^^^
   // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
   //                      ^^^^^^^^^^^^^^^^^
-  if (p.consumeIf(LANGLE)) {
-    if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL"))
-      p.fatal(p.tokenString(), " not allowed for global dimensions");
-    loc at = p.nextLoc();
-    parseDimensionExpressions(p, s, ds.global_size);
-    if (p.consumeIf(COMMA)) {
-      if (!p.consumeIfIdentEq("nullptr") && !p.consumeIfIdentEq("NULL"))
-        parseDimensionExpressions(p, s, ds.local_size);
-    }
-    if (!ds.local_size.empty() &&
-      ds.global_size.size() != ds.local_size.size())
-    {
-      at.extend_to(p.nextLoc());
-      p.fatalAt(at, "global and local sizes have different dimensions");
-    }
-    p.consume(RANGLE);
-  } // end dimension part <...>
+  p.consume(LANGLE);
+
+  if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL"))
+    p.fatal(p.tokenString(), " not allowed for global dimensions");
+  loc at = p.nextLoc();
+  parseDimensionExpressions(p, s, ds.global_size);
+  if (p.consumeIf(COMMA)) {
+    if (!p.consumeIfIdentEq("nullptr") && !p.consumeIfIdentEq("NULL"))
+      parseDimensionExpressions(p, s, ds.local_size);
+  }
+  if (!ds.local_size.empty() &&
+    ds.global_size.size() != ds.local_size.size())
+  {
+    at.extend_to(p.nextLoc());
+    p.fatalAt(at, "global and local sizes have different dimensions");
+  }
+
+  p.consume(RANGLE);
 }
 
 // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
@@ -1534,10 +1538,18 @@ static refable<init_spec> parseInitResolved(parser &p, script &s)
   }
 }
 
+static bool isFloating(const type &elem_type) {
+  if (elem_type.is<type_struct>()) {
+    const type_struct &s = elem_type.as<type_struct>();
+    return s.is_uniform() && isFloating(*s.elements[0]);
+  }
+  return elem_type.is<type_num>() &&
+    elem_type.as<type_num>().skind == type_num::FLOATING;
+}
 
 // EXAMPLES
 // barrier
-// diff(X,Y) | diff<float>(X,Y)
+// diff(X,Y) | diff<float>(X,Y) | diff<float,0.001> | diff<double2,0.0001>
 // print(X) | print<float>(X)
 // save(sym,X)
 static bool parseBuiltIn(parser &p, script &s)
@@ -1553,6 +1565,7 @@ static bool parseBuiltIn(parser &p, script &s)
   } else if (p.lookingAtIdentEq("diff")) {
     p.skip();
     const type *elem_type = nullptr;
+    std::optional<double> max_diff;
     if (p.consumeIf(LANGLE)) {
       auto at = p.nextLoc();
       // HACK: need to know the pointer size; assume 64b for now
@@ -1560,6 +1573,13 @@ static bool parseBuiltIn(parser &p, script &s)
       // it during compilation once devices are matched etc...
       const size_t HACK = 8;
       elem_type = lookupBuiltinType(p.consumeIdent("type name"),HACK);
+      if (p.consumeIf(COMMA)) {
+        auto diff_loc = p.nextLoc();
+        max_diff = p.consumeFloat("floating point (max diff)");
+        if (!isFloating(*elem_type)) {
+          p.fatalAt(diff_loc, "diff max error requires floating point type");
+        }
+      }
       p.consume(RANGLE);
     }
     p.consume(LPAREN);
@@ -1570,8 +1590,11 @@ static bool parseBuiltIn(parser &p, script &s)
     refable<init_spec_mem> r_sut = dereferenceLetMem(p, s);
     p.consume(RPAREN);
     loc.extend_to(p.nextLoc());
-    s.statement_list.statements.push_back(
-      new diff_spec(loc, ref, r_sut, elem_type));
+    diff_spec *ds = new diff_spec(loc, ref, r_sut, elem_type);
+    s.statement_list.statements.push_back(ds);
+    if (max_diff.has_value()) {
+      ds->max_diff = max_diff.value();
+    }
     return true;
   } else if (p.lookingAtIdentEq("print")) {
     // print(X)

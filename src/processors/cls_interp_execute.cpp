@@ -1,9 +1,11 @@
-#include "cls_interp_internal.hpp"
+#include "../half.hpp"
 #include "../image.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
+#include "cls_interp_internal.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <fstream>
 
 
@@ -515,8 +517,9 @@ void compiled_script_impl::execute(
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
     executeDiffElem(
       dfc.spec->defined_at,
+      dfc.spec->max_diff,
       elem_ix,
-      elem_type,
+      *elem_type,
       ref_host_ptr8 + elem_ix*elem_type->size(),
       sut_host_ptr8 + elem_ix*elem_type->size());
   }
@@ -560,8 +563,9 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
     executeDiffElem(
       dfc.spec->defined_at,
+      dfc.spec->max_diff,
       elem_ix,
-      elem_type,
+      *elem_type,
       ab_ref.base,
       host_ptr8 + elem_ix*elem_type->size());
   } // for elems
@@ -569,42 +573,112 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 
 void compiled_script_impl::executeDiffElem(
   loc defined_at,
+  double max_diff,
   size_t elem_ix,
-  const type *elem_type,
+  const type &elem_type,
   const void *elem_ref,
   const void *elem_sut)
 {
   // TODO: diff by type so we can enable error margins
   // diff<float,0.001>(0.0,A)
-  if (memcmp(
-    elem_ref,
-    elem_sut,
-    elem_type->size()))
-  {
-    std::cerr << "mismatch on element "
-      << elem_ix << " (type " << elem_type->syntax() << ")\n";
+/*
+  if (elem_type.is<type_struct>()) {
+    const type_struct &s = elem_type.as<type_struct>();
+    return s.is_uniform() && isFloating(*s.elements[0]);
+  }
+  return elem_type.is<type_num>() &&
+    elem_type.as<type_num>().skind == type_num::FLOATING;
+  */
+  auto reportMismatch = [&](int vec_elem, const char *extra_message) {
+    std::cerr << "mismatch on buffer element "
+      << elem_ix << " (type " << elem_type.syntax() << ")\n";
+    if (vec_elem >= 0)
+      std::cerr << "(vector element " << vec_elem << ")\n";
+    if (extra_message)
+      std::cerr << extra_message << "\n";
     std::cerr << "============== vs. (SUT) ==============\n";
     formatBufferElement(
       std::cerr,
-      *elem_type,
+      elem_type,
       elem_sut);
     std::cerr << "\n";
     std::cerr << "============== vs. (REF) ==============\n";
     formatBufferElement(
       std::cerr,
-      *elem_type,
+      elem_type,
       elem_ref);
     std::cerr << "\n";
     if (os.no_exit_on_diff_fail) {
       warningAt(
         defined_at,
-        "mismatch on element ", elem_ix, " (type ", elem_type->syntax(), ")");
+        "mismatch on element ", elem_ix, " (type ", elem_type.syntax(), ")");
     } else {
       fatalAt(
         defined_at,
-        "mismatch on element ", elem_ix, " (type ", elem_type->syntax(), ")");
+        "mismatch on element ", elem_ix, " (type ", elem_type.syntax(), ")");
     }
-  } // if mismatch
+  };
+
+  auto diffElem = [&](
+    int vec_elem,
+    const type_num &elem_type,
+    const void *elem_ref,
+    const void *elem_sut)
+  {
+    double elem_val_sut = 0.0, elem_val_ref = 0.0;
+    switch (elem_type.size()) {
+    case 2:
+      elem_val_sut = half_to_float(*((const half *)elem_sut));
+      elem_val_ref = half_to_float(*((const half *)elem_ref));
+      break;
+    case 4:
+      elem_val_sut = *((const float *)elem_sut);
+      elem_val_ref = *((const float *)elem_ref);
+      break;
+    case 8:
+      elem_val_sut = *((const double *)elem_sut);
+      elem_val_ref = *((const double *)elem_ref);
+      break;
+    default:
+      fatalAt(defined_at, "unsupported floating point type");
+    }
+    //
+    if (std::isnan(elem_val_sut) && !std::isnan(elem_val_ref) ||
+      !std::isnan(elem_val_sut) && std::isnan(elem_val_ref))
+    {
+      reportMismatch(vec_elem, "one value is NaN");
+    } else if (std::abs(elem_val_sut - elem_val_ref) > max_diff) {
+      reportMismatch(vec_elem,
+        "value difference exceeds max allowable difference");
+    }
+  };
+  //
+  auto isFloating = [&](const type &elem_type) {
+    return elem_type.is<type_num>() &&
+      elem_type.as<type_num>().skind == type_num::FLOATING;
+  };
+  //
+  if (isFloating(elem_type)) {
+    diffElem(-1, elem_type.as<type_num>(), elem_ref, elem_sut);
+  } else if (elem_type.is<type_struct>() &&
+    elem_type.as<type_struct>().is_uniform() &&
+    isFloating(*elem_type.as<type_struct>().elements[0]))
+  {
+    const type_struct &ts = elem_type.as<type_struct>();
+    const type_num &vec_elem_type = ts.elements[0]->as<type_num>();
+    for (int i = 0; i < (int)ts.elements_length; i++) {
+      diffElem(i,
+        vec_elem_type,
+        (const uint8_t *)elem_ref + i*vec_elem_type.size(),
+        (const uint8_t *)elem_sut + i*vec_elem_type.size());
+    }
+  } else if (memcmp(
+    elem_ref,
+    elem_sut,
+    elem_type.size()))
+  {
+    reportMismatch(-1, nullptr);
+  } // else: elements match
 }
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)

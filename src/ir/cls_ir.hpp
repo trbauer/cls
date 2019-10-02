@@ -585,7 +585,7 @@ namespace cls
     refable<init_spec_mem>        sut;
     const type                   *element_type;
 
-    // double max_diff;
+    double                        max_diff = 0.0;
     // int max_diff_ulps;
 
     diff_spec(

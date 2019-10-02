@@ -634,8 +634,9 @@ struct compiled_script_impl : interp_fatal_handler {
 private:
   void executeDiffElem(
     loc defined_at,
+    double max_diff,
     size_t elem_ix,
-    const type *elem_type,
+    const type &elem_type,
     const void *elem_ref,
     const void *elem_sut);
 }; // compiled_script_impl

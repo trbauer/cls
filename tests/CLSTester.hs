@@ -221,7 +221,9 @@ runWithOpts os = run_tests >> print_summary >> exit
           --
           -- DIFF(U)
           runDiffUniformTestMatch os
+          runDiffUniformTestMatchFuzzy os
           runDiffUniformTestMismatch os
+          runDiffUniformTestMismatchFuzzy os
           -- DIFF(S)
           runDiffSurfaceTestMatchVar os
           runDiffSurfaceTestMatchImm os
@@ -406,24 +408,46 @@ runArgTest os arg_desc arg_type arg_expr show_expect_value = do
 --
 runDiffUniformTestMatch :: Opts -> IO ()
 runDiffUniformTestMatch os = do
-  let script :: String
-      script =
-        "let B=44:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
-        "diff(44+16,B)\n" ++
-        ""
-  runScript os "diff uniform match" (mShouldExit 0) script
+  runScript os "diff uniform match" (mShouldExit 0) $
+    "let B=44:rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,16)\n" ++
+    "diff(44+16,B)\n" ++
+    ""
+  runScript os "diff uniform match (NaN)" (mShouldExit 0) $
+    "let A=(0.0/0.0):rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/diff.cl`initClean<8>(A,0.0/0.0)\n" ++
+    "diff<float>(0.0/0.0,A)\n" ++
+    ""
+
+runDiffUniformTestMatchFuzzy :: Opts -> IO ()
+runDiffUniformTestMatchFuzzy os = do
+  runScript os "diff uniform fuzzy match" (mShouldExit 0) $
+    "let A=0:rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/diff.cl`initDirty<8>(A,0.0000,0.0009)\n" ++
+    "diff<float,0.0010>(0.0000,A)\n" ++
+    ""
 
 runDiffUniformTestMismatch :: Opts -> IO ()
 runDiffUniformTestMismatch os = do
-  let script :: String
-      script =
-        "let B=44:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
-        "diff(44+16,B)\n" ++
-        ""
-  runScript os "diff uniform mismatch (negative)" (mShouldExit 1 .&&. mStderrContains "element 7") script
-  runScriptExtra ["-Xno-exit-on-diff-fail"] os "diff uniform mismatch (no exit)" (mShouldExit 0 .&&. mStderrContains "element 7") script
+  runScript os "diff uniform mismatch (negative)" (mShouldExit 1 .&&. mStderrContains "element 7") $
+    "let B=44:rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,16)\n" ++
+    "diff(44+16,B)\n" ++
+    ""
+
+runDiffUniformTestMismatchFuzzy :: Opts -> IO ()
+runDiffUniformTestMismatchFuzzy os = do
+  runScript os "diff uniform mismatch fuzzy (negative 1)" (mShouldExit 1 .&&. mStderrContains "element 3") $
+    "let A=0:rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/diff.cl`initDirty<8>(A,1.000,0.0010)\n" ++
+    "diff<float,0.0009>(1.000,A)\n" ++
+    ""
+  --
+  runScript os "diff uniform mismatch fuzzy (negative NaN)" (mShouldExit 1 .&&. mStderrContains "element 3") $
+    "let A=0:rw\n" ++
+    "#" ++ show (oDeviceIndex os) ++ "`tests/diff.cl`initDirty<8>(A,0.000,0.0/0.0)\n" ++
+    "diff<float,0.000>(0.000,A)\n" ++
+    ""
 
 runDiffSurfaceTestMatchImm :: Opts -> IO ()
 runDiffSurfaceTestMatchImm os = do
@@ -462,7 +486,11 @@ runDiffSurfaceTestMismatchVar os = do
         "#" ++ show (oDeviceIndex os) ++ "`tests/add_buggy.cl[-DT=int]`add<8>(B,1)\n" ++
         "diff(A,B)\n" ++
         ""
-  runScript os "diff surface mismatching var" (mShouldExit 1 .&&. mStderrContains "element 7") script
+  runScript
+    os "diff surface mismatching var" (mShouldExit 1 .&&. mStderrContains "element 7") script
+  runScriptExtra ["-Xno-exit-on-diff-fail"]
+    os "diff surface mismatch (no exit)" (mShouldExit 0 .&&. mStderrContains "element 7") script
+
 runDiffSurfaceTestMismatchImm :: Opts -> IO ()
 runDiffSurfaceTestMismatchImm os = do
   let script :: String
