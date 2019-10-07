@@ -714,7 +714,7 @@ namespace opts
           desc,
           extDesc,
           attrs,
-          [&](const char *value, const opts::ErrorHandler &, cls::opts &) {
+          [&](const char *value, const opts::ErrorHandler &, O &) {
             args.emplace_back(value);
           });
     }
