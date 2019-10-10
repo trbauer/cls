@@ -259,14 +259,14 @@ NOTE: binary buffers can be loaded via a surface initializer as in the example: 
 #
 # Execution Details
 CLScript executes in three phases.
-1. Parsing.  The CLScript syntax is parsed to an intermediate form either from a file given or via an immediate argument using the `-e` option.  The `-P` option stops processing after parsing.
-2. Compilation.  Elements of the constructed IR are bound to actual objects representing those things. This includes contructing OpenCL contexts, command queues, buffers, and other elements.  Some additional checking is performed here.  Inferred surface sizes and properties are resolved in this phase.
-3. Execution.  This final phase walks through the list of commands in linear order and executes each in order. The `-i` option specifying the number of iterations to run repeates this phase.  A value of 0 would skip it all together.  **NOTE:** Surfaces are initialized in this phase; consequently, *each successive iteration* will re-initialize buffers with an `-i` value greater than 1.
+1. **Parsing**.  The CLScript syntax is parsed to an intermediate form either from a file given or via an immediate argument using the `-e` option.  The `-P` option stops processing after parsing.
+2. **Compilation**.  Elements of the constructed IR are bound to actual objects representing those things. This includes contructing OpenCL contexts, command queues, buffers, and other elements.  Some additional checking is performed here.  Inferred surface sizes and properties are resolved in this phase.
+3. **Execution**.  This final phase walks through the list of commands in linear order and executes each in order. The `-i` option specifying the number of iterations to run repeates this phase.  A value of 0 would skip it all together.  **NOTE:** Surfaces are initialized in this phase; consequently, *each successive iteration* will re-initialize buffers with an `-i` value greater than 1.
 
 #
 # Other CLS Usage Modes
 
-## Performance Analyis
+## Performance Analysis
 By default CLScript prints some timing information on each kernel executed and also information of that kernel as a proportion of the total.  Two options that control the timing source are `-tW` and `-tCL`.  The former uses wall times (host-side timers) and the latter uses the OpenCL Profiling Events, which generally are more accurate.
 
 The `-i` option specifies how many iterations.  In particular when using wall time the first dispatch can be orders of magnitude more time consuming than in later iterations.  Be wary of this artifact and choose a robust statistic (e.g. a median or minimum).  The coefficient of variation (the `cfv%` field) will give one an estimate about the spread of all runtimes.

@@ -385,8 +385,8 @@ void compiled_script_impl::execute(dispatch_command &dc)
 {
   debug(dc.dobj->spec->defined_at, "executing dispatch");
 
-  cl_command_queue queue = (*dc.dobj->queue)();
-  cl_kernel kernel = (*dc.kernel->kernel)();
+  cl_command_queue queue = dc.dobj->queue;
+  cl_kernel kernel = dc.kernel->kernel;
   loc dc_at = dc.spec->defined_at;
 
   auto printSurfaces = [&] (bool is_pre) {

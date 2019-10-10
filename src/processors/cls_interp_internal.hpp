@@ -1,5 +1,6 @@
 #include "cls_interp.hpp"
 #include "../cl_headers.hpp"
+#include "../devices.hpp"
 #include "../half.hpp"
 // #include "../list_map.hpp"
 #include "../parser/kargs.hpp"
@@ -31,22 +32,32 @@ struct device_object {
   std::string        callback_prefix; // e.g. "[1.2: Intel HD]: "
   size_t             pointer_size; // in bytes
 
-  device_object(const device_spec *_spec, cl_device_id dev_id)
+  device_object(
+    fatal_handler *fh, const device_spec *_spec, cl_device_id dev_id)
     : spec(_spec), device(dev_id)
   {
     std::stringstream ss;
     ss << "[" << spec->defined_at.line << "." <<
       spec->defined_at.column << "]: ";
     callback_prefix = ss.str();
-    pointer_size = cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
+    cl_uint bytes_per_addr;
+    if (getDeviceInfo(
+      dev_id,
+      CL_DEVICE_ADDRESS_BITS,
+      bytes_per_addr) != CL_SUCCESS)
+    {
+      fh->fatalAt(
+        _spec->defined_at,
+        "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+    }
+    pointer_size = bytes_per_addr/8;
   }
   // device_object(const device_object &) = delete;
   // device_object &operator=(const device_object &) = delete;
   ~device_object() {std::cerr << "destructing!\n";}
 
-  // TODO: elminate cl.hpp usage
-  cl::Context *context = nullptr;
-  cl::CommandQueue *queue = nullptr;
+  cl_context context = nullptr;
+  cl_command_queue queue = nullptr;
 
   void contextNotify(
     const char *errinfo,
@@ -70,7 +81,7 @@ struct program_object {
 struct kernel_object {
   const kernel_spec     *spec;
   program_object        *program;
-  cl::Kernel            *kernel = nullptr;
+  cl_kernel              kernel = nullptr;
   cls::k::kernel_info   *kernel_info = nullptr;
   kernel_object(const kernel_spec *_spec, program_object *_program)
     : spec(_spec), program(_program) { }
@@ -141,7 +152,8 @@ struct dispatch_command {
   // we replicate this because ds can be null and reqd size may be set
   ndr                                              global_size, local_size;
 
-  using surface_use = std::tuple<surface_object *,const type&,const arg_info &,const loc &>;
+  using surface_use =
+    std::tuple<surface_object *,const type&,const arg_info &,const loc &>;
   std::vector<surface_use>                         surfaces;
 
   std::vector<std::string>                         evaluated_args;
@@ -159,12 +171,18 @@ struct dispatch_command {
 
   std::string str() const {
     std::stringstream ss;
-    ss << "#" <<
-      cl::Device(kernel->program->device->device).
-        getInfo<CL_DEVICE_NAME>().c_str();
+    ss << "#";
+    std::string dev_name;
+    if (getDeviceInfo(
+      kernel->program->device->device,
+      CL_DEVICE_NAME,
+      dev_name) != CL_SUCCESS)
+    {
+      ss << "[ERROR]";
+    }
+    ss << dev_name << ":" << kernel->program->device->device;
     ss << "`";
-    cl_program p = kernel->program->program;
-    ss << p << "`" << (*kernel->kernel)();
+    ss << kernel->program->program << "`" << kernel->kernel;
     ss << "<";
     if (spec) {
       ss << global_size.str();

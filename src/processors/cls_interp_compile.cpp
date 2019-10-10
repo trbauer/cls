@@ -113,7 +113,7 @@ clGetKernelSubGroupInfo_TYPE findSubgroupFunction()
 static void emitCompiledKernelProperties(
   fatal_handler *fh, kernel_object &ko)
 {
-  cl_kernel kernel = (*ko.kernel)();
+  cl_kernel kernel = ko.kernel;
   cl_device_id device = ko.program->device->device;
   cl_spec spec = getDeviceSpec(device);
 
@@ -174,19 +174,41 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   cl_int err_ck = 0;
   auto k = clCreateKernel(ko.program->program,ks->name.c_str(),&err_ck);
   if (err_ck == CL_SUCCESS) {
-    ko.kernel = new cl::Kernel(k);
+    ko.kernel = k;
   } else if (err_ck == CL_INVALID_KERNEL_NAME) {
     std::stringstream ss;
-    try {
-      std::vector<cl::Kernel> all_kernels;
-      cl::Program p(po->program);
-      p.createKernels(&all_kernels);
-      ss << "\n" << "valid kernels in the program are:\n";
-      for (const cl::Kernel &k : all_kernels) {
-        ss << " * " << k.getInfo<CL_KERNEL_FUNCTION_NAME>().c_str() << "\n";
-      }
-    } catch (const cl::Error &) { /* ignore it (use concise ouput) */ }
-    fatalAt(ks->defined_at,"unable to find kernel in program",ss.str());
+    std::vector<cl_kernel> all_ks;
+    cl_uint nks;
+    cl_int err =
+      clCreateKernelsInProgram(po->program, 0, nullptr, &nks);
+    if (err != CL_SUCCESS) {
+      fatalAt(ks->defined_at, "clCreateKernelsInProgram: ",
+        status_to_symbol(err));
+    }
+    all_ks.resize(nks);
+    err =
+      clCreateKernelsInProgram(po->program, nks, all_ks.data(), nullptr);
+    if (err != CL_SUCCESS) {
+      fatalAt(ks->defined_at, "clCreateKernelsInProgram: ",
+        status_to_symbol(err));
+    }
+    ss << "valid kernels in the program are:\n";
+    for (cl_kernel k : all_ks) {
+      size_t n;
+      auto err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, 0, nullptr, &n);
+      if (err != CL_SUCCESS)
+        fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
+          status_to_symbol(err));
+
+      char *name = (char *)alloca(n+1);
+      memset(name, 0, n+1);
+      err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n+1, name, nullptr);
+      if (err != CL_SUCCESS)
+        fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
+          status_to_symbol(err));
+      ss << " * " << name << "\n";
+    }
+    fatalAt(ks->defined_at,"unable to find kernel in program\n",ss.str());
   } else {
     fatalAt(ks->defined_at,"error creating kernel",status_to_symbol(err_ck));
   }
@@ -207,7 +229,7 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   // __attribute__((reqd_work_group_size(X, Y, Z)))
   CL_COMMAND(ks->defined_at,
     clGetKernelWorkGroupInfo,
-      (*ko.kernel)(),
+      ko.kernel,
       po->device->device,
       CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
       sizeof(ko.kernel_info->reqd_word_group_size),
@@ -292,8 +314,13 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   }
   auto fatalHere =
     [&](const char *do_what, const char *with_what, cl_int err) {
-      auto dev_nm =
-        cl::Device(po.device->device).getInfo<CL_DEVICE_NAME>().c_str();
+      std::string dev_nm;
+      cl_int errd;
+      if ((errd = getDeviceInfo(
+        po.device->device, CL_DEVICE_NAME, dev_nm)) != CL_SUCCESS)
+      {
+        dev_nm = status_to_symbol(errd);
+      }
       fatalAt(ps->defined_at,
         ps->path, ": failed to ", do_what, " with ", with_what,
         " (", status_to_symbol(err), ") on device [",dev_nm,"]");
@@ -320,7 +347,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   src.build_opts = build_opts;
   src.is_binary = is_bin;
 
-  cl_context ctx = (*po.device->context)();
+  cl_context ctx = po.device->context;
 
   if (is_bin) {
     auto bits = sys::read_file_binary(ps->path);
@@ -516,7 +543,8 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
     return *itr->second;
   }
 
-  device_object &dobj = csi->devices.emplace_back(dev_key, ds, dev_id);
+  fatal_handler *fh = this;
+  device_object &dobj = csi->devices.emplace_back(dev_key, fh, ds, dev_id);
   cl_context context;
   // const cl_context_properties props{...};
   CL_COMMAND_CREATE(context, ds->defined_at,
@@ -526,22 +554,22 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
       &dev_id,
       dispatchContextNotify,
       (void *)&dobj);
-  dobj.context = new cl::Context(context);
+  dobj.context = context;
   if (os.verbosity >= 2) {
-    debug(ds->defined_at,
-      "created context on ",
-      cl::Device(dobj.device).getInfo<CL_DEVICE_NAME>().c_str());
+    std::string dev_nm;
+    getDeviceInfo(dobj.device, CL_DEVICE_NAME, dev_nm);
+    debug(ds->defined_at, "created context on ", dev_nm);
   }
 
   cl_command_queue cq;
-  auto cl_err = makeCommandQueue(os.prof_time, dev_id, (*dobj.context)(), cq);
+  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj.context, cq);
   if (cl_err != CL_SUCCESS) {
     fatalAt(
       ds->defined_at,
       "clCreateCommandQueue: failed to create command queue for device "
       "(", status_to_symbol(cl_err), ")");
   }
-  dobj.queue = new cl::CommandQueue(cq);
+  dobj.queue = cq;
   // test((*dobj.context)(),cq);
   return dobj;
 }
@@ -645,7 +673,7 @@ void script_compiler::compile()
         const arg_info &ai = std::get<2>(dfsc->so_sut->dispatch_uses.front());
         cl_mem_flags cl_mfs = CL_MEM_READ_ONLY;
         cl_mem memobj = nullptr;
-        cl_context context = (*dc->kernel->program->device->context)();
+        cl_context context = dc->kernel->program->device->context;
         CL_COMMAND_CREATE(memobj, ism_ref->defined_at,
           clCreateBuffer,
             context,

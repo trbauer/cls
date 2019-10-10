@@ -1,7 +1,17 @@
+#ifndef DEVICES_HPP
+#define DEVICES_HPP
 #include "cls_opts.hpp"
 #include "cl_headers.hpp"
 
 #include <string>
+
+//
+// std::string getDeviceName(cl_device_id d);
+//
+cl_int getDeviceInfo(cl_device_id d, cl_device_info info, std::string &value);
+cl_int getDeviceInfo(cl_device_id d, cl_device_info info, cl_uint &value);
+//
+
 
 bool            getDeviceByName(
   const cls::opts &opts,
@@ -119,3 +129,5 @@ cl_int            makeCommandQueue(
   cl_device_id dev_id,
   cl_context &context,
   cl_command_queue &queue);
+
+#endif

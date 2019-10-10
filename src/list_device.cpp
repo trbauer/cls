@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <iterator>
 #include <functional>
 
 
@@ -498,7 +499,8 @@ static void listExtensions(std::ostream &os, std::string exts)
 {
   std::istringstream iss(exts);
   std::vector<std::string> extensions;
-  std::copy(std::istream_iterator<std::string>(iss),
+  std::copy(
+    std::istream_iterator<std::string>(iss),
     std::istream_iterator<std::string>(),
     std::back_inserter(extensions));
   std::sort(extensions.begin(), extensions.end());

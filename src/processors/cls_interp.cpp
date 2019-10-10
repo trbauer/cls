@@ -166,7 +166,7 @@ void evaluator::setKernelArgImmediate(
   CL_COMMAND(
     ris.defined_at, // use the arg actual location, not the let
     clSetKernelArg,
-      (*dc.kernel->kernel)(),
+      dc.kernel->kernel,
       arg_index,
       ab.size(),
       (const void *)ab.ptr());
@@ -241,7 +241,7 @@ void evaluator::setKernelArgBuffer(
     cl_mem_flags cl_mfs = initClMemFlags(ism);
 
     cl_mem memobj = nullptr;
-    cl_context context = (*dc.kernel->program->device->context)();
+    cl_context context = dc.kernel->program->device->context;
     CL_COMMAND_CREATE(memobj, at,
       clCreateBuffer,
         context,
@@ -253,7 +253,7 @@ void evaluator::setKernelArgBuffer(
       surface_object::SO_BUFFER,
       buffer_size,
       memobj,
-      (*dc.dobj->queue)());
+      dc.dobj->queue);
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
   //
@@ -263,12 +263,13 @@ void evaluator::setKernelArgBuffer(
   //
   CL_COMMAND(at,
     clSetKernelArg,
-      (*dc.kernel->kernel)(),
+      dc.kernel->kernel,
       arg_index,
       sizeof(cl_mem),
       (const void *)&so->memobj);
   if (os.verbosity >= 2) {
-    std::cout << " ==> ARG " << ai.type.syntax() << " "  << ai.name << " = " << so->str() << "\n";
+    std::cout << " ==> ARG " <<
+      ai.type.syntax() << " "  << ai.name << " = " << so->str() << "\n";
   }
 }
 
@@ -867,10 +868,9 @@ void evaluator::setKernelArgImage(
     // first use of this image
     cl_mem_flags cl_mfs = initClMemFlags(ism);
     cl_mem memobj = nullptr;
-    cl_context context = (*dc.kernel->program->device->context)();
     CL_COMMAND_CREATE(memobj, at,
       clCreateImage,
-        context,
+        dc.kernel->program->device->context,
         cl_mfs,
         &img_fmt,
         &img_desc,
@@ -880,7 +880,7 @@ void evaluator::setKernelArgImage(
       surface_object::SO_IMAGE,
       image_size_bytes,
       memobj,
-      (*dc.dobj->queue)());
+      dc.dobj->queue);
     so->image_format = img_fmt;
     so->image_desc = img_desc;
     so->image_init_bytes = image_arg_data;
@@ -892,7 +892,7 @@ void evaluator::setKernelArgImage(
   //
   CL_COMMAND(at,
     clSetKernelArg,
-      (*dc.kernel->kernel)(),
+      dc.kernel->kernel,
       arg_index,
       sizeof(cl_mem),
       (const void *)&so->memobj);
@@ -981,7 +981,7 @@ void evaluator::setKernelArgSLM(
   CL_COMMAND(
     ris.defined_at, // use the arg actual location, not the let
     clSetKernelArg,
-      (*dc.kernel->kernel)(),
+      dc.kernel->kernel,
       arg_index,
       local_bytes,
       nullptr);

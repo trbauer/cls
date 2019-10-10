@@ -3,8 +3,91 @@
 #include "system.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <functional>
+#include <vector>
+
+
+#define CL_SYM_STR(X) #X
+#define CL_COMMAND(CL_FUNCTION,...) \
+  do { \
+    cl_int _err = CL_FUNCTION(__VA_ARGS__); \
+    if (_err != CL_SUCCESS) { \
+      std::cerr << CL_SYM_STR(CL_FUNCTION) << ": " \
+        << cls::status_to_symbol(_err) << "\n"; \
+      exit(EXIT_FAILURE); \
+    } \
+  } while(0)
+
+static std::vector<cl_device_id> getDeviceIds()
+{
+  cl_platform_id *ps;
+  cl_uint nps = 0;
+  CL_COMMAND(clGetPlatformIDs, 0, nullptr, &nps);
+  ps = (cl_platform_id *)alloca(sizeof(*ps)*(nps+1));
+  CL_COMMAND(clGetPlatformIDs, nps, ps, nullptr);
+  //
+  std::vector<cl_device_id> ds;
+  for (cl_uint i = 0; i < nps; i++) {
+    if (ps[i] == nullptr)
+      continue;
+    cl_uint nds;
+    CL_COMMAND(clGetDeviceIDs, ps[i], CL_DEVICE_TYPE_ALL, 0, nullptr, &nds);
+    ds.resize(ds.size() + nds);
+    CL_COMMAND(clGetDeviceIDs,
+      ps[i],
+      CL_DEVICE_TYPE_ALL,
+      nds,
+      ds.data() + ds.size() - nds,
+      nullptr);
+  }
+  //
+  return ds;
+}
+
+cl_int getDeviceInfo(
+  cl_device_id d, cl_device_info info, std::string &value)
+{
+  size_t n;
+  //
+  auto err = clGetDeviceInfo(d, info, 0, nullptr, &n);
+  if (err != CL_SUCCESS)
+    return err;
+  //
+  char *str = (char *)alloca(n + 1);
+  memset(str, 0, n + 1);
+  //
+  err = clGetDeviceInfo(d, info, n + 1, str, nullptr);
+  if (err == CL_SUCCESS)
+    value = str;
+  return err;
+}
+
+std::string getDeviceInfo(
+  cl_device_id d, cl_device_info info)
+{
+  size_t n;
+  //
+  CL_COMMAND(clGetDeviceInfo, d, info, 0, nullptr, &n);
+  //
+  char *str = (char *)alloca(n + 1);
+  memset(str, 0, n + 1);
+  //
+  CL_COMMAND(clGetDeviceInfo, d, info, n + 1, str, nullptr);
+  //
+  return std::string(str);
+}
+
+std::string getDeviceName(cl_device_id d)
+{
+  return getDeviceInfo(d, CL_DEVICE_NAME);
+}
+cl_int getDeviceInfo(cl_device_id d, cl_device_info info, cl_uint &value)
+{
+  auto err = clGetDeviceInfo(d, info, sizeof(value), &value, nullptr);
+  return err;
+}
 
 
 bool getDeviceByName(
@@ -13,31 +96,26 @@ bool getDeviceByName(
   cl_device_id &dev_id,
   std::string &err_msg)
 {
-  // TODO: remove cl.hpp usage
-  std::vector<cl::Platform> ps;
-  cl::Platform::get(&ps);
-  std::vector<cl::Device> matching;
+  auto ds = getDeviceIds();
+
+  std::vector<cl_device_id> matching;
   std::stringstream ss;
-  for (auto &p : ps) {
-    auto pnm = p.getInfo<CL_PLATFORM_NAME>();
-    std::vector<cl::Device> ds;
-    p.getDevices(CL_DEVICE_TYPE_ALL,&ds);
-    for (auto &d : ds) {
-      auto dev_nm = d.getInfo<CL_DEVICE_NAME>();
-      if (dev_nm.find(substr) != std::string::npos) {
-        matching.push_back(d);
-      }
-      ss << "=> " << dev_nm << "\n";
+
+  for (size_t i = 0; i < ds.size(); i++) {
+    auto dev_nm = getDeviceName(ds[i]);
+    if (dev_nm.find(substr) != std::string::npos) {
+      matching.push_back(ds[i]);
     }
+    ss << "=> " << dev_nm << "\n";
   }
   if (matching.size() == 0) {
-    err_msg = text::format("no matching device found from set: ", ss.str());
+    err_msg = text::format("no matching device found from set:\n", ss.str());
     return false;
   } else if (matching.size() > 1) {
-    err_msg = text::format("device name string is ambiguous in set:: ", ss.str());
+    err_msg = text::format("device name string is ambiguous in set:\n", ss.str());
     return false;
   } else {
-    dev_id = matching.front()();
+    dev_id = matching.front();
     return true;
   }
 }
@@ -56,23 +134,13 @@ cl_device_id getDeviceByName(
 
 bool getDeviceByIndex(const cls::opts &os, int dev_ix, cl_device_id &dev_id)
 {
-  int curr_ix = 0;
-  // TODO: remove cl.hpp usage
-  std::vector<cl::Platform> ps;
-  cl::Platform::get(&ps);
-  for (auto &p : ps) {
-    auto pnm = p.getInfo<CL_PLATFORM_NAME>();
-    std::vector<cl::Device> ds;
-    p.getDevices(CL_DEVICE_TYPE_ALL,&ds);
-    for (auto &d : ds) {
-      if (curr_ix++ == dev_ix) {
-        dev_id = d();
-        return true;
-      }
-    }
-  }
-  return false;
+  auto ds = getDeviceIds();
+  if (dev_ix >= ds.size())
+    return false;
+  dev_id = ds[dev_ix];
+  return true;
 }
+
 cl_device_id getDeviceByIndex(const cls::opts &os, int dev_ix)
 {
   cl_device_id dev_id;
@@ -84,14 +152,12 @@ cl_device_id getDeviceByIndex(const cls::opts &os, int dev_ix)
 
 cl_device_id getDeviceDefault(const cls::opts &)
 {
-    std::vector<cl::Device> ds;
-    cl::Platform::getDefault().getDevices(CL_DEVICE_TYPE_DEFAULT, &ds);
-    if (ds.empty()) {
-      FATAL("no devices on default platform");
-    }
-    return ds.back()();
+  auto ds = getDeviceIds();
+  if (ds.empty()) {
+    std::cerr << "getDeviceDefault: no devices found\n";
+  }
+  return ds[0];
 }
-
 
 // list_device.cpp
 void listDeviceInfoForDevice(const cls::opts &os, cl_device_id d, int devIx);
@@ -103,22 +169,15 @@ void listDeviceInfo(const cls::opts &os)
       listDeviceInfoForDevice(os, d, -1);
     }
   } else {
-    int curr_ix = 0;
-    std::vector<cl::Platform> ps;
-    cl::Platform::get(&ps);
-    for (auto &p : ps) {
-      std::vector<cl::Device> ds;
-      p.getDevices(CL_DEVICE_TYPE_ALL, &ds);
-      for (auto &d : ds) {
-        listDeviceInfoForDevice(os, d(), curr_ix++);
-      }
+    auto ds = getDeviceIds();
+    for (int ix = 0; ix < (int)ds.size(); ix++) {
+      listDeviceInfoForDevice(os, ds[ix], ix);
     }
   }
 }
 
 cl_spec getDeviceSpec(cl_device_id d) {
-  std::string cl_version =
-    cl::Device(d).getInfo<CL_DEVICE_OPENCL_C_VERSION>().c_str();
+  std::string cl_version = getDeviceInfo(d, CL_DEVICE_OPENCL_C_VERSION);
   if (cl_version.find("2.2") != std::string::npos) {
     return cl_spec::CL_2_2;
   } else if (cl_version.find("2.1") != std::string::npos) {
@@ -136,19 +195,24 @@ cl_spec getDeviceSpec(cl_device_id d) {
 
 vendor getDeviceVendor(cl_device_id d)
 {
-  const cl::Device dev(d);
-  auto vendor = dev.getInfo<CL_DEVICE_VENDOR_ID>();
+  cl_uint vendor = 0;
+  CL_COMMAND(clGetDeviceInfo,
+    d, CL_DEVICE_VENDOR_ID, sizeof(vendor), &vendor, nullptr);
   if (vendor == 0x8086) {
     return vendor::INTEL;
   } else if (vendor == 0x10DE) {
     return vendor::NVIDIA;
   } else {
-    std::string nm = dev.getInfo<CL_DEVICE_NAME>().c_str();
-    if (nm.find("AMD") != std::string::npos || nm.find("Raedeon") != std::string::npos) {
+    std::string nm = getDeviceName(d);
+    if (nm.find("AMD") != std::string::npos ||
+      nm.find("Raedeon") != std::string::npos)
+    {
       return vendor::AMD;
     } else if (nm.find("Intel") != std::string::npos) {
       return vendor::INTEL;
-    } else if (nm.find("GTX") != std::string::npos || nm.find("RTX") != std::string::npos) {
+    } else if (nm.find("GTX") != std::string::npos ||
+      nm.find("RTX") != std::string::npos)
+    {
       return vendor::NVIDIA;
     }
     return vendor::OTHER;
@@ -158,7 +222,7 @@ vendor getDeviceVendor(cl_device_id d)
 microarch getDeviceMicroArchitecture(cl_device_id d)
 {
   const auto vend = getDeviceVendor(d);
-  const std::string nm =  cl::Device(d).getInfo<CL_DEVICE_NAME>().c_str();
+  std::string nm = getDeviceName(d);
   auto nameHas = [&] (const char *substr) {
     return nm.find(substr) != std::string::npos;
   };
@@ -225,9 +289,8 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
 
 bool hasExtension(cl_device_id dev, const char *ext)
 {
-  cl::Device devobj(dev);
-  std::string s = devobj.getInfo<CL_DEVICE_EXTENSIONS>().c_str();
-  return s.find(ext) != std::string::npos;
+  std::string exts = getDeviceInfo(dev, CL_DEVICE_EXTENSIONS);
+  return exts.find(ext) != std::string::npos;
 }
 
 

@@ -324,8 +324,13 @@ program_info *cls::k::parseProgramInfo(
   if (src.is_binary) {
     return parseProgramInfoBinary(os, fh, at, src.path, dev_id);
   } else {
-    size_t bytes_per_addr =
-      cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
+    cl_uint bytes_per_addr;
+    if (getDeviceInfo(
+      dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
+    {
+      fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+    }
+    bytes_per_addr /= 8;
     return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
   }
 }
@@ -354,8 +359,13 @@ program_info *cls::k::parseProgramInfoFromAPI(
   program_info *pi = new program_info();
   pi->kernels.reserve(ks_len);
 
-  size_t bytes_per_addr =
-    cl::Device(dev_id).getInfo<CL_DEVICE_ADDRESS_BITS>()/8;
+  cl_uint bytes_per_addr;
+  if (getDeviceInfo(
+    dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
+  {
+    fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+  }
+  bytes_per_addr /= 8;
 
   for (cl_uint k_ix = 0; k_ix < ks_len; k_ix++) {
     char knm_buf_static[256];

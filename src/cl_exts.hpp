@@ -13,24 +13,38 @@
 #ifndef CL_MAX_SIZE_RESTRICTION_EXCEEDED
 #define CL_MAX_SIZE_RESTRICTION_EXCEEDED            -72
 #endif
-#ifndef CL_INVALID_SPEC_ID
-#define CL_INVALID_SPEC_ID                          -71
+
+#ifndef CL_DEVICE_HALF_FP_CONFIG
+#define CL_DEVICE_HALF_FP_CONFIG                         0x1033
 #endif
-#ifndef CL_MAX_SIZE_RESTRICTION_EXCEEDED
-#define CL_MAX_SIZE_RESTRICTION_EXCEEDED            -72
+
+// cl_khr_icd
+#ifndef CL_PLATFORM_ICD_SUFFIX_KHR
+#define CL_PLATFORM_ICD_SUFFIX_KHR                  0x0920
+#endif
+#ifndef CL_PLATFORM_NOT_FOUND_KHR
+#define CL_PLATFORM_NOT_FOUND_KHR                   -1001
+#endif
+
+// cl_khr_spir
+#ifndef CL_DEVICE_SPIR_VERSIONS
+#define CL_DEVICE_SPIR_VERSIONS                     0x40E0
+#endif
+#ifndef CL_PROGRAM_BINARY_TYPE_INTERMEDIATE
+#define CL_PROGRAM_BINARY_TYPE_INTERMEDIATE         0x40E1
 #endif
 
 // various Intel-specific error codes
-#ifdef CL_INVALID_ACCELERATOR_INTEL
+#ifndef CL_INVALID_ACCELERATOR_INTEL
 #define CL_INVALID_ACCELERATOR_INTEL                              -1094
 #endif
-#ifdef CL_INVALID_ACCELERATOR_TYPE_INTEL
+#ifndef CL_INVALID_ACCELERATOR_TYPE_INTEL
 #define CL_INVALID_ACCELERATOR_TYPE_INTEL                         -1095
 #endif
-#ifdef CL_INVALID_ACCELERATOR_DESCRIPTOR_INTEL
+#ifndef CL_INVALID_ACCELERATOR_DESCRIPTOR_INTEL
 #define CL_INVALID_ACCELERATOR_DESCRIPTOR_INTEL                   -1096
 #endif
-#ifdef CL_ACCELERATOR_TYPE_NOT_SUPPORTED_INTEL
+#ifndef CL_ACCELERATOR_TYPE_NOT_SUPPORTED_INTEL
 #define CL_ACCELERATOR_TYPE_NOT_SUPPORTED_INTEL                   -1097
 #endif
 
@@ -225,6 +239,12 @@
 #ifndef CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT
 #define CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT  0x4053
 #endif
+
+// cl_altera_device_temperature
+#ifndef CL_DEVICE_CORE_TEMPERATURE_ALTERA
+#define CL_DEVICE_CORE_TEMPERATURE_ALTERA               0x40F3
+#endif
+
 
 /*
 // cl_khr_il_program
