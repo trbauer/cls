@@ -48,14 +48,73 @@ Buffer contents can be printed before and after dispatch via the surface initial
 
 ### Image Support
 CLScript contains fairly decent support for loading and saving images for kernels.
-The kernel parameter should be an OpenCL `image_t`.
+The kernel parameter should be an an OpenCL image type such as `image2d_t`.
 
 CLScript can handle several formats:
 * PPM
 * BMP
 * PNG, if built with LodePNG support.
 
-The `image` argument initializer in CLScript will instantiate such an object.  See the *ImgExpr* rule in the help section (`-h=syntax`) for more details.
+The `image<..>(..)` argument initializer expression in CLScript will instantiate such an object.
+A image initializer expression `image<rgba,u8>("foo.png"):r` would construct an image with the dimensions of the given image.  An empty image (e.g. for writing to) can be constructed by adding a dimension as in the example `image<rgba,u8,512x512>:w`.  See the *ImgExpr* rule in the help section (`-h=syntax`) for more details.
+
+Consult the valid OpenCL image formats and channel order combinations for legal image formats (RGBA is usually legal for most image data types).
+
+Consider the usual example image below.
+
+![Lena](demos/lena.png)
+
+And consider the simple blur kernel.
+```C
+#define FILTER_RAD 4
+#define FILTER_SIZE 9
+
+__constant float WEIGHTS[9] =
+{
+  0.008486917242407799f, 0.03807468712329865f, 0.111162662506103500f,
+  0.211359992623329200f, 0.26183146238327030f, 0.211359992623329200f,
+  0.111162669956684100f, 0.03807468712329865f, 0.008486918173730373f
+};
+
+__kernel void blur(
+  __write_only image2d_t dstImg, __read_only image2d_t srcImg)
+{
+  const int pX = get_global_id(0);
+  const int pY = get_global_id(1);
+
+  const sampler_t sampler =
+    CLK_NORMALIZED_COORDS_FALSE |
+    CLK_ADDRESS_CLAMP_TO_EDGE |
+    CLK_FILTER_NEAREST;
+
+  float4 out = read_imagef(srcImg, sampler, (int2)(pX, pY));
+  out *= WEIGHTS[FILTER_RAD];
+
+  for(int r = 0; r < FILTER_RAD; ++r) {
+    float4 c0 = read_imagef(srcImg, sampler, (int2)(pX + (r - FILTER_RAD), pY));
+    float4 c1 = read_imagef(srcImg, sampler, (int2)(pX + (FILTER_RAD - r), pY));
+
+    out += c0 * WEIGHTS[r];
+    out += c1 * WEIGHTS[r];
+  }
+
+  write_imagef(dstImg, (int2)(pX,pY), out);
+}
+```
+Finally, the CLScript given below.
+```
+let SRC=image<rgba,u8>('demos/lena.png'):r
+let IMG1=image<rgba,u8,512x512>:rw
+let IMG2=image<rgba,u8,512x512>:rw
+let IMG3=image<rgba,u8,512x512>:rw
+#1`demos/blur9.cl`blur<512x512>(IMG1,SRC)
+#1`demos/blur9.cl`blur<512x512>(IMG2,IMG1)
+#1`demos/blur9.cl`blur<512x512>(IMG3,IMG2)
+save("b1.png",IMG1)
+save("b2.png",IMG2)
+save("b3.png",IMG3)
+```
+This loads the image and blurs it three times saving the result after each blur.
 
 #
 ## Let Expressions and Shared Buffers

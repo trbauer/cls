@@ -600,7 +600,8 @@ void evaluator::setKernelArgImage(
   channelInfo(this,
     isi->defined_at,isi->ch_order,
     &img_fmt.image_channel_order,
-    &channels_per_pixel,&native_format);
+    &channels_per_pixel,
+    &native_format);
 
   // TODO: merge with with bytesPerChannel (channelDataTypeInfo)
   switch (isi->ch_data_type) {

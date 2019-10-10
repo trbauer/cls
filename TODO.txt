@@ -2,12 +2,21 @@ SEE; https://github.com/trbauer/cls/issues/
 
 
 TODO:
+* TEST:
+   images loaded into a buffer?
+   does that work? e.g. uchar4...
+   
 * FEATURE
    flush and finish on context
    #0:A`finish
    #0:A`flush
    finish(A)
    flush(A)
+
+* FEATURE
+    - image diff
+      diff(I1,I2)
+        emits difference image?
 
 * redesign let expressions
     - permit bindings of more than surfaces and dispatches

@@ -283,6 +283,7 @@ static void fill_buffer_seq(
 }
 
 static void saveImage(
+  std::string file_name,
   loc at,
   compiled_script_impl *csi,
   const surface_object *so,
@@ -290,15 +291,6 @@ static void saveImage(
   size_t slice_pitch,
   const void *bits)
 {
-  std::stringstream ss;
-  ss << "cls-surface-" << std::setfill('0') <<
-    std::setw(2) << so->memobj_index << ".ppm";
-//  if (so->spec->root->skind == init_spec::IS_IMG &&
-//    !((const init_spec_image *)so->spec->root)->path.empty())
-//  {
-//    auto path = ((const init_spec_image *)so->spec->root)->path;
-//  }
-
   image::data_format fmt;
   switch (so->image_format.image_channel_order) {
   case CL_A:
@@ -354,17 +346,28 @@ static void saveImage(
       host_src + h*row_pitch,
       img_row_pitch);
   }
-  img.save_ppm(ss.str().c_str(),so->size_in_bytes > 1024);
-#if 0
-  // for debugging
+
+  auto ext = sys::take_extension(file_name);
+  if (ext == ".ppm") {
+    img.save_ppm(file_name.c_str(), so->size_in_bytes > 1024);
+  } else if (ext == ".bmp") {
 #ifdef IMAGE_HPP_SUPPORTS_BMP
-  img.save_bmp((sys::drop_extension(ss.str()) + ".bmp").c_str());
+    img.save_bmp(file_name.c_str());
+#else
+    csi->fatalAt(at, "unsupported image format (not compiled with support)");
 #endif
+  } else if (ext == ".png") {
 #ifdef IMAGE_HPP_SUPPORTS_PNG
-  img.save_png((sys::drop_extension(ss.str()) + ".png").c_str());
+    img.save_png(file_name.c_str());
+#else
+    csi->fatalAt(at, "unsupported image format (not compiled with support)");
 #endif
-#endif
+  } else {
+    csi->warningAt(at, "unrecognized image format; falling back to .ppm");
+    img.save_ppm(file_name.c_str(), so->size_in_bytes > 1024);
+  }
 }
+
 static void saveBuffer(
   loc at,
   compiled_script_impl *csi,
@@ -411,7 +414,11 @@ void compiled_script_impl::execute(dispatch_command &dc)
               fatalAt(dc.spec->defined_at,
                 "image printing not supported (:p or :P)");
             } else {
+              std::stringstream ss;
+              ss << "cls-surface-" << std::setfill('0') <<
+                std::setw(2) << so->memobj_index << ".ppm";
               saveImage(
+                ss.str(),
                 dc.spec->defined_at,
                 this, so, row_pitch, slice_pitch, host_ptr);
             }
@@ -1096,10 +1103,23 @@ void compiled_script::execute(int itr)
     }
     case script_instruction::SAVE: {
       save_command *svc = (save_command *)si.svc;
-      csi->withBufferMapRead(
-        svc->spec->defined_at,
-        svc->so,
-        [&] (const void *host_ptr) {csi->execute(*svc, host_ptr);});
+      if (svc->so->skind == surface_object::SO_IMAGE) {
+        csi->withImageMapRead(
+          svc->spec->defined_at,
+          svc->so,
+          [&](size_t row_pitch, size_t slice_pitch, const void *host_ptr)
+          {
+            saveImage(
+              svc->spec->file,
+              svc->spec->defined_at,
+              csi, svc->so, row_pitch, slice_pitch, host_ptr);
+          });
+      } else {
+        csi->withBufferMapRead(
+          svc->spec->defined_at,
+          svc->so,
+          [&](const void *host_ptr) {csi->execute(*svc, host_ptr); });
+      }
       break;
     }
     default:
