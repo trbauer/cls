@@ -231,7 +231,8 @@ const char *cls::CLS_SYNTAX =
   "                      (i.e. simple CSV)\n"
   "\n"
   SVAR("ImgExpr")
-  " = " SLIT("image<") " " SVAR("ChannelOrder") SLIT(", ") SVAR("DataType") " " SLIT(">") "\n"
+  " = " SLIT("image<") " " SVAR("ChannelOrder") SLIT(", ") SVAR("DataType") " " SLIT(">")
+          SLIT("(") SVAR("STR") SLIT(")") "\n"
   "   " SVAR("ChannelOrder") " = an image channel order\n"
   "     https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/cl_image_format.html\n"
   "     as well as some shorthands; drop 3 characters and switch to lower case\n"
@@ -257,33 +258,35 @@ const char *cls::CLS_SYNTAX =
 #endif
   "\n"
   "************* BUILT-IN STATEMENTS *************\n"
-  SVAR("Builtin")
-  " = " SVAR("Barrier")
-  " | " SVAR("Diff")
-  " | " SVAR("Print")
-  " | " SVAR("Save")
+  SVAR("BuiltinSt")
+  " = " SVAR("DiffSt")
+  " | " SVAR("PrintSt")
+  " | " SVAR("SaveSt")
   "\n"
-  "  " SVAR("Barrier") " = " SLIT("barrier") " | " SLIT("barrier") SLIT("(") SLIT(")") "\n"
-  "  waits until all dispatches complete before proceeding\n"
-// TODO: update this if we enable async kernels
-  "  (currently a nop because kernel dispatches are synchronous)\n"
     "\n"
-    "  " SVAR("Diff") "\n"
+    "  " SVAR("DiffSt") "\n"
     "  = " SLIT("diff")
-            SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
     "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
-            SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
-// TODO: update this when max diffs are allowed
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
+    "  | " SLIT("diff")
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
+    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
+    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
+    SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
     "  diffs two memory object or one against a replicated scalar value;\n"
     "  if a type argument is present, CLS will reinterpret elements as that type\n"
     "  NOTE: the program will exit with failure upon diff failure\n"
     "        use -Xno-exit-on-diff-fail to override this\n"
     "  e.g. " SLIT("let A=1:rw; #0`file.cl`kernel<1024>(A); diff<int>(A,0)") "\n"
-    "       diffs buffer " SLIT("A") " with 0 as integer's\n"
+    "       diffs all elements of buffer " SLIT("A") " with zeros\n"
     "  e.g. " SLIT("let A=1:rw; let B=2:rw; #0`file.cl`kernel<1024>(A,B); diff(A,B)") "\n"
     "       diffs buffers " SLIT("A") " and " SLIT("B") " element by element\n"
     "\n"
-    "  " SVAR("Print") "\n"
+    "  " SVAR("PrintSt") "\n"
     "  = " SLIT("print") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
     "  | " SLIT("print") SLIT("<") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
     "  | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
@@ -292,7 +295,10 @@ const char *cls::CLS_SYNTAX =
     "  an optional integer argument overrides columns per line in output\n"
     "  e.g. " SLIT("let A = 1:w; #0`file.cl`kernel<1024>(A); print<float4>(A)") "\n"
     "       prints buffer A as float4's\n"
-  "\n"
+    "\n"
+    "  " SVAR("SaveSt") " = " SLIT("save(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
+    "   saves a surface referenced by an identifier\n"
+    "\n"
   "************* LET STATEMENTS *************\n"
   SVAR("Let")  " = " SLIT("let") SVAR("LetBinding") " (" SLIT(",") SVAR("LetBinding") ")*" "\n"
   "  a comma-separated list of bindings;\n"

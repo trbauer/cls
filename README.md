@@ -1,7 +1,7 @@
 # CLScript - *cls*
-## An OpenCL Scripting Language for Testing, Profiling, and Other Purposes.
+## An OpenCL Scripting Language for Testing, Profiling, Debugging, and Other Purposes.
 
-OpenCL requires considerable host-side source code to compile (or load), setup arguments, and dispatch a kernel. Enables one to skip all these steps via a very compact scripting language.
+OpenCL programs require considerable boilderplate host-side source code to compile (or load), setup arguments, and dispatch a kernel. CLScript enables one to specify this setup via a compact syntax.
 
 A CLScript program consists of a sequence of CLScript commands such as *dispatches* (kernel enqueues), buffer *diff*ing (verification), buffer *print*ing and other such commands.
 
@@ -47,7 +47,15 @@ More information can be accessed via `-h=syntax` option.  Confer with the `<Expr
 Buffer contents can be printed before and after dispatch via the surface initializer attributes `P` and `p`.  For example, the suffix `...:rwP8p4` creates a read-write buffer.  Before dispatches the contents are printed with 8 elements per line before kernel enqueue and afterwards with 4 elements per line.  This can be useful for debugging.
 
 ### Image Support
-[ TODO: image support ]
+CLScript contains fairly decent support for loading and saving images for kernels.
+The kernel parameter should be an OpenCL `image_t`.
+
+CLScript can handle several formats:
+* PPM
+* BMP
+* PNG, if built with LodePNG support.
+
+The `image` argument initializer in CLScript will instantiate such an object.  See the *ImgExpr* rule in the help section (`-h=syntax`) for more details.
 
 #
 ## Let Expressions and Shared Buffers
@@ -174,23 +182,37 @@ let A=seq(10):rw, B=seq(10):rw
 #0`demo3.cl[-cl-fp32-correctly-rounded-divide-sqrt]`test<8>(B)
 print<uint>(A); print<uint>(B)
 diff<float,0.001>(A,B)
-... program exits 0
 ```
 The `diff` command takes a type and we selected maximal absolute difference of `0.001`.
+The diff will succeed and the program will exit 0 with no error message.
 
 #
 ## Printing Buffers With the `print` Command
-[TODO: the `print` command]
+The `print` command, illustrated earlier, prints a surface's values.  The surface type can be overriden (re-interpreted) via an optional parameter.
 
 #
 ## Saving Buffers With `save`
-[TODO: the `save` command]
+The `save` command saves a binary buffer.  For example, `save("foo.dat",A)` saves surface A.
+
+NOTE: binary buffers can be loaded via a surface initializer as in the example: `file<bin>("foo.dat")`.
+
+
+#
+# Execution Details
+CLScript executes in three phases.
+1. Parsing.  The CLScript syntax is parsed to an intermediate form either from a file given or via an immediate argument using the `-e` option.  The `-P` option stops processing after parsing.
+2. Compilation.  Elements of the constructed IR are bound to actual objects representing those things. This includes contructing OpenCL contexts, command queues, buffers, and other elements.  Some additional checking is performed here.  Inferred surface sizes and properties are resolved in this phase.
+3. Execution.  This final phase walks through the list of commands in linear order and executes each in order. The `-i` option specifying the number of iterations to run repeates this phase.  A value of 0 would skip it all together.  **NOTE:** Surfaces are initialized in this phase; consequently, *each successive iteration* will re-initialize buffers with an `-i` value greater than 1.
 
 #
 # Other CLS Usage Modes
 
 ## Performance Analyis
-[ TODO: describe -i and -tCL and -tW ]
+By default CLScript prints some timing information on each kernel executed and also information of that kernel as a proportion of the total.  Two options that control the timing source are `-tW` and `-tCL`.  The former uses wall times (host-side timers) and the latter uses the OpenCL Profiling Events, which generally are more accurate.
+
+The `-i` option specifies how many iterations.  In particular when using wall time the first dispatch can be orders of magnitude more time consuming than in later iterations.  Be wary of this artifact and choose a robust statistic (e.g. a median or minimum).  The coefficient of variation (the `cfv%` field) will give one an estimate about the spread of all runtimes.
+
+The raw times will be dumped if the verbose flag is enabled `-v`.
 
 
 ## Info [discuss info -l -v]
