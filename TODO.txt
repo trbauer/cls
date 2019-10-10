@@ -2,8 +2,48 @@ SEE; https://github.com/trbauer/cls/issues/
 
 
 TODO:
+* FEATURE
+   flush and finish on context
+   #0:A`finish
+   #0:A`flush
+   finish(A)
+   flush(A)
+
+* redesign let expressions
+    - permit bindings of more than surfaces and dispatches
+
+    - get rid of context identifiers
+        two programs from the same context
+          let A=#0, B=#0 replaces #0:A..., #0:B
+          A`prog1.cl`kernel<32>(...)
+          A`prog2.cl`kernel<32>(...)
+        two kernels from the same program
+          let A=#0`prog1.cl
+          A`kernel1...
+          A`kernel2...
+        two kernels from the same program
+          let A=#0`prog1.cl
+          A`kernel...
+          A`kernel...
+
+
+      let D(x)=#0`...<1024>(x,...)
+      D(A); D(B)
+
+
+* BUG
+  let A=0:rw
+  let B=0:rw
+  #0`demo2.cl`div<8>(A)
+  #1`demo2.cl`div<8>(B)
+  print<uint>(A); print(A)
+  print<uint>(B)
+  print(B)
+  diff(A,B)
+
 * ENABLE SPIR-V: clCreateProgramWithIL
   https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/clCreateProgramWithIL.html
+   PROBLEM? arg info???
 
 * STUDY: how to use events?
    E.g. A->B and C->D run in parallel

@@ -294,11 +294,12 @@ const char *cls::CLS_SYNTAX =
     "       prints buffer A as float4's\n"
   "\n"
   "************* LET STATEMENTS *************\n"
-  SVAR("Let")  " =\n"
-    "   " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("MemInitExpr") "\n"
-    " | " SLIT("let") " " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
-  "  binds a symbol to a value;\n"
+  SVAR("Let")  " = " SLIT("let") SVAR("LetBinding") " (" SLIT(",") SVAR("LetBinding") ")*" "\n"
+  "  a comma-separated list of bindings;\n"
   "  use this to share buffers in multiple dispatch statements\n"
+  "  " SVAR("Binding") " =\n"
+    "     " SVAR("IDENT") SLIT(" = ") SVAR("MemInitExpr") "\n"
+    "   | " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
   ;
 
 
@@ -1646,23 +1647,25 @@ static bool parseBuiltIn(parser &p, script &s)
   }
 }
 
-// let X=...
-static void parseLetStatement(parser &p, script &s)
+// X=...
+static void parseLetBinding(parser &p, script &s)
 {
-  auto let_loc = p.nextLoc();
-  p.skip();      // let
+  if (!p.lookingAt(IDENT)) {
+    p.fatal("expected identifier");
+  }
+  auto at = p.nextLoc();
   auto name = p.tokenString(); // X
   if (s.let_bindings.find(name) != s.let_bindings.end()) {
     p.fatal(name, ": redefinition of let binding");
   }
   p.skip();      // X
-  let_spec *ls = new let_spec(let_loc, name);
+  let_spec *ls = new let_spec(at, name);
   if (p.consumeIf(LPAREN)) {
     // let F(X,Y) = #1`foo.cl`bar<...>(X,Y)
     if (!p.lookingAt(RPAREN)) {
       do {
         ls->params.push_back(p.consumeIdent());
-      } while(p.consumeIf(COMMA));
+      } while (p.consumeIf(COMMA));
       p.consume(RPAREN);
       p.fatal("let arguments not supported yet");
     }
@@ -1677,33 +1680,34 @@ static void parseLetStatement(parser &p, script &s)
     p.lookingAt(LPAREN) ||
     p.lookingAtIdentEq("seq") ||
     p.lookingAtIdentEq("random") ||
-    p.lookingAtIdentEq("file");
-  if (!is_init_expr_start && p.lookingAtSeq(IDENT,LANGLE)) {
+    p.lookingAtIdentEq("file") ||
+    p.lookingAtIdentEq("image");
+  if (!is_init_expr_start && p.lookingAtSeq(IDENT, LANGLE)) {
     // let D = K<1024>(....) where ...
     dispatch_spec *ds = new dispatch_spec(value_loc);
-    ds->kernel = dereferenceLet<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
-    parseDispatchStatementDimensions(p,s,*ds);
-    parseDispatchStatementArguments(p,s,*ds);
-    parseDispatchStatementWhereClause(p,s,*ds,ls);
+    ds->kernel = dereferenceLet<kernel_spec>(p, s, spec::KERNEL_SPEC, "kernel");
+    parseDispatchStatementDimensions(p, s, *ds);
+    parseDispatchStatementArguments(p, s, *ds);
+    parseDispatchStatementWhereClause(p, s, *ds, ls);
     ds->defined_at.extend_to(p.nextLoc());
     value = ds;
-  } else if (!is_init_expr_start && p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
+  } else if (!is_init_expr_start && p.lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE)) {
     // let D = P`kernel<...>(...) where ...
     dispatch_spec *ds = new dispatch_spec(value_loc);
     refable<program_spec> rps =
-      dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"programs");
+      dereferenceLet<program_spec>(p, s, spec::PROGRAM_SPEC, "programs");
     p.consume(BACKTICK);
     ds->kernel = new kernel_spec(rps.value);
-    parseDispatchStatementDimensions(p,s,*ds);
-    parseDispatchStatementArguments(p,s,*ds);
-    parseDispatchStatementWhereClause(p,s,*ds,ls);
+    parseDispatchStatementDimensions(p, s, *ds);
+    parseDispatchStatementArguments(p, s, *ds);
+    parseDispatchStatementWhereClause(p, s, *ds, ls);
     ds->defined_at.extend_to(p.nextLoc());
     value = ds;
   } else if (!is_init_expr_start && lookingAtImmediateDispatchStatement(p)) {
     // let P = #1`foo/bar.cl
     // let K = foo/bar.cl`kernel
     // let D = foo/bar.cl`kernel<...>(...) where ...
-    program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
+    program_spec *ps = parseDispatchStatementDeviceProgramPart(p, s);
     if (p.consumeIf(BACKTICK)) {
       // includes the kernel
       kernel_spec *ks = parseDispatchStatementKernelPart(ps, p, s);
@@ -1712,9 +1716,9 @@ static void parseLetStatement(parser &p, script &s)
         // let D = ...<...>(...) where ...
         dispatch_spec *ds = new dispatch_spec(value_loc);
         ds->kernel = ks;
-        parseDispatchStatementDimensions(p,s,*ds);
-        parseDispatchStatementArguments(p,s,*ds);
-        parseDispatchStatementWhereClause(p,s,*ds,ls);
+        parseDispatchStatementDimensions(p, s, *ds);
+        parseDispatchStatementArguments(p, s, *ds);
+        parseDispatchStatementWhereClause(p, s, *ds, ls);
         ds->defined_at.extend_to(p.nextLoc());
         value = ds;
       } else {
@@ -1728,12 +1732,23 @@ static void parseLetStatement(parser &p, script &s)
   } else {
     // a regular initializer
     // let M = 0:w
-    value = parseInit(p,s);
+    value = parseInit(p, s);
   }
   ls->value = value;
   s.let_bindings[name] = ls;
   s.statement_list.statements.push_back(ls);
   s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
+}
+
+// let X=...
+// let X=..., Y=...
+static void parseLetStatement(parser &p, script &s)
+{
+  auto let_loc = p.nextLoc();
+  p.skip(); // let
+  parseLetBinding(p, s);
+  while (p.consumeIf(COMMA))
+    parseLetBinding(p, s);
 }
 
 static void parseStatementLine(parser &p, script &s)
@@ -1760,16 +1775,18 @@ void cls::parse_script(
   warning_list &wl)
 {
   parser p(input);
-  while (p.consumeIf(NEWLINE))
-    ;
   while (!p.endOfFile()) {
+    while (p.consumeIf(NEWLINE))
+      ;
+    if (p.endOfFile())
+      break;
+    //
     parseStatementLine(p,s); // S ((<NEWLINE> | ';') S)*
-    if (p.consumeIf(SEMI)) { // ';' S
-      parseStatementLine(p, s);
-    } else if (!p.endOfFile()) { // '<NEWLINE>' S
-      p.consume(NEWLINE);
-      while (p.consumeIf(NEWLINE))
-       ;
+    //
+    if (p.endOfFile())
+      break;
+    if (!p.consumeIf(SEMI) && !p.consumeIf(NEWLINE)) { // ';' S
+      p.fatal("syntax error in statement");
     }
   }
   wl = p.warnings();

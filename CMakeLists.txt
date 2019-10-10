@@ -8,7 +8,7 @@ project(cls)
 # option(INCLUDE_LodePNG "includes png support via LodePNG" True)
 #
 #####################################################
-set(VERSION_STRING "0.9.5")
+set(VERSION_STRING "0.9.6")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   set(TARGET_MODIFIER "32")
