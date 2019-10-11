@@ -115,6 +115,9 @@ save("b2.png",IMG2)
 save("b3.png",IMG3)
 ```
 This loads the image and blurs it three times saving the result after each blur.
+This results in the file output saved as `b3.png` illustrated below.
+![Lena](demos/lena_blurred.png)
+
 
 #
 ## Let Expressions and Shared Buffers
