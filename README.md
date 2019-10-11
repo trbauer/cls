@@ -12,7 +12,7 @@ CLScript has a powerful integrated help system. Use `-h=syntax` on the command l
 A dispatch command is the most important command.  It captures specification of the OpenCL device, context, and command-queue creation, buffer and image creation and initialization, program and kernel compilation as well as argument specifiction and finally dispatch.
 
 #### Example: demo.cl
-```C
+```OpenCL
 kernel void addK(
   global int *dst, global int *src0, global int *src1, int k)
 {
@@ -65,7 +65,7 @@ Consider the usual example image below.
 ![Lena](demos/lena.png)
 
 And consider the simple blur kernel.
-```C
+```OpenCL
 #define FILTER_RAD 4
 #define FILTER_SIZE 9
 
@@ -116,6 +116,7 @@ save("b3.png",IMG3)
 ```
 This loads the image and blurs it three times saving the result after each blur.
 This results in the file output saved as `b3.png` illustrated below.
+
 ![Lena](demos/lena_blurred.png)
 
 
@@ -156,7 +157,7 @@ This enables us to reference the same buffer several times.  Also observe how th
 The `diff` command allows us to compare buffers to a specific value or another buffer.  If a difference is encountered, the `diff` command exits with an error (though this can be overriden via the `-Xno-exit-on-diff-fail` flag).
 
 Integer types use binary comparison.  Floating-point also handle NaN comparison and also permit an absolute difference threshold.  Consider the following example (`demo2.cl`).
-```
+```OpenCL
 kernel void div(global float *dst)
 {
   int id = get_global_id(0);

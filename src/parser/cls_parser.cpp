@@ -309,973 +309,956 @@ const char *cls::CLS_SYNTAX =
   ;
 
 
-// a rough solution to enable use to read tokens including spaces
-// e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
-//       ^^^^^^^^^^^^^^^^^^^^^^
-//                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
-static std::string consumeToChar(parser &p, const char *set)
+struct cls_parser : parser
 {
-  const std::string &s = p.input();
-  size_t start = p.nextLoc().offset;
-  size_t len = 0;
-  while (start + len < s.length()) {
-    if (strchr(set, s[start + len])) {
-      break;
+  script &s;
+
+  cls_parser(const std::string &inp, script &_s) : parser(inp), s(_s) { }
+
+  // a rough solution to enable use to read tokens including spaces
+  // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
+  //       ^^^^^^^^^^^^^^^^^^^^^^
+  //                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  std::string consumeToChar(const char *set)
+  {
+    const std::string &s = input();
+    size_t start = nextLoc().offset;
+    size_t len = 0;
+    while (start + len < s.length()) {
+      if (strchr(set, s[start + len])) {
+        break;
+      }
+      len++;
     }
-    len++;
+    while (nextLoc().offset != start + len)
+      skip();
+    return s.substr(start, len);
   }
-  while(p.nextLoc().offset != start + len)
-    p.skip();
-  return s.substr(start, len);
-}
 
-static init_spec_atom *parseInitAtom(parser &p, script &s);
-
-// 1024[1200]x768[800]x4
-//
-// similar to dimensions, but includes pitch
-static void parseImageDimensionExpressions(
-  parser &p,
-  script &s,
-  std::vector<init_spec_atom *> &dims,
-  std::vector<init_spec_atom *> &pitches)
-{
-  dims.push_back(parseInitAtom(p, s));
-  if (p.consumeIf(LBRACK)) {
-    pitches.push_back(parseInitAtom(p, s));
-    p.consume(RBRACK);
-  } else {
-    pitches.push_back(nullptr);
-  }
-  if (dims.size() == 3)
-    return; // at the end
-
-  if (p.consumeIfIdentEq("x")) {
-    // EXPR IDENT("x") ...
-    parseImageDimensionExpressions(p, s, dims, pitches);
-  } else {
-    while (p.lookingAtIdent()) {
-      if (dims.size() == 3)
-        p.fatal("syntax error in image dimension constant");
-      // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
-      //     ^^^^^^        ^^^^^             ^^^^
-      // need to split x768x3 into: "x 768 x 3"
-      loc at = p.nextLoc();
-      std::string lxm = p.tokenString();
-      p.skip();
-      if (lxm[0] != 'x') {
-        p.fatalAt(at,"syntax error in image dimensions");
-      }
-      size_t off = 0;
-      while (off < lxm.size()) {
-        if (lxm[off] != 'x') {
-          at.column += (uint32_t)off;
-          at.offset += (uint32_t)off;
-          p.fatalAt(at,"syntax error in image dimensions");
-        }
-        off++;
-        size_t end = off;
-        while (end < lxm.size() && isdigit(lxm[end]))
-          end++;
-        if (end == off) {
-          // it must be a new dimension
-          // 2048x1024x(...)
-          //          ^
-          parseImageDimensionExpressions(p, s, dims, pitches);
-          return;
-        } else {
-          // dimension is embedded in identifier
-          // 2048x1024...
-          //     ^^^^^
-          try {
-            auto val = (size_t)std::strtoull(
-              lxm.substr(off,end-off).c_str(),nullptr,10);
-            loc this_int = at;
-            this_int.column += (uint32_t)off;
-            this_int.offset += (uint32_t)off;
-            this_int.extent = (uint32_t)(end - off);
-            dims.push_back(new init_spec_int(this_int, val));
-            off = end;
-          } catch (...) {
-            at.offset += (uint32_t)off;
-            at.column += (uint32_t)off;
-            p.fatalAt(at,"syntax error in image dimensions");
-          }
-          // 2048x1024 x16x32
-          //           ^^^^
-          // 2048x1024 x16x(32)
-          //           ^^^^
-          // 2048x1024 x16
-          //           ^^^
-          // bail to the top loop and start the next token
-          // that will handle expressions or fused numbers
-          if (off == lxm.size()) {
-            if (dims.size() == 2) {
-              if (p.consumeIf(LBRACK)) {
-                pitches.push_back(parseInitAtom(p, s));
-                p.consume(RBRACK);
-              } else {
-                pitches.push_back(nullptr);
-              }
-            }
-            break;
-          }
-          // OTHERWISE
-          // we are still within the same identifier token and hoping for
-          // the next constant
-          //
-          // 2048x1024x16
-          //          ^^^
-          //   => next iteration of the innermost loop
-          //
-          // 2048x1024x(16)
-          //          ^
-          //   => next iteration of this while will break out
-          //
-          if (dims.size() == 3) {
-            at.offset += (uint32_t)off;
-            at.column += (uint32_t)off;
-            p.fatalAt(at, "syntax error in image dimensions (too many)");
-          }
-        }
-      } // while identifier
-    } // while looking at successive identifiers
-  } // if
-}
-
-static init_spec_atom *parseInitAtomPrim(parser &p, script &s)
-{
-  auto at = p.nextLoc();
-  if (p.lookingAt(STRLIT)) {
-    p.fatal("bare strings not allowed for files anymore "
-      "(use bin('...') and txt('...'))");
-    return nullptr;
-  } else if (p.lookingAtFloat()) {
-    return new init_spec_float(at, p.consumeFloat());
-  } else if (p.lookingAtInt()) {
-    return new init_spec_int(at, p.consumeIntegral<int64_t>());
-  } else if (p.lookingAtIdent()) {
-    // e.g. "X" or "g.x" or "pow(...)"
-    auto id = p.tokenString();
-    p.skip();
-    if (p.lookingAt(DOT)) {
-      // e.g. "g.x"
-      while (p.consumeIf(DOT)) {
-        id += '.';
-        if (!p.lookingAt(IDENT))
-          p.fatal("syntax error in initializer expression field access");
-        id += p.tokenString();
-        p.skip();
-      }
-      for (int biv = init_spec_builtin::BIV_FIRST;
-        biv <= init_spec_builtin::BIV_LAST;
-        biv++)
-      {
-        if (id == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
-          at.extend_to(p.nextLoc());
-          return new init_spec_builtin(at, (init_spec_builtin::biv_kind)biv);
-        }
-      }
-      at.extend_to(p.nextLoc());
-      return new init_spec_symbol(at, id);
-    } else if (p.lookingAt(LPAREN) || p.lookingAt(LANGLE) ||
-      id == "sizeof" || id == "random" ||
-      id == "seq" || id == "file" || id == "image")
-    {
-      // foo<...  (e.g. random<12007>(...))
-      // or
-      // foo(...
-      //
-      // TODO: generalize function parsing to
-      //    F<...>(....)
-      // then match by template arguments
-      if (id == "sizeof") {
-        bool has_parens = p.consumeIf(LPAREN);
-        if (!p.lookingAtIdent())
-          p.fatal("expected type name");
-        loc nm_at = p.nextLoc();
-        std::string sizeof_arg = p.tokenString();
-        p.skip();
-        if (has_parens)
-          p.consume(RPAREN);
-        at.extend_to(p.nextLoc());
-        // manual dereference memobject
-        auto itr = s.let_bindings.find(sizeof_arg);
-        if (itr == s.let_bindings.end()) {
-          // assume it's a type
-          return new init_spec_sizeof(at, sizeof_arg);
-        } else {
-          let_spec *ls = itr->second;
-          spec *rs = ls->value;
-          if (rs->skind != spec::INIT_SPEC)
-            p.fatal("symbol refers to non-memory object");
-          init_spec *is = (init_spec *)rs;
-          if (is->skind != init_spec::IS_MEM)
-            p.fatal("symbol refers to non-memory object");
-          return new init_spec_sizeof(at,
-            refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
-        }
-      } else if (id == "random") {
-        auto func = new init_spec_rng(at);
-        int64_t seed = 0;
-        bool has_seed = false;
-        if (p.consumeIf(LANGLE)) {
-          if (!p.lookingAt(RANGLE)) {
-            seed = p.consumeIntegral<int64_t>("seed (int)");
-            has_seed = true;
-          }
-          p.consume(RANGLE);
-        }
-        if (p.consumeIf(LPAREN)) {
-          if (!p.lookingAt(RPAREN)) {
-            auto *arg1 = parseInitAtom(p,s);
-            if (p.consumeIf(COMMA)) {
-              auto *arg2 = parseInitAtom(p,s);
-              func->e_lo = arg1;
-              func->e_hi = arg2;
-            } else {
-              func->e_hi = arg1;
-            }
-          }
-          p.consume(RPAREN);
-        }
-        if (has_seed)
-          func->set_seed(seed);
-        func->defined_at.extend_to(p.nextLoc());
-        return func;
-      } else if (id == "file") {
-        //
-        // file('foo.bin'):r                 // binary
-        // file<bin>('foo.bin'):r            // binary
-        //
-        // file<text>('foo.txt'):r           // all tokens using sep = ' '
-        // file<text,','>('foo.txt'):r       // all tokens using sep = ','
-        //
-        //
-        // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
-        // file<text_col,0>('foo.txt'):r     // same as above
-        // file<text_col,1,','>('foo.txt'):r // col 1 use , as separator
-        auto flv = init_spec_file::BIN;
-        int col = 0;
-        std::string sep = " ";
-        if (p.consumeIf(LANGLE)) {
-          if (!p.lookingAt(RANGLE)) {
-            auto fmt_loc = p.nextLoc();
-            auto flv_str = p.consumeIdent("data format (identifier)");
-            if (flv_str == "bin") {
-              flv = init_spec_file::BIN;
-            } else if (flv_str == "text") {
-              flv = init_spec_file::TXT;
-              if (p.consumeIf(COMMA)) {
-                if (!p.lookingAt(STRLIT)) {
-                  p.fatal("expected separator string (literal)");
-                }
-                sep = p.tokenStringLiteral();
-                p.skip();
-              }
-            } else if (flv_str == "text_col") {
-              flv = init_spec_file::TXT_COL;
-              if (p.consumeIf(COMMA)) {
-                col = p.consumeIntegral<int>("column index (int)");
-                if (p.consumeIf(COMMA)) {
-                  if (!p.lookingAt(STRLIT)) {
-                    p.fatal("expected separator string (literal)");
-                  }
-                  sep = p.tokenStringLiteral();
-                  p.skip();
-                }
-              }
-            } else {
-              p.fatalAt(fmt_loc,"unsupported file flavor; should be: bin, text, ...");
-            }
-          }
-          p.consume(RANGLE);
-        }
-        p.skip();
-        if (!p.lookingAt(STRLIT)) {
-          p.fatalAt(at,"expected file path (string literal)");
-        }
-        auto s = p.tokenStringLiteral();
-        p.skip();
-        p.consume(RPAREN);
-        at.extend_to(p.nextLoc());
-        return new init_spec_file(at, s, flv, col, sep);
-      } else if (id == "image") {
-        p.consume(LANGLE);
-        auto ord = init_spec_image::RGB;
-        if (p.consumeIfIdentEq("i") ||
-          p.consumeIfIdentEq("CL_INTENSITY"))
-        {
-          ord = init_spec_image::I;
-        } else if (p.consumeIfIdentEq("l") ||
-          p.consumeIfIdentEq("CL_LUMINANCE"))
-        {
-          ord = init_spec_image::L;
-        } else if (p.consumeIfIdentEq("r") ||
-          p.consumeIfIdentEq("CL_R"))
-        {
-          ord = init_spec_image::R;
-        } else if (p.consumeIfIdentEq("rx") ||
-          p.consumeIfIdentEq("CL_Rx"))
-        {
-          ord = init_spec_image::Rx;
-        } else if (p.consumeIfIdentEq("rg") ||
-          p.consumeIfIdentEq("CL_RG"))
-        {
-          ord = init_spec_image::RG;
-        } else if (p.consumeIfIdentEq("rgx") ||
-          p.consumeIfIdentEq("CL_RGx"))
-        {
-          ord = init_spec_image::RGx;
-        } else if (p.consumeIfIdentEq("rgb") ||
-          p.consumeIfIdentEq("CL_RGB"))
-        {
-          ord = init_spec_image::RGB;
-        } else if (p.consumeIfIdentEq("rgbx") ||
-          p.consumeIfIdentEq("CL_RGBx"))
-        {
-          ord = init_spec_image::RGBx;
-        } else if (p.consumeIfIdentEq("rgba") ||
-          p.consumeIfIdentEq("CL_RGBA"))
-        {
-          ord = init_spec_image::RGBA;
-        } else if (p.consumeIfIdentEq("argb") ||
-          p.consumeIfIdentEq("CL_ARGB"))
-        {
-          ord = init_spec_image::ARGB;
-        } else if (p.consumeIfIdentEq("bgra") ||
-          p.consumeIfIdentEq("CL_BGRA"))
-        {
-          ord = init_spec_image::BGRA;
-
-        } else if (p.consumeIfIdentEq("srgb") ||
-          p.consumeIfIdentEq("CL_sRGB"))
-        {
-          ord = init_spec_image::sRGB;
-        } else if (p.consumeIfIdentEq("srgbx") ||
-          p.consumeIfIdentEq("CL_sRGBx"))
-        {
-          ord = init_spec_image::sRGBx;
-        } else if (p.consumeIfIdentEq("srgba") ||
-          p.consumeIfIdentEq("CL_sRGBA"))
-        {
-          ord = init_spec_image::sRGBA;
-        } else if (p.consumeIfIdentEq("sbgra") ||
-          p.consumeIfIdentEq("CL_sBGRA"))
-        {
-          ord = init_spec_image::sBGRA;
-        } else {
-          p.fatal("unrecognized channel order (try r, rg, rgb, rgba, ...)");
-        }
-        p.consume(COMMA);
-        auto ty = init_spec_image::U8;
-        ///////////////////////////////////////////////////////////////////////
-        if (p.consumeIfIdentEq("un8") ||
-          p.consumeIfIdentEq("CL_UNORM_INT8"))
-        {
-          ty = init_spec_image::UN8;
-        } else if (p.consumeIfIdentEq("un16") ||
-          p.consumeIfIdentEq("CL_UNORM_INT16"))
-        {
-          ty = init_spec_image::UN16;
-        } else if (p.consumeIfIdentEq("un24") ||
-          p.consumeIfIdentEq("CL_UNORM_INT24"))
-        {
-          ty = init_spec_image::UN24;
-        } else if (p.consumeIfIdentEq("un565") ||
-          p.consumeIfIdentEq("CL_UNORM_SHORT_565"))
-        {
-          ty = init_spec_image::UN565;
-        } else if (p.consumeIfIdentEq("un555") ||
-          p.consumeIfIdentEq("CL_UNORM_SHORT_555"))
-        {
-          ty = init_spec_image::UN555;
-        } else if (p.consumeIfIdentEq("un101010") ||
-          p.consumeIfIdentEq("CL_UNORM_INT_101010"))
-        {
-          ty = init_spec_image::UN101010;
-        } else if (p.consumeIfIdentEq("un101010_2") ||
-          p.consumeIfIdentEq("CL_UNORM_INT_101010_2"))
-        {
-          ty = init_spec_image::UN101010_2;
-        ///////////////////////////////////////////////////////////////////////
-        } else if (p.consumeIfIdentEq("sn8") ||
-          p.consumeIfIdentEq("CL_SNORM_INT8"))
-        {
-          ty = init_spec_image::SN8;
-        } else if (p.consumeIfIdentEq("sn16") ||
-          p.consumeIfIdentEq("CL_SNORM_INT16"))
-        {
-          ty = init_spec_image::SN16;
-        ///////////////////////////////////////////////////////////////////////
-        } else if (p.consumeIfIdentEq("u8") ||
-          p.consumeIfIdentEq("CL_UNSIGNED_INT8"))
-        {
-          ty = init_spec_image::U8;
-        } else if (p.consumeIfIdentEq("u16") ||
-          p.consumeIfIdentEq("CL_UNSIGNED_INT16"))
-        {
-          ty = init_spec_image::U16;
-        } else if (p.consumeIfIdentEq("u32") ||
-          p.consumeIfIdentEq("CL_UNSIGNED_INT32"))
-        {
-          ty = init_spec_image::U32;
-        ///////////////////////////////////////////////////////////////////////
-        } else if (p.consumeIfIdentEq("s8") ||
-          p.consumeIfIdentEq("CL_SIGNED_INT8"))
-        {
-          ty = init_spec_image::S8;
-        } else if (p.consumeIfIdentEq("s16") ||
-          p.consumeIfIdentEq("CL_SIGNED_INT16"))
-        {
-          ty = init_spec_image::S16;
-        } else if (p.consumeIfIdentEq("s32") ||
-          p.consumeIfIdentEq("CL_SIGNED_INT32"))
-        {
-          ty = init_spec_image::S32;
-        ///////////////////////////////////////////////////////////////////////
-        } else if (p.consumeIfIdentEq("f32") ||
-          p.consumeIfIdentEq("CL_FLOAT"))
-        {
-          ty = init_spec_image::F32;
-        } else if (p.consumeIfIdentEq("f16") ||
-          p.consumeIfIdentEq("CL_HALF_FLOAT"))
-        {
-          ty = init_spec_image::F16;
-        ///////////////////////////////////////////////////////////////////////
-        } else {
-          p.fatal(
-            "unrecognized image format (try: u8, u16, ..., f32, f16 ,...)");
-        }
-
-        init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
-        init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
-        if (p.consumeIf(COMMA)) {
-          // image dimension:
-          // W (RP)
-          // W (RP) x H (SP)
-          // W (RP) x H (SP) x D
-          // the spacing makes this hard
-          std::vector<init_spec_atom *> dims;
-          std::vector<init_spec_atom *> pitches;
-          parseImageDimensionExpressions(p, s, dims, pitches);
-          //
-          width = dims[0];
-          height = dims.size() >= 2 ? dims[1] : nullptr;
-          depth = dims.size() >= 3 ? dims[2] : nullptr;
-          row_pitch = pitches[0];
-          slice_pitch = pitches.size() >= 2 ? pitches[1] : nullptr;
-        }
-        p.consume(RANGLE);
-        std::string file;
-        if (p.consumeIf(LPAREN)) {
-          if (!p.lookingAt(STRLIT)) {
-            p.fatalAt(at,"expected file path (string literal)");
-          }
-          file = p.tokenStringLiteral(); p.skip();
-          p.consume(RPAREN);
-        }
-        at.extend_to(p.nextLoc());
-        return new init_spec_image(
-          at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
-      } else {
-        ///////////////////////////////////////////////////
-        // generic function
-        std::vector<init_spec_atom *> args;
-        p.consume(LPAREN);
-        while (!p.lookingAt(RPAREN)) {
-          args.push_back(parseInitAtom(p,s));
-          if (!p.consumeIf(COMMA))
-            break;
-        }
-        p.consume(RPAREN);
-
-        ///////////////////////////////////////////////////
-        // special functions (pseudo functions)
-        if (id == "seq") {
-          init_spec_seq *iss = nullptr;
-          switch (args.size()) {
-          case 0: iss = new init_spec_seq(at,nullptr,nullptr); break;
-          case 1: iss = new init_spec_seq(at,args[0],nullptr); break;
-          case 2: iss = new init_spec_seq(at,args[0],args[1]); break;
-          default: p.fatalAt(at,"wrong number of args to seq");
-          }
-          iss->defined_at.extend_to(p.nextLoc());
-          return iss;
-        }
-
-        ///////////////////////////////////////////////////
-        // regular arithmetic functions
-        if (args.size() == 1) {
-          if (id == "fabs")
-            p.fatalAt(at,"use \"abs\" for the absolute value");
-          else if (id == "sqt")
-            p.fatalAt(at,"use \"sqrt\" for the square root");
-
-          const auto *op = init_spec_uex::lookup_op(id.c_str());
-          if (!op) {
-            if (init_spec_bex::lookup_op(id.c_str())) {
-              p.fatalAt(at, "function requires two arguments");
-            } else {
-              p.fatalAt(at, "not a unary function");
-            }
-          }
-          return new init_spec_uex(at,*op,args[0]);
-        } else if (args.size() == 2) {
-          const auto *op = init_spec_bex::lookup_op(id.c_str());
-          if (!op) {
-            p.fatalAt(at, "not a binary function");
-          }
-          auto *isbe = new init_spec_bex(*op,args[0],args[1]);
-          isbe->defined_at = at; // reset start loc to function name
-          isbe->defined_at.extend_to(p.nextLoc());
-          return isbe;
-        } else {
-          p.fatalAt(at,"undefined function");
-        }
-        // fallback
-        return nullptr; // unreachable
-      } // end else not random
+  // 1024[1200]x768[800]x4
+  //
+  // similar to dimensions, but includes pitch
+  void parseImageDimensionExpressions(
+    std::vector<init_spec_atom *> &dims,
+    std::vector<init_spec_atom *> &pitches)
+  {
+    dims.push_back(parseInitAtom());
+    if (consumeIf(LBRACK)) {
+      pitches.push_back(parseInitAtom());
+      consume(RBRACK);
     } else {
-      if (id == "E")
-        return new init_spec_float(at, M_E);
-      else if (id == "PI")
-        return new init_spec_float(at, M_PI);
-      // some other symbol (may target a LET binding)
-      return new init_spec_symbol(at, id);
+      pitches.push_back(nullptr);
     }
-  } else if (p.consumeIf(LBRACE)) {
-    // {...}
-    auto re = new init_spec_record(at);
-    if (!p.lookingAt(RBRACE)) {
-      re->children.push_back(parseInitAtom(p,s));
-      while (p.consumeIf(COMMA))
-        re->children.push_back(parseInitAtom(p,s));
-    }
-    p.consume(RBRACE);
-    re->defined_at.extend_to(p.nextLoc());
-    return re;
-  } else if (p.consumeIf(LPAREN)) {
-    init_spec_atom *e = parseInitAtom(p,s);
-    p.consume(RPAREN);
-    return e;
-  } else {
-    p.fatal("syntax error in initializer expression");
-    return nullptr;
+    if (dims.size() == 3)
+      return; // at the end
+
+    if (consumeIfIdentEq("x")) {
+      // EXPR IDENT("x") ...
+      parseImageDimensionExpressions(dims, pitches);
+    } else {
+      while (lookingAtIdent()) {
+        if (dims.size() == 3)
+          fatal("syntax error in image dimension constant");
+        // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
+        //     ^^^^^^        ^^^^^             ^^^^
+        // need to split x768x3 into: "x 768 x 3"
+        loc at = nextLoc();
+        std::string lxm = tokenString();
+        skip();
+        if (lxm[0] != 'x') {
+          fatalAt(at, "syntax error in image dimensions");
+        }
+        size_t off = 0;
+        while (off < lxm.size()) {
+          if (lxm[off] != 'x') {
+            at.column += (uint32_t)off;
+            at.offset += (uint32_t)off;
+            fatalAt(at, "syntax error in image dimensions");
+          }
+          off++;
+          size_t end = off;
+          while (end < lxm.size() && isdigit(lxm[end]))
+            end++;
+          if (end == off) {
+            // it must be a new dimension
+            // 2048x1024x(...)
+            //          ^
+            parseImageDimensionExpressions(dims, pitches);
+            return;
+          } else {
+            // dimension is embedded in identifier
+            // 2048x1024...
+            //     ^^^^^
+            try {
+              auto val = (size_t)std::strtoull(
+                lxm.substr(off, end-off).c_str(), nullptr, 10);
+              loc this_int = at;
+              this_int.column += (uint32_t)off;
+              this_int.offset += (uint32_t)off;
+              this_int.extent = (uint32_t)(end - off);
+              dims.push_back(new init_spec_int(this_int, val));
+              off = end;
+            } catch (...) {
+              at.offset += (uint32_t)off;
+              at.column += (uint32_t)off;
+              fatalAt(at, "syntax error in image dimensions");
+            }
+            // 2048x1024 x16x32
+            //           ^^^^
+            // 2048x1024 x16x(32)
+            //           ^^^^
+            // 2048x1024 x16
+            //           ^^^
+            // bail to the top loop and start the next token
+            // that will handle expressions or fused numbers
+            if (off == lxm.size()) {
+              if (dims.size() == 2) {
+                if (consumeIf(LBRACK)) {
+                  pitches.push_back(parseInitAtom());
+                  consume(RBRACK);
+                } else {
+                  pitches.push_back(nullptr);
+                }
+              }
+              break;
+            }
+            // OTHERWISE
+            // we are still within the same identifier token and hoping for
+            // the next constant
+            //
+            // 2048x1024x16
+            //          ^^^
+            //   => next iteration of the innermost loop
+            //
+            // 2048x1024x(16)
+            //          ^
+            //   => next iteration of this while will break out
+            //
+            if (dims.size() == 3) {
+              at.offset += (uint32_t)off;
+              at.column += (uint32_t)off;
+              fatalAt(at, "syntax error in image dimensions (too many)");
+            }
+          }
+        } // while identifier
+      } // while looking at successive identifiers
+    } // if
   }
-}
-static init_spec_atom *parseInitAtomUnr(parser &p, script &s)
-{
-  if (p.lookingAt(SUB) || p.lookingAt(TILDE)) {
-    auto loc = p.nextLoc();
-    const auto &op =
-      p.lookingAt(SUB) ?
+
+  init_spec_atom *parseInitAtomPrim()
+  {
+    auto at = nextLoc();
+    if (lookingAt(STRLIT)) {
+      fatal("bare strings not allowed for files anymore "
+        "(use bin('...') and txt('...'))");
+      return nullptr;
+    } else if (lookingAtFloat()) {
+      return new init_spec_float(at, consumeFloat());
+    } else if (lookingAtInt()) {
+      return new init_spec_int(at, consumeIntegral<int64_t>());
+    } else if (lookingAtIdent()) {
+      // e.g. "X" or "g.x" or "pow(...)"
+      auto id = tokenString();
+      skip();
+      if (lookingAt(DOT)) {
+        // e.g. "g.x"
+        while (consumeIf(DOT)) {
+          id += '.';
+          if (!lookingAt(IDENT))
+            fatal("syntax error in initializer expression field access");
+          id += tokenString();
+          skip();
+        }
+        for (int biv = init_spec_builtin::BIV_FIRST;
+          biv <= init_spec_builtin::BIV_LAST;
+          biv++)
+        {
+          if (id == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
+            at.extend_to(nextLoc());
+            return new init_spec_builtin(at, (init_spec_builtin::biv_kind)biv);
+          }
+        }
+        at.extend_to(nextLoc());
+        return new init_spec_symbol(at, id);
+      } else if (lookingAt(LPAREN) || lookingAt(LANGLE) ||
+        id == "sizeof" || id == "random" ||
+        id == "seq" || id == "file" || id == "image")
+      {
+        // foo<...  (e.g. random<12007>(...))
+        // or
+        // foo(...
+        //
+        // TODO: generalize function parsing to
+        //    F<...>(....)
+        // then match by template arguments
+        if (id == "sizeof") {
+          bool has_parens = consumeIf(LPAREN);
+          if (!lookingAtIdent())
+            fatal("expected type name");
+          loc nm_at = nextLoc();
+          std::string sizeof_arg = tokenString();
+          skip();
+          if (has_parens)
+            consume(RPAREN);
+          at.extend_to(nextLoc());
+          // manual dereference memobject
+          auto itr = s.let_bindings.find(sizeof_arg);
+          if (itr == s.let_bindings.end()) {
+            // assume it's a type
+            return new init_spec_sizeof(at, sizeof_arg);
+          } else {
+            let_spec *ls = itr->second;
+            spec *rs = ls->value;
+            if (rs->skind != spec::INIT_SPEC)
+              fatal("symbol refers to non-memory object");
+            init_spec *is = (init_spec *)rs;
+            if (is->skind != init_spec::IS_MEM)
+              fatal("symbol refers to non-memory object");
+            return new init_spec_sizeof(at,
+              refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
+          }
+        } else if (id == "random") {
+          auto func = new init_spec_rng(at);
+          int64_t seed = 0;
+          bool has_seed = false;
+          if (consumeIf(LANGLE)) {
+            if (!lookingAt(RANGLE)) {
+              seed = consumeIntegral<int64_t>("seed (int)");
+              has_seed = true;
+            }
+            consume(RANGLE);
+          }
+          if (consumeIf(LPAREN)) {
+            if (!lookingAt(RPAREN)) {
+              auto *arg1 = parseInitAtom();
+              if (consumeIf(COMMA)) {
+                auto *arg2 = parseInitAtom();
+                func->e_lo = arg1;
+                func->e_hi = arg2;
+              } else {
+                func->e_hi = arg1;
+              }
+            }
+            consume(RPAREN);
+          }
+          if (has_seed)
+            func->set_seed(seed);
+          func->defined_at.extend_to(nextLoc());
+          return func;
+        } else if (id == "file") {
+          //
+          // file('foo.bin'):r                 // binary
+          // file<bin>('foo.bin'):r            // binary
+          //
+          // file<text>('foo.txt'):r           // all tokens using sep = ' '
+          // file<text,','>('foo.txt'):r       // all tokens using sep = ','
+          //
+          //
+          // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
+          // file<text_col,0>('foo.txt'):r     // same as above
+          // file<text_col,1,','>('foo.txt'):r // col 1 use , as separator
+          auto flv = init_spec_file::BIN;
+          int col = 0;
+          std::string sep = " ";
+          if (consumeIf(LANGLE)) {
+            if (!lookingAt(RANGLE)) {
+              auto fmt_loc = nextLoc();
+              auto flv_str = consumeIdent("data format (identifier)");
+              if (flv_str == "bin") {
+                flv = init_spec_file::BIN;
+              } else if (flv_str == "text") {
+                flv = init_spec_file::TXT;
+                if (consumeIf(COMMA)) {
+                  if (!lookingAt(STRLIT)) {
+                    fatal("expected separator string (literal)");
+                  }
+                  sep = tokenStringLiteral();
+                  skip();
+                }
+              } else if (flv_str == "text_col") {
+                flv = init_spec_file::TXT_COL;
+                if (consumeIf(COMMA)) {
+                  col = consumeIntegral<int>("column index (int)");
+                  if (consumeIf(COMMA)) {
+                    if (!lookingAt(STRLIT)) {
+                      fatal("expected separator string (literal)");
+                    }
+                    sep = tokenStringLiteral();
+                    skip();
+                  }
+                }
+              } else {
+                fatalAt(fmt_loc, "unsupported file flavor; should be: bin, text, ...");
+              }
+            }
+            consume(RANGLE);
+          }
+          skip();
+          if (!lookingAt(STRLIT)) {
+            fatalAt(at, "expected file path (string literal)");
+          }
+          auto s = tokenStringLiteral();
+          skip();
+          consume(RPAREN);
+          at.extend_to(nextLoc());
+          return new init_spec_file(at, s, flv, col, sep);
+        } else if (id == "image") {
+          consume(LANGLE);
+          auto ord = init_spec_image::RGB;
+          if (consumeIfIdentEq("i") ||
+            consumeIfIdentEq("CL_INTENSITY"))
+          {
+            ord = init_spec_image::I;
+          } else if (consumeIfIdentEq("l") ||
+            consumeIfIdentEq("CL_LUMINANCE"))
+          {
+            ord = init_spec_image::L;
+          } else if (consumeIfIdentEq("r") ||
+            consumeIfIdentEq("CL_R"))
+          {
+            ord = init_spec_image::R;
+          } else if (consumeIfIdentEq("rx") ||
+            consumeIfIdentEq("CL_Rx"))
+          {
+            ord = init_spec_image::Rx;
+          } else if (consumeIfIdentEq("rg") ||
+            consumeIfIdentEq("CL_RG"))
+          {
+            ord = init_spec_image::RG;
+          } else if (consumeIfIdentEq("rgx") ||
+            consumeIfIdentEq("CL_RGx"))
+          {
+            ord = init_spec_image::RGx;
+          } else if (consumeIfIdentEq("rgb") ||
+            consumeIfIdentEq("CL_RGB"))
+          {
+            ord = init_spec_image::RGB;
+          } else if (consumeIfIdentEq("rgbx") ||
+            consumeIfIdentEq("CL_RGBx"))
+          {
+            ord = init_spec_image::RGBx;
+          } else if (consumeIfIdentEq("rgba") ||
+            consumeIfIdentEq("CL_RGBA"))
+          {
+            ord = init_spec_image::RGBA;
+          } else if (consumeIfIdentEq("argb") ||
+            consumeIfIdentEq("CL_ARGB"))
+          {
+            ord = init_spec_image::ARGB;
+          } else if (consumeIfIdentEq("bgra") ||
+            consumeIfIdentEq("CL_BGRA"))
+          {
+            ord = init_spec_image::BGRA;
+
+          } else if (consumeIfIdentEq("srgb") ||
+            consumeIfIdentEq("CL_sRGB"))
+          {
+            ord = init_spec_image::sRGB;
+          } else if (consumeIfIdentEq("srgbx") ||
+            consumeIfIdentEq("CL_sRGBx"))
+          {
+            ord = init_spec_image::sRGBx;
+          } else if (consumeIfIdentEq("srgba") ||
+            consumeIfIdentEq("CL_sRGBA"))
+          {
+            ord = init_spec_image::sRGBA;
+          } else if (consumeIfIdentEq("sbgra") ||
+            consumeIfIdentEq("CL_sBGRA"))
+          {
+            ord = init_spec_image::sBGRA;
+          } else {
+            fatal("unrecognized channel order (try r, rg, rgb, rgba, ...)");
+          }
+          consume(COMMA);
+          auto ty = init_spec_image::U8;
+          ///////////////////////////////////////////////////////////////////////
+          if (consumeIfIdentEq("un8") ||
+            consumeIfIdentEq("CL_UNORM_INT8"))
+          {
+            ty = init_spec_image::UN8;
+          } else if (consumeIfIdentEq("un16") ||
+            consumeIfIdentEq("CL_UNORM_INT16"))
+          {
+            ty = init_spec_image::UN16;
+          } else if (consumeIfIdentEq("un24") ||
+            consumeIfIdentEq("CL_UNORM_INT24"))
+          {
+            ty = init_spec_image::UN24;
+          } else if (consumeIfIdentEq("un565") ||
+            consumeIfIdentEq("CL_UNORM_SHORT_565"))
+          {
+            ty = init_spec_image::UN565;
+          } else if (consumeIfIdentEq("un555") ||
+            consumeIfIdentEq("CL_UNORM_SHORT_555"))
+          {
+            ty = init_spec_image::UN555;
+          } else if (consumeIfIdentEq("un101010") ||
+            consumeIfIdentEq("CL_UNORM_INT_101010"))
+          {
+            ty = init_spec_image::UN101010;
+          } else if (consumeIfIdentEq("un101010_2") ||
+            consumeIfIdentEq("CL_UNORM_INT_101010_2"))
+          {
+            ty = init_spec_image::UN101010_2;
+            ///////////////////////////////////////////////////////////////////////
+          } else if (consumeIfIdentEq("sn8") ||
+            consumeIfIdentEq("CL_SNORM_INT8"))
+          {
+            ty = init_spec_image::SN8;
+          } else if (consumeIfIdentEq("sn16") ||
+            consumeIfIdentEq("CL_SNORM_INT16"))
+          {
+            ty = init_spec_image::SN16;
+            ///////////////////////////////////////////////////////////////////////
+          } else if (consumeIfIdentEq("u8") ||
+            consumeIfIdentEq("CL_UNSIGNED_INT8"))
+          {
+            ty = init_spec_image::U8;
+          } else if (consumeIfIdentEq("u16") ||
+            consumeIfIdentEq("CL_UNSIGNED_INT16"))
+          {
+            ty = init_spec_image::U16;
+          } else if (consumeIfIdentEq("u32") ||
+            consumeIfIdentEq("CL_UNSIGNED_INT32"))
+          {
+            ty = init_spec_image::U32;
+            ///////////////////////////////////////////////////////////////////////
+          } else if (consumeIfIdentEq("s8") ||
+            consumeIfIdentEq("CL_SIGNED_INT8"))
+          {
+            ty = init_spec_image::S8;
+          } else if (consumeIfIdentEq("s16") ||
+            consumeIfIdentEq("CL_SIGNED_INT16"))
+          {
+            ty = init_spec_image::S16;
+          } else if (consumeIfIdentEq("s32") ||
+            consumeIfIdentEq("CL_SIGNED_INT32"))
+          {
+            ty = init_spec_image::S32;
+            ///////////////////////////////////////////////////////////////////////
+          } else if (consumeIfIdentEq("f32") ||
+            consumeIfIdentEq("CL_FLOAT"))
+          {
+            ty = init_spec_image::F32;
+          } else if (consumeIfIdentEq("f16") ||
+            consumeIfIdentEq("CL_HALF_FLOAT"))
+          {
+            ty = init_spec_image::F16;
+            ///////////////////////////////////////////////////////////////////////
+          } else {
+            fatal(
+              "unrecognized image format (try: u8, u16, ..., f32, f16 ,...)");
+          }
+
+          init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
+          init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
+          if (consumeIf(COMMA)) {
+            // image dimension:
+            // W (RP)
+            // W (RP) x H (SP)
+            // W (RP) x H (SP) x D
+            // the spacing makes this hard
+            std::vector<init_spec_atom *> dims;
+            std::vector<init_spec_atom *> pitches;
+            parseImageDimensionExpressions(dims, pitches);
+            //
+            width = dims[0];
+            height = dims.size() >= 2 ? dims[1] : nullptr;
+            depth = dims.size() >= 3 ? dims[2] : nullptr;
+            row_pitch = pitches[0];
+            slice_pitch = pitches.size() >= 2 ? pitches[1] : nullptr;
+          }
+          consume(RANGLE);
+          std::string file;
+          if (consumeIf(LPAREN)) {
+            if (!lookingAt(STRLIT)) {
+              fatalAt(at, "expected file path (string literal)");
+            }
+            file = tokenStringLiteral(); skip();
+            consume(RPAREN);
+          }
+          at.extend_to(nextLoc());
+          return new init_spec_image(
+            at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
+        } else {
+          ///////////////////////////////////////////////////
+          // generic function
+          std::vector<init_spec_atom *> args;
+          consume(LPAREN);
+          while (!lookingAt(RPAREN)) {
+            args.push_back(parseInitAtom());
+            if (!consumeIf(COMMA))
+              break;
+          }
+          consume(RPAREN);
+
+          ///////////////////////////////////////////////////
+          // special functions (pseudo functions)
+          if (id == "seq") {
+            init_spec_seq *iss = nullptr;
+            switch (args.size()) {
+            case 0: iss = new init_spec_seq(at, nullptr, nullptr); break;
+            case 1: iss = new init_spec_seq(at, args[0], nullptr); break;
+            case 2: iss = new init_spec_seq(at, args[0], args[1]); break;
+            default: fatalAt(at, "wrong number of args to seq");
+            }
+            iss->defined_at.extend_to(nextLoc());
+            return iss;
+          }
+
+          ///////////////////////////////////////////////////
+          // regular arithmetic functions
+          if (args.size() == 1) {
+            if (id == "fabs")
+              fatalAt(at, "use \"abs\" for the absolute value");
+            else if (id == "sqt")
+              fatalAt(at, "use \"sqrt\" for the square root");
+
+            const auto *op = init_spec_uex::lookup_op(id.c_str());
+            if (!op) {
+              if (init_spec_bex::lookup_op(id.c_str())) {
+                fatalAt(at, "function requires two arguments");
+              } else {
+                fatalAt(at, "not a unary function");
+              }
+            }
+            return new init_spec_uex(at, *op, args[0]);
+          } else if (args.size() == 2) {
+            const auto *op = init_spec_bex::lookup_op(id.c_str());
+            if (!op) {
+              fatalAt(at, "not a binary function");
+            }
+            auto *isbe = new init_spec_bex(*op, args[0], args[1]);
+            isbe->defined_at = at; // reset start loc to function name
+            isbe->defined_at.extend_to(nextLoc());
+            return isbe;
+          } else {
+            fatalAt(at, "undefined function");
+          }
+          // fallback
+          return nullptr; // unreachable
+        } // end else not random
+      } else {
+        if (id == "E")
+          return new init_spec_float(at, M_E);
+        else if (id == "PI")
+          return new init_spec_float(at, M_PI);
+        // some other symbol (may target a LET binding)
+        return new init_spec_symbol(at, id);
+      }
+    } else if (consumeIf(LBRACE)) {
+      // {...}
+      auto re = new init_spec_record(at);
+      if (!lookingAt(RBRACE)) {
+        re->children.push_back(parseInitAtom());
+        while (consumeIf(COMMA))
+          re->children.push_back(parseInitAtom());
+      }
+      consume(RBRACE);
+      re->defined_at.extend_to(nextLoc());
+      return re;
+    } else if (consumeIf(LPAREN)) {
+      init_spec_atom *e = parseInitAtom();
+      consume(RPAREN);
+      return e;
+    } else {
+      fatal("syntax error in initializer expression");
+      return nullptr;
+    }
+  }
+  init_spec_atom *parseInitAtomUnr()
+  {
+    if (lookingAt(SUB) || lookingAt(TILDE)) {
+      auto loc = nextLoc();
+      const auto &op =
+        lookingAt(SUB) ?
         *init_spec_uex::lookup_op("-") :
         *init_spec_uex::lookup_op("~");
-    p.skip();
-    init_spec_atom *e = parseInitAtomUnr(p,s);
-    return new init_spec_uex(loc, op, e);
-  } else {
-    return parseInitAtomPrim(p,s);
-  }
-}
-static init_spec_atom *parseInitAtomMul(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomUnr(p,s);
-  while (p.lookingAt(MUL) || p.lookingAt(DIV) || p.lookingAt(MOD)) {
-    const auto &op =
-      p.lookingAt(MUL) ? *init_spec_bex::lookup_op("*") :
-      p.lookingAt(DIV) ? *init_spec_bex::lookup_op("/") :
-      *init_spec_bex::lookup_op("%");
-    p.skip();
-    init_spec_atom *t = parseInitAtomUnr(p,s);
-    e = new init_spec_bex(op, e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtomAdd(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomMul(p,s);
-  while (p.lookingAt(ADD) || p.lookingAt(SUB)) {
-    const auto &op = p.lookingAt(ADD) ?
-      *init_spec_bex::lookup_op("+") :
-      *init_spec_bex::lookup_op("-");
-    p.skip();
-    init_spec_atom *t = parseInitAtomMul(p,s);
-    e = new init_spec_bex(op, e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtomShift(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomAdd(p,s);
-  while (p.lookingAt(LSH) || p.lookingAt(RSH)) {
-    const auto &op = p.lookingAt(LSH) ?
-      *init_spec_bex::lookup_op("<<") :
-      *init_spec_bex::lookup_op(">>");
-    p.skip();
-    init_spec_atom *t = parseInitAtomAdd(p,s);
-    e = new init_spec_bex(op, e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtomBitwiseAND(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomShift(p,s);
-  while (p.consumeIf(AMP)) {
-    init_spec_atom *t = parseInitAtomShift(p,s);
-    e = new init_spec_bex(*init_spec_bex::lookup_op("&"), e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtomBitwiseXOR(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomBitwiseAND(p,s);
-  while (p.consumeIf(CIRC)) {
-    init_spec_atom *t = parseInitAtomBitwiseAND(p,s);
-    e = new init_spec_bex(*init_spec_bex::lookup_op("^"), e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtomBitwiseOR(parser &p, script &s)
-{
-  init_spec_atom *e = parseInitAtomBitwiseXOR(p,s);
-  while (p.consumeIf(PIPE)) {
-    init_spec_atom *t = parseInitAtomBitwiseXOR(p,s);
-    e = new init_spec_bex(*init_spec_bex::lookup_op("|"), e, t);
-  }
-  return e;
-}
-static init_spec_atom *parseInitAtom(parser &p, script &s)
-{
-  return parseInitAtomBitwiseOR(p,s);
-}
-
-static init_spec *parseInit(parser &p, script &s)
-{
-  auto l = p.nextLoc();
-  init_spec_atom *e = parseInitAtom(p,s);
-
-  if (p.consumeIf(COLON)) {
-    // memory initializer
-    init_spec_mem *m = new init_spec_mem(l);
-    m->root = e;
-    if (p.consumeIf(LBRACK)) {
-      init_spec_atom *de = parseInitAtom(p,s);
-      m->dimension = de;
-      p.consume(RBRACK);
+      skip();
+      init_spec_atom *e = parseInitAtomUnr();
+      return new init_spec_uex(loc, op, e);
+    } else {
+      return parseInitAtomPrim();
     }
-    // attributes
-    if (!p.lookingAt(IDENT)) {
-      p.fatal("expected buffer/image attributes");
+  }
+  init_spec_atom *parseInitAtomMul()
+  {
+    init_spec_atom *e = parseInitAtomUnr();
+    while (lookingAt(MUL) || lookingAt(DIV) || lookingAt(MOD)) {
+      const auto &op =
+        lookingAt(MUL) ? *init_spec_bex::lookup_op("*") :
+        lookingAt(DIV) ? *init_spec_bex::lookup_op("/") :
+        *init_spec_bex::lookup_op("%");
+      skip();
+      init_spec_atom *t = parseInitAtomUnr();
+      e = new init_spec_bex(op, e, t);
     }
-    auto s = p.tokenString();
-    p.skip();
-    for (size_t i = 0; i < s.size(); i++) {
-      auto setTx = [&] (init_spec_mem::transfer t) {
-        if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID) {
-          p.fatalAt(l, "memory transfer respecification");
-        }
-        m->transfer_properties = t;
-      };
-
-      switch (s[i]) {
-      case 'r':
-        m->access_properties = (init_spec_mem::access)(
-          m->access_properties |
-          init_spec_mem::access::INIT_SPEC_MEM_READ);
-        break;
-      case 'w':
-        m->access_properties = (init_spec_mem::access)(
-          m->access_properties |
-          init_spec_mem::access::INIT_SPEC_MEM_WRITE);
-        break;
-      case 's': // SVM
-        if (i < s.size() - 1) {
-          i++;
-          switch (s[i]) {
-          case 'c':
-          case 'f':
-            if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID)
-              p.fatalAt(l,
-                "invalid svm memory attribute (must be :..sc.. or :..sf..)");
-            setTx(s[i] == 'c' ?
-              init_spec_mem::transfer::TX_SVM_COARSE :
-              init_spec_mem::transfer::TX_SVM_FINE);
-            break;
-          default:
-            // p.fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
-            // assume coarse if only one char given
-            setTx(init_spec_mem::transfer::TX_SVM_COARSE);
-          }
-        } else {
-          setTx(init_spec_mem::transfer::TX_SVM_COARSE);
-        }
-        break;
-      case 'm':
-        setTx(init_spec_mem::transfer::TX_MAP);
-        break;
-      case 'c':
-        setTx(init_spec_mem::transfer::TX_COPY);
-        break;
-      // SPECIFY: do we consider deprecating these after stable development
-      //          they are certainly nice for debugging
-      case 'P':
-        m->print_pre = true;
-        if (i + 1 < s.size() && ::isdigit(s[i+1])) {
-          i++;
-          m->print_pre_elems_per_row = 0;
-          if (i < s.size() && ::isdigit(s[i])) {
-            m->print_pre_elems_per_row =
-              10 * m->print_pre_elems_per_row + s[i] - '0';
-          }
-        }
-        break;
-      case 'p':
-        m->print_post = true;
-        if (i + 1 < s.size() && ::isdigit(s[i+1])) {
-          i++;
-          m->print_post_elems_per_row = 0;
-          if (i < s.size() && ::isdigit(s[i])) {
-            m->print_post_elems_per_row =
-              10 * m->print_post_elems_per_row + s[i] - '0';
-          }
-        }
-        break;
-      case 'S':
-        m->save_post = true;
-        break;
-      default:
-        // adjust the location to the middle of this token for
-        // the diganostic
-        l.column += (uint32_t)i;
-        l.offset += (uint32_t)i;
-        p.fatalAt(l, "invalid memory attribute");
-      }
-    }
-    if (m->transfer_properties == init_spec_mem::transfer::TX_INVALID)
-      m->transfer_properties = init_spec_mem::transfer::TX_COPY; // default to copy
-    m->defined_at.extend_to(p.nextLoc());
-    return m;
-  } else {
-    // regular primitive
     return e;
   }
-}
-
-template <typename T>
-static refable<T> dereferenceLet(
-  parser &p,
-  script &s,
-  enum spec::spec_kind skind,
-  const char *what)
-{
-  auto at = p.nextLoc();
-  std::string name = p.consumeIdent();
-  auto itr = s.let_bindings.find(name);
-  if (itr == s.let_bindings.end()) {
-    p.fatalAt(at,what," not defined");
-  }
-  let_spec *ls = itr->second;
-  spec *rs = ls->value;
-  if (rs->skind != skind) {
-    std::stringstream ss;
-    ss << "identifier does not reference a " << what;
-    ss << " (defined on line " << rs->defined_at.line << ")";
-    p.fatalAt(at,ss.str());
-  }
-  return refable<T>(at,name,(T *)rs);
-}
-
-static refable<init_spec_mem> dereferenceLetMem(
-  parser &p,
-  script &s)
-{
-  refable<init_spec> rf =
-    dereferenceLet<init_spec>(p, s, spec::INIT_SPEC, "memory object");
-  if ((*rf).skind != init_spec::IS_MEM) {
-    p.fatalAt(rf.defined_at,"identifier does not reference a memory object");
-  }
-  return refable<init_spec_mem>(
-    rf.defined_at,
-    rf.identifier,
-    (init_spec_mem *)rf.value);
-}
-
-// Dimensions are a lexically evil mess.  We do some massive hacking to make
-// it work, but this all requires the assumption that an identifier may not
-// follow a dimension.  So syntax such as
-//  1024x768 foo   [ILLEGAL in our language now]
-//
-// Previously I introduced a lexical pattern for dimensions, but I want to
-// support arithmetic within them. (4*1024)x4*1024 so I have to deal with this
-// mess at some point.
-//
-// EXAMPLE             PARSES AS
-//
-// 1024 x 25           INT(1024) IDENT("x")     INT
-// 1024x256            INT(1024) IDENT("x256")
-// 1024x256x3          INT(1024) IDENT("x256x3")
-// 1024x256 x3         INT(1024) IDENT("x256x3") IDENT("x3")
-// 1024x768x(2*4)      INT(1024) IDENT("x256x") EXPR
-// (2*1024)x768 x 3    EXPR      IDENT("x768") IDENT("x") INT(3)
-static void parseDimensionExpressions(
-  parser &p,
-  script &s,
-  std::vector<init_spec_atom *> &dims)
-{
-  dims.push_back(parseInitAtom(p, s));
-  if (p.lookingAtIdentEq("x")) {
-    // EXPR IDENT("x") ...
-    p.skip();
-    parseDimensionExpressions(p, s, dims);
-  } else {
-    while (p.lookingAtIdent()) {
-      // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
-      //     ^^^^^^        ^^^^^             ^^^^
-      // need to split x768x3 into: "x 768 x 3"
-      loc at = p.nextLoc();
-      std::string lxm = p.tokenString();
-      p.skip();
-      if (lxm[0] != 'x') {
-        p.fatalAt(at,"syntax error in dimension constant");
-      }
-      size_t off = 0;
-      while (off < lxm.size()) {
-        if (lxm[off] != 'x') {
-          at.column += (uint32_t)off;
-          at.offset += (uint32_t)off;
-          p.fatalAt(at,"syntax error in dimension constant");
-        }
-        off++;
-        size_t end = off;
-        while (end < lxm.size() && isdigit(lxm[end]))
-          end++;
-        if (end == off) {
-          // it must be a new dimension
-          // 2048x1024x(...)
-          //          ^
-          parseDimensionExpressions(p, s, dims);
-          return;
-        } else {
-          // dimension is embedded in identifier
-          // 2048x1024...
-          //     ^^^^^
-          try {
-            auto val = (size_t)std::strtoull(
-              lxm.substr(off,end-off).c_str(),nullptr,10);
-            loc this_int = at;
-            this_int.column += (uint32_t)off;
-            this_int.offset += (uint32_t)off;
-            this_int.extent = (uint32_t)(end - off);
-            dims.push_back(new init_spec_int(this_int, val));
-            off = end;
-          } catch (...) {
-            at.offset += (uint32_t)off;
-            at.column += (uint32_t)off;
-            p.fatalAt(at,"syntax error in dimension constant");
-          }
-          // 2048x1024 x16x32
-          //           ^^^^
-          // 2048x1024 x16x(32)
-          //           ^^^^
-          // 2048x1024 x16
-          //           ^^^
-          // bail to the top loop and start the next token
-          // that will handle expressions or fused numbers
-          if (off == lxm.size())
-            break;
-          // OTHERWISE
-          // we are still within the same identifier token and hoping for
-          // the next constant
-          //
-          // 2048x1024x16
-          //          ^^^
-          //   => next iteration of the innermost loop
-          //
-          // 2048x1024x(16)
-          //          ^
-          //   => next iteration of this while will break out
-          //
-        }
-      } // while identifier
-    } // while looking at successive identifiers
-  } // if
-}
-
-// Three full forms
-// Full form:                   #1`path/foo.cl`kernel<128,16>(...)
-// Partially applied program:   BAR`baz<1024,128>(...)
-// Paritally applied kernel:    FOO<1024,128>(...)
-//
-// static void parseDispatchStatement####(parser &p, script &s, dispatch_spec &ds)
-static void parseDispatchStatementDimensions(
-  parser &p,
-  script &s,
-  dispatch_spec &ds)
-{
-  // #1`path/foo.cl`kernel<1024x1024>(...)
-  //                      ^^^^^^^^^^^
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //                      ^^^^^^^^^^^^^^^^^
-  p.consume(LANGLE);
-
-  if (p.lookingAtIdentEq("nullptr") || p.lookingAtIdentEq("NULL"))
-    p.fatal(p.tokenString(), " not allowed for global dimensions");
-  loc at = p.nextLoc();
-  parseDimensionExpressions(p, s, ds.global_size);
-  if (p.consumeIf(COMMA)) {
-    if (!p.consumeIfIdentEq("nullptr") && !p.consumeIfIdentEq("NULL"))
-      parseDimensionExpressions(p, s, ds.local_size);
-  }
-  if (!ds.local_size.empty() &&
-    ds.global_size.size() != ds.local_size.size())
+  init_spec_atom *parseInitAtomAdd()
   {
-    at.extend_to(p.nextLoc());
-    p.fatalAt(at, "global and local sizes have different dimensions");
-  }
-
-  p.consume(RANGLE);
-}
-
-// #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
-//                                 ^^^^^^^^^^^^^
-static void parseDispatchStatementArguments(
-  parser &p,
-  script &s,
-  dispatch_spec &ds)
-{
-  p.consume(LPAREN);
-  while (!p.lookingAt(RPAREN)) {
-    init_spec *is = parseInit(p,s);
-    if (is->skind == init_spec::IS_SYM) {
-      // make a reference argument
-      ds.arguments.emplace_back(
-        is->defined_at,
-        ((const init_spec_symbol *)is)->identifier,
-        nullptr);
-      delete is; // delete the old object
-    } else {
-      // immediate value
-      ds.arguments.push_back(is);
+    init_spec_atom *e = parseInitAtomMul();
+    while (lookingAt(ADD) || lookingAt(SUB)) {
+      const auto &op = lookingAt(ADD) ?
+        *init_spec_bex::lookup_op("+") :
+        *init_spec_bex::lookup_op("-");
+      skip();
+      init_spec_atom *t = parseInitAtomMul();
+      e = new init_spec_bex(op, e, t);
     }
-    if (!p.consumeIf(COMMA))
-      break;
+    return e;
   }
-  p.consume(RPAREN);
-  ds.defined_at.extend_to(p.nextLoc());
-}
+  init_spec_atom *parseInitAtomShift()
+  {
+    init_spec_atom *e = parseInitAtomAdd();
+    while (lookingAt(LSH) || lookingAt(RSH)) {
+      const auto &op = lookingAt(LSH) ?
+        *init_spec_bex::lookup_op("<<") :
+        *init_spec_bex::lookup_op(">>");
+      skip();
+      init_spec_atom *t = parseInitAtomAdd();
+      e = new init_spec_bex(op, e, t);
+    }
+    return e;
+  }
+  init_spec_atom *parseInitAtomBitwiseAND()
+  {
+    init_spec_atom *e = parseInitAtomShift();
+    while (consumeIf(AMP)) {
+      init_spec_atom *t = parseInitAtomShift();
+      e = new init_spec_bex(*init_spec_bex::lookup_op("&"), e, t);
+    }
+    return e;
+  }
+  init_spec_atom *parseInitAtomBitwiseXOR()
+  {
+    init_spec_atom *e = parseInitAtomBitwiseAND();
+    while (consumeIf(CIRC)) {
+      init_spec_atom *t = parseInitAtomBitwiseAND();
+      e = new init_spec_bex(*init_spec_bex::lookup_op("^"), e, t);
+    }
+    return e;
+  }
+  init_spec_atom *parseInitAtomBitwiseOR()
+  {
+    init_spec_atom *e = parseInitAtomBitwiseXOR();
+    while (consumeIf(PIPE)) {
+      init_spec_atom *t = parseInitAtomBitwiseXOR();
+      e = new init_spec_bex(*init_spec_bex::lookup_op("|"), e, t);
+    }
+    return e;
+  }
+  init_spec_atom *parseInitAtom()
+  {
+    return parseInitAtomBitwiseOR();
+  }
 
-// #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
-//                                               ^^^^^^^^^^^^^^^^^^^^^^
-static void parseDispatchStatementWhereClause(
-  parser &p,
-  script &s,
-  dispatch_spec &ds,
-  let_spec *enclosing_let)
-{
-  auto hasParam =
-    [&] (std::string nm) {
+  init_spec *parseInit()
+  {
+    auto l = nextLoc();
+    init_spec_atom *e = parseInitAtom();
+
+    if (consumeIf(COLON)) {
+      // memory initializer
+      init_spec_mem *m = new init_spec_mem(l);
+      m->root = e;
+      if (consumeIf(LBRACK)) {
+        init_spec_atom *de = parseInitAtom();
+        m->dimension = de;
+        consume(RBRACK);
+      }
+      // attributes
+      if (!lookingAt(IDENT)) {
+        fatal("expected buffer/image attributes");
+      }
+      auto s = tokenString();
+      skip();
+      for (size_t i = 0; i < s.size(); i++) {
+        auto setTx = [&](init_spec_mem::transfer t) {
+          if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID) {
+            fatalAt(l, "memory transfer respecification");
+          }
+          m->transfer_properties = t;
+        };
+
+        switch (s[i]) {
+        case 'r':
+          m->access_properties = (init_spec_mem::access)(
+            m->access_properties |
+            init_spec_mem::access::INIT_SPEC_MEM_READ);
+          break;
+        case 'w':
+          m->access_properties = (init_spec_mem::access)(
+            m->access_properties |
+            init_spec_mem::access::INIT_SPEC_MEM_WRITE);
+          break;
+        case 's': // SVM
+          if (i < s.size() - 1) {
+            i++;
+            switch (s[i]) {
+            case 'c':
+            case 'f':
+              if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID)
+                fatalAt(l,
+                  "invalid svm memory attribute (must be :..sc.. or :..sf..)");
+              setTx(s[i] == 'c' ?
+                init_spec_mem::transfer::TX_SVM_COARSE :
+                init_spec_mem::transfer::TX_SVM_FINE);
+              break;
+            default:
+              // fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
+              // assume coarse if only one char given
+              setTx(init_spec_mem::transfer::TX_SVM_COARSE);
+            }
+          } else {
+            setTx(init_spec_mem::transfer::TX_SVM_COARSE);
+          }
+          break;
+        case 'm':
+          setTx(init_spec_mem::transfer::TX_MAP);
+          break;
+        case 'c':
+          setTx(init_spec_mem::transfer::TX_COPY);
+          break;
+          // SPECIFY: do we consider deprecating these after stable development
+          //          they are certainly nice for debugging
+        case 'P':
+          m->print_pre = true;
+          if (i + 1 < s.size() && ::isdigit(s[i+1])) {
+            i++;
+            m->print_pre_elems_per_row = 0;
+            if (i < s.size() && ::isdigit(s[i])) {
+              m->print_pre_elems_per_row =
+                10 * m->print_pre_elems_per_row + s[i] - '0';
+            }
+          }
+          break;
+        case 'p':
+          m->print_post = true;
+          if (i + 1 < s.size() && ::isdigit(s[i+1])) {
+            i++;
+            m->print_post_elems_per_row = 0;
+            if (i < s.size() && ::isdigit(s[i])) {
+              m->print_post_elems_per_row =
+                10 * m->print_post_elems_per_row + s[i] - '0';
+            }
+          }
+          break;
+        case 'S':
+          m->save_post = true;
+          break;
+        default:
+          // adjust the location to the middle of this token for
+          // the diganostic
+          l.column += (uint32_t)i;
+          l.offset += (uint32_t)i;
+          fatalAt(l, "invalid memory attribute");
+        }
+      }
+      if (m->transfer_properties == init_spec_mem::transfer::TX_INVALID)
+        m->transfer_properties = init_spec_mem::transfer::TX_COPY; // default to copy
+      m->defined_at.extend_to(nextLoc());
+      return m;
+    } else {
+      // regular primitive
+      return e;
+    }
+  }
+
+  template <typename T>
+  refable<T> dereferenceLet(
+    enum spec::spec_kind skind,
+    const char *what)
+  {
+    auto at = nextLoc();
+    std::string name = consumeIdent();
+    auto itr = s.let_bindings.find(name);
+    if (itr == s.let_bindings.end()) {
+      fatalAt(at, what, " not defined");
+    }
+    let_spec *ls = itr->second;
+    spec *rs = ls->value;
+    if (rs->skind != skind) {
+      std::stringstream ss;
+      ss << "identifier does not reference a " << what;
+      ss << " (defined on line " << rs->defined_at.line << ")";
+      fatalAt(at, ss.str());
+    }
+    return refable<T>(at, name, (T *)rs);
+  }
+
+  refable<init_spec_mem> dereferenceLetMem() {
+    refable<init_spec> rf =
+      dereferenceLet<init_spec>(spec::INIT_SPEC, "memory object");
+    if ((*rf).skind != init_spec::IS_MEM) {
+      fatalAt(rf.defined_at, "identifier does not reference a memory object");
+    }
+    return refable<init_spec_mem>(
+      rf.defined_at,
+      rf.identifier,
+      (init_spec_mem *)rf.value);
+  }
+
+  // Dimensions are a lexically evil mess.  We do some massive hacking to make
+  // it work, but this all requires the assumption that an identifier may not
+  // follow a dimension.  So syntax such as
+  //  1024x768 foo   [ILLEGAL in our language now]
+  //
+  // Previously I introduced a lexical pattern for dimensions, but I want to
+  // support arithmetic within them. (4*1024)x4*1024 so I have to deal with this
+  // mess at some point.
+  //
+  // EXAMPLE             PARSES AS
+  //
+  // 1024 x 25           INT(1024) IDENT("x")     INT
+  // 1024x256            INT(1024) IDENT("x256")
+  // 1024x256x3          INT(1024) IDENT("x256x3")
+  // 1024x256 x3         INT(1024) IDENT("x256x3") IDENT("x3")
+  // 1024x768x(2*4)      INT(1024) IDENT("x256x") EXPR
+  // (2*1024)x768 x 3    EXPR      IDENT("x768") IDENT("x") INT(3)
+  void parseDimensionExpressions(std::vector<init_spec_atom *> &dims) {
+    dims.push_back(parseInitAtom());
+    if (lookingAtIdentEq("x")) {
+      // EXPR IDENT("x") ...
+      skip();
+      parseDimensionExpressions(dims);
+    } else {
+      while (lookingAtIdent()) {
+        // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
+        //     ^^^^^^        ^^^^^             ^^^^
+        // need to split x768x3 into: "x 768 x 3"
+        loc at = nextLoc();
+        std::string lxm = tokenString();
+        skip();
+        if (lxm[0] != 'x') {
+          fatalAt(at, "syntax error in dimension constant");
+        }
+        size_t off = 0;
+        while (off < lxm.size()) {
+          if (lxm[off] != 'x') {
+            at.column += (uint32_t)off;
+            at.offset += (uint32_t)off;
+            fatalAt(at, "syntax error in dimension constant");
+          }
+          off++;
+          size_t end = off;
+          while (end < lxm.size() && isdigit(lxm[end]))
+            end++;
+          if (end == off) {
+            // it must be a new dimension
+            // 2048x1024x(...)
+            //          ^
+            parseDimensionExpressions(dims);
+            return;
+          } else {
+            // dimension is embedded in identifier
+            // 2048x1024...
+            //     ^^^^^
+            try {
+              auto val = (size_t)std::strtoull(
+                lxm.substr(off, end-off).c_str(), nullptr, 10);
+              loc this_int = at;
+              this_int.column += (uint32_t)off;
+              this_int.offset += (uint32_t)off;
+              this_int.extent = (uint32_t)(end - off);
+              dims.push_back(new init_spec_int(this_int, val));
+              off = end;
+            } catch (...) {
+              at.offset += (uint32_t)off;
+              at.column += (uint32_t)off;
+              fatalAt(at, "syntax error in dimension constant");
+            }
+            // 2048x1024 x16x32
+            //           ^^^^
+            // 2048x1024 x16x(32)
+            //           ^^^^
+            // 2048x1024 x16
+            //           ^^^
+            // bail to the top loop and start the next token
+            // that will handle expressions or fused numbers
+            if (off == lxm.size())
+              break;
+            // OTHERWISE
+            // we are still within the same identifier token and hoping for
+            // the next constant
+            //
+            // 2048x1024x16
+            //          ^^^
+            //   => next iteration of the innermost loop
+            //
+            // 2048x1024x(16)
+            //          ^
+            //   => next iteration of this while will break out
+            //
+          }
+        } // while identifier
+      } // while looking at successive identifiers
+    } // if
+  }
+
+  // Three full forms
+  // Full form:                   #1`path/foo.cl`kernel<128,16>(...)
+  // Partially applied program:   BAR`baz<1024,128>(...)
+  // Paritally applied kernel:    FOO<1024,128>(...)
+  //
+  // void parseDispatchStatement####(parser &p, script &s, dispatch_spec &ds)
+  void parseDispatchStatementDimensions(dispatch_spec &ds) {
+    // #1`path/foo.cl`kernel<1024x1024>(...)
+    //                      ^^^^^^^^^^^
+    // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+    //                      ^^^^^^^^^^^^^^^^^
+    consume(LANGLE);
+
+    if (lookingAtIdentEq("nullptr") || lookingAtIdentEq("NULL"))
+      fatal(tokenString(), " not allowed for global dimensions");
+    loc at = nextLoc();
+    parseDimensionExpressions(ds.global_size);
+    if (consumeIf(COMMA)) {
+      if (!consumeIfIdentEq("nullptr") && !consumeIfIdentEq("NULL"))
+        parseDimensionExpressions(ds.local_size);
+    }
+    if (!ds.local_size.empty() &&
+      ds.global_size.size() != ds.local_size.size())
+    {
+      at.extend_to(nextLoc());
+      fatalAt(at, "global and local sizes have different dimensions");
+    }
+
+    consume(RANGLE);
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+  //                                 ^^^^^^^^^^^^^
+  void parseDispatchStatementArguments(dispatch_spec &ds) {
+    consume(LPAREN);
+    while (!lookingAt(RPAREN)) {
+      init_spec *is = parseInit();
+      if (is->skind == init_spec::IS_SYM) {
+        // make a reference argument
+        ds.arguments.emplace_back(
+          is->defined_at,
+          ((const init_spec_symbol *)is)->identifier,
+          nullptr);
+        delete is; // delete the old object
+      } else {
+        // immediate value
+        ds.arguments.push_back(is);
+      }
+      if (!consumeIf(COMMA))
+        break;
+    }
+    consume(RPAREN);
+    ds.defined_at.extend_to(nextLoc());
+  }
+
+  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+  //                                               ^^^^^^^^^^^^^^^^^^^^^^
+  void parseDispatchStatementWhereClause(
+    dispatch_spec &ds,
+    let_spec *enclosing_let)
+  {
+    auto hasParam =
+      [&](std::string nm) {
       if (enclosing_let)
         for (const std::string &arg : enclosing_let->params)
           if (arg == nm)
@@ -1283,495 +1266,514 @@ static void parseDispatchStatementWhereClause(
       return false;
     };
 
-  // resolve references after the where clause
-  if (p.consumeIfIdentEq("where")) {
-    while (p.lookingAt(IDENT)) {
-      auto loc = p.nextLoc();
-      auto name = p.consumeIdent("variable name");
+    // resolve references after the where clause
+    if (consumeIfIdentEq("where")) {
+      while (lookingAt(IDENT)) {
+        auto loc = nextLoc();
+        auto name = consumeIdent("variable name");
 
-      if (hasParam(name)) {
-        p.fatalAt(loc,"where binding shadows let parameter");
-      }
-      auto itr = s.let_bindings.find(name);
-      if (itr != s.let_bindings.end()) {
-        p.warningAt(loc,
-          "where binding shadows let binding (from line ",
-          itr->second->defined_at.line, ")");
-      }
-      for (auto w : ds.where_bindings)
-        if (std::get<0>(w) == name)
-          p.fatalAt(loc,"repeated where binding name");
-      p.consume(EQ);
-      init_spec *i = parseInit(p,s);
-      i->defined_at.extend_to(p.nextLoc());
-      ds.where_bindings.emplace_back(name,i);
-      bool where_used_at_least_once = false;
-      for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
-        if (ds.arguments[ai].value == nullptr &&
-          ds.arguments[ai].identifier == name)
-        {
-          ds.arguments[ai].value = i;
-          where_used_at_least_once = true;
+        if (hasParam(name)) {
+          fatalAt(loc, "where binding shadows let parameter");
+        }
+        auto itr = s.let_bindings.find(name);
+        if (itr != s.let_bindings.end()) {
+          warningAt(loc,
+            "where binding shadows let binding (from line ",
+            itr->second->defined_at.line, ")");
+        }
+        for (auto w : ds.where_bindings)
+          if (std::get<0>(w) == name)
+            fatalAt(loc, "repeated where binding name");
+        consume(EQ);
+        init_spec *i = parseInit();
+        i->defined_at.extend_to(nextLoc());
+        ds.where_bindings.emplace_back(name, i);
+        bool where_used_at_least_once = false;
+        for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
+          if (ds.arguments[ai].value == nullptr &&
+            ds.arguments[ai].identifier == name)
+          {
+            ds.arguments[ai].value = i;
+            where_used_at_least_once = true;
+          }
+        }
+        if (!where_used_at_least_once) {
+          warningAt(loc, "where binding never used");
+        }
+        if (lookingAtSeq(COMMA, IDENT)) {
+          skip();
+        } else {
+          break;
         }
       }
-      if (!where_used_at_least_once) {
-        p.warningAt(loc, "where binding never used");
-      }
-      if (p.lookingAtSeq(COMMA,IDENT)) {
-        p.skip();
-      } else {
-        break;
+    }
+
+    // fail if anything is not defined
+    for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
+      if (ds.arguments[ai].value == nullptr) {
+        const auto &id = ds.arguments[ai].identifier;
+        if (hasParam(id)) {
+          // parameter passed to this let
+          // e.g. let F(X) = ....<...>(...,X,...);
+          auto &prs = enclosing_let->param_uses[id];
+          prs.push_back(&ds.arguments[ai]);
+        } else {
+          // capture from the let binding above this statement
+          auto itr = s.let_bindings.find(id);
+          if (itr == s.let_bindings.end()) {
+            fatalAt(ds.arguments[ai].defined_at, "undefined symbol");
+          }
+          let_spec *ls = itr->second;
+          if (ls->value->skind != spec::INIT_SPEC) {
+            fatalAt(ds.arguments[ai].defined_at,
+              "symbol does not refer to a kernel argument (see line ",
+              ls->defined_at.line,
+              ")");
+          }
+          // otherwise make the replacement
+          ds.arguments[ai].value = (init_spec *)ls->value; // replace with value
+        }
       }
     }
   }
 
-  // fail if anything is not defined
-  for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
-    if (ds.arguments[ai].value == nullptr) {
-      const auto &id = ds.arguments[ai].identifier;
-      if (hasParam(id)) {
-        // parameter passed to this let
-        // e.g. let F(X) = ....<...>(...,X,...);
-        auto &prs = enclosing_let->param_uses[id];
-        prs.push_back(&ds.arguments[ai]);
-      } else {
-        // capture from the let binding above this statement
-        auto itr = s.let_bindings.find(id);
-        if (itr == s.let_bindings.end()) {
-          p.fatalAt(ds.arguments[ai].defined_at,"undefined symbol");
+  // #1`path/foo.cl
+  // #1:a`path/foo.cl
+  program_spec *parseDispatchStatementDeviceProgramPart() {
+    device_spec dev(nextLoc());
+    if (consumeIf(HASH)) {
+      if (lookingAt(STRLIT) || lookingAt(IDENT)) {
+        if (lookingAt(STRLIT)) {
+          dev.setSource(tokenStringLiteral());
+        } else {
+          dev.setSource(tokenString());
         }
-        let_spec *ls = itr->second;
-        if (ls->value->skind != spec::INIT_SPEC) {
-          p.fatalAt(ds.arguments[ai].defined_at,
-            "symbol does not refer to a kernel argument (see line ",
-            ls->defined_at.line,
-            ")");
-        }
-        // otherwise make the replacement
-        ds.arguments[ai].value = (init_spec *)ls->value; // replace with value
-      }
-    }
-  }
-}
-
-// #1`path/foo.cl
-// #1:a`path/foo.cl
-static program_spec *parseDispatchStatementDeviceProgramPart(
-  parser &p,
-  script &s)
-{
-  device_spec dev(p.nextLoc());
-  if (p.consumeIf(HASH)) {
-    if (p.lookingAt(STRLIT) || p.lookingAt(IDENT)) {
-      if (p.lookingAt(STRLIT)) {
-        dev.setSource(p.tokenStringLiteral());
+        skip();
+      } else if (lookingAtInt()) {
+        dev.setSource(consumeIntegral<int32_t>("device index (integer)"));
       } else {
-        dev.setSource(p.tokenString());
+        fatal("invalid device specification");
       }
-      p.skip();
-    } else if (p.lookingAtInt()) {
-      dev.setSource(p.consumeIntegral<int32_t>("device index (integer)"));
+      if (consumeIf(COLON)) {
+        dev.instance = consumeIdent("queue identifier");
+      }
+      dev.defined_at.extend_to(nextLoc());
+      if (!lookingAt(BACKTICK))
+        fatal("expected ` (dispatch program separator) or "
+          "# (queue identifier)");
+      consume(BACKTICK);
     } else {
-      p.fatal("invalid device specification");
+      dev.skind = device_spec::BY_DEFAULT;
     }
-    if (p.consumeIf(COLON)) {
-      dev.instance = p.consumeIdent("queue identifier");
+
+    // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+    //    ^^^^^^^^^^^
+    // #GTX`"foo/spaces in path/prog.cl"`kernel<...>(...)
+    //      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    program_spec *ps = new program_spec(nextLoc());
+    ps->device = dev;
+    if (lookingAt(STRLIT)) {
+      ps->path = tokenStringLiteral(); skip();
+    } else {
+      ps->path = consumeToChar("[`");
     }
-    dev.defined_at.extend_to(p.nextLoc());
-    if (!p.lookingAt(BACKTICK))
-      p.fatal("expected ` (dispatch program separator) or "
-        "# (queue identifier)");
-    p.consume(BACKTICK);
-  } else {
-    dev.skind = device_spec::BY_DEFAULT;
+
+    // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
+    //               ^^^^^^^^^^^^
+    if (consumeIf(LBRACK)) {
+      ps->build_options = consumeToChar("]");
+      consume(RBRACK);
+    }
+    ps->defined_at.extend_to(nextLoc());
+
+    return ps;
   }
 
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //    ^^^^^^^^^^^
-  // #GTX`"foo/spaces in path/prog.cl"`kernel<...>(...)
-  //      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  program_spec *ps = new program_spec(p.nextLoc());
-  ps->device = dev;
-  if (p.lookingAt(STRLIT)) {
-    ps->path = p.tokenStringLiteral(); p.skip();
-  } else {
-    ps->path = consumeToChar(p, "[`");
+  kernel_spec *parseDispatchStatementKernelPart(program_spec *ps) {
+    // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+    //                ^^^^^^
+    kernel_spec *ks = new kernel_spec(ps);
+    if (lookingAt(IDENT)) {
+      ks->name = tokenString(); skip();
+    }
+    ks->defined_at.extend_to(nextLoc());
+    ks->program = ps;
+    return ks;
   }
 
-  // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
-  //               ^^^^^^^^^^^^
-  if (p.consumeIf(LBRACK)) {
-    ps->build_options = consumeToChar(p, "]");
-    p.consume(RBRACK);
-  }
-  ps->defined_at.extend_to(p.nextLoc());
 
-  return ps;
-}
-
-static kernel_spec *parseDispatchStatementKernelPart(
-  program_spec *ps, parser &p, script &s)
-{
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //                ^^^^^^
-  kernel_spec *ks = new kernel_spec(ps);
-  if (p.lookingAt(IDENT)) {
-    ks->name = p.tokenString(); p.skip();
-  }
-  ks->defined_at.extend_to(p.nextLoc());
-  ks->program = ps;
-  return ks;
-}
-
-
-// allows for default devices:
-//   EASY CSE:  #1`....
-//              ^ yes!
-//   HARD CASE: long/path with/spaces/foo.cl[long args]`kernel<...>()
-//                                          ^ YES!
-//              long/path with/spaces/foo.cl`kernel<...>()
-//                                          ^ YES!
-static bool lookingAtImmediateDispatchStatement(parser &p) {
-    if (p.lookingAt(HASH))
+  // allows for default devices:
+  //   EASY CSE:  #1`....
+  //              ^ yes!
+  //   HARD CASE: long/path with/spaces/foo.cl[long args]`kernel<...>()
+  //                                          ^ YES!
+  //              long/path with/spaces/foo.cl`kernel<...>()
+  //                                          ^ YES!
+  bool lookingAtImmediateDispatchStatement() const {
+    if (lookingAt(HASH))
       return true;
-    if (p.lookingAtIdentEq("let"))
+    if (lookingAtIdentEq("let"))
       return false; // let foo = ...;
-    if (p.lookingAtSeq(IDENT, LPAREN))
+    if (lookingAtSeq(IDENT, LPAREN))
       return false; // e.g. seq(...); print(...)
     int i = 1;
-    while (i < (int)p.tokensLeft()) {
-      if (p.lookingAt(BACKTICK,i) || // correct dispatch
-        p.lookingAt(LANGLE,i) || // malformed dispatch   foo.cl`bar<1024>(...)
+    while (i < (int)tokensLeft()) {
+      if (lookingAt(BACKTICK, i) || // correct dispatch
+        lookingAt(LANGLE, i) || // malformed dispatch   foo.cl`bar<1024>(...)
                                  //                            ^
-        p.lookingAt(LBRACK,i)) // malformed dispatchd    foo.cl[...]`bar(...)
+        lookingAt(LBRACK, i)) // malformed dispatchd    foo.cl[...]`bar(...)
                                //                              ^
       {
         return true;
-      } else if (p.lookingAt(NEWLINE,i) || // malformed statement
-        p.lookingAt(SEMI,i) || // malformed statement    .....; ....
-        p.lookingAt(EQ,i)) // malformed let possibly     foo=BAR
+      } else if (lookingAt(NEWLINE, i) || // malformed statement
+        lookingAt(SEMI, i) || // malformed statement    .....; ....
+        lookingAt(EQ, i)) // malformed let possibly     foo=BAR
       {
         break;
       }
       i++;
     }
     return false;
-}
-
-static dispatch_spec *parseDispatchStatement(parser &p, script &s)
-{
-  auto loc = p.nextLoc();
-  dispatch_spec *ds = new dispatch_spec(loc);
-  if (lookingAtImmediateDispatchStatement(p)) {
-    if (p.lookingAtSeq(IDENT,RANGLE)) {
-      // named kernel invocation
-      // KERNEL<...>(...)
-      ds->kernel =
-        dereferenceLet<kernel_spec>(p,s,spec::KERNEL_SPEC,"kernel");
-    } else if (p.lookingAtSeq(IDENT,BACKTICK,IDENT,LANGLE)) {
-      // PROG`kernel<...>(...)
-      // 000012222223...
-      refable<program_spec> ps =
-        dereferenceLet<program_spec>(p,s,spec::PROGRAM_SPEC,"program");
-      p.consume(BACKTICK);
-      std::string kernel_name = p.consumeIdent("kernel name");
-      ds->kernel = new kernel_spec(ps);
-    } else {
-      // FULLY immediate dispatch
-      //
-      // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
-      // ^^^^^^^^^^^^^^^^^^^^^^^
-      program_spec *ps = parseDispatchStatementDeviceProgramPart(p,s);
-      // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
-      //                        ^
-      p.consume(BACKTICK);
-      // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-      //                ^^^^^^
-      ds->kernel = parseDispatchStatementKernelPart(ps, p, s);
-    }
-  } else {
-    p.fatal("expected statement");
   }
 
-  // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
-  //                      ^^^^^^^^^^^^^^^^^
-  parseDispatchStatementDimensions(p,s,*ds);
-
-  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where ...
-  //                                 ^^^^^^^^^^^^^^^^^^^^^^^
-  parseDispatchStatementArguments(p,s,*ds);
-  // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
-  //                                               ^^^^^^^^^^^^^^^^^^^^^^
-  parseDispatchStatementWhereClause(p,s,*ds,nullptr);
-  ds->defined_at.extend_to(p.nextLoc());
-
-  return ds;
-}
-
-static init_spec_symbol *parseSymbol(parser &p)
-{
-  auto loc = p.nextLoc();
-  if (p.lookingAtIdent()) {
-    auto ident = p.tokenString();
-    return new init_spec_symbol(loc, ident);
-  } else {
-    p.fatal("expected identifier");
-    return nullptr;
-  }
-}
-
-// Given an arugment; we resolve symbol the symbol to a let target (or fail)
-static refable<init_spec> parseInitResolved(parser &p, script &s)
-{
-  init_spec *is = parseInit(p,s);
-  if (is->skind == init_spec::IS_SYM) {
-    // make a reference argument
-    auto itr = s.let_bindings.find(((const init_spec_symbol *)is)->identifier);
-    if (itr == s.let_bindings.end()) {
-      p.fatalAt(is->defined_at,"unbound identifier");
-    } else if (itr->second->value->skind != spec::INIT_SPEC ||
-      ((init_spec *)itr->second->value)->skind != init_spec::IS_MEM)
-    {
-      p.fatalAt(is->defined_at,"identifier does not reference a memory object");
-    }
-    refable<init_spec> ris(
-      is->defined_at,
-      ((const init_spec_symbol *)is)->identifier,
-      (init_spec_mem *)itr->second->value);
-    delete is; // delete the old object
-    return ris;
-  } else {
-    // immediate value
-    return refable<init_spec>(is);
-  }
-}
-
-static bool isFloating(const type &elem_type) {
-  if (elem_type.is<type_struct>()) {
-    const type_struct &s = elem_type.as<type_struct>();
-    return s.is_uniform() && isFloating(*s.elements[0]);
-  }
-  return elem_type.is<type_num>() &&
-    elem_type.as<type_num>().skind == type_num::FLOATING;
-}
-
-// EXAMPLES
-// barrier
-// diff(X,Y) | diff<float>(X,Y) | diff<float,0.001> | diff<double2,0.0001>
-// print(X) | print<float>(X)
-// save(sym,X)
-static bool parseBuiltIn(parser &p, script &s)
-{
-  auto loc = p.nextLoc();
-  if (p.lookingAtIdentEq("barrier")) {
-      s.statement_list.statements.push_back(new barrier_spec(loc));
-      p.skip();
-      if (p.consumeIf(LPAREN)) // optional ()
-        p.consume(RPAREN);
-    s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
-    return true;
-  } else if (p.lookingAtIdentEq("diff")) {
-    p.skip();
-    const type *elem_type = nullptr;
-    std::optional<double> max_diff;
-    if (p.consumeIf(LANGLE)) {
-      auto at = p.nextLoc();
-      // HACK: need to know the pointer size; assume 64b for now
-      // technically we should probably just save the string and deal with
-      // it during compilation once devices are matched etc...
-      const size_t HACK = 8;
-      elem_type = lookupBuiltinType(p.consumeIdent("type name"),HACK);
-      if (p.consumeIf(COMMA)) {
-        auto diff_loc = p.nextLoc();
-        max_diff = p.consumeFloat("floating point (max diff)");
-        if (!isFloating(*elem_type)) {
-          p.fatalAt(diff_loc, "diff max error requires floating point type");
-        }
-      }
-      p.consume(RANGLE);
-    }
-    p.consume(LPAREN);
-    auto ref = parseInitResolved(p,s);
-    p.consume(COMMA);
-    if (!p.lookingAt(IDENT))
-      p.fatal("expected reference to memory object");
-    refable<init_spec_mem> r_sut = dereferenceLetMem(p, s);
-    p.consume(RPAREN);
-    loc.extend_to(p.nextLoc());
-    diff_spec *ds = new diff_spec(loc, ref, r_sut, elem_type);
-    s.statement_list.statements.push_back(ds);
-    if (max_diff.has_value()) {
-      ds->max_diff = max_diff.value();
-    }
-    return true;
-  } else if (p.lookingAtIdentEq("print")) {
-    // print(X)
-    // print<TYPE>(X)
-    // print<INT>(X)
-    // print<TYPE,INT>(X)
-    p.skip();
-    const type *elem_type = nullptr;
-    int elems_per_row = 0;
-    if (p.consumeIf(LANGLE)) {
-      if (p.lookingAtInt()) {
-        elems_per_row = p.consumeIntegral<int>("elements per column");
+  dispatch_spec *parseDispatchStatement()
+  {
+    auto loc = nextLoc();
+    dispatch_spec *ds = new dispatch_spec(loc);
+    if (lookingAtImmediateDispatchStatement()) {
+      if (lookingAtSeq(IDENT, RANGLE)) {
+        // named kernel invocation
+        // KERNEL<...>(...)
+        ds->kernel =
+          dereferenceLet<kernel_spec>(spec::KERNEL_SPEC, "kernel");
+      } else if (lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE)) {
+        // PROG`kernel<...>(...)
+        // 000012222223...
+        refable<program_spec> ps =
+          dereferenceLet<program_spec>(spec::PROGRAM_SPEC, "program");
+        consume(BACKTICK);
+        std::string kernel_name = consumeIdent("kernel name");
+        ds->kernel = new kernel_spec(ps);
       } else {
-        // HACK: we can't know the bits per ptr until we unify the
-        // arguments with the owning context.
-        const size_t HACK = 8;
-        elem_type = lookupBuiltinType(p.consumeIdent("type name"),HACK);
-        if (p.consumeIf(COMMA)) {
-          elems_per_row = p.consumeIntegral<int>("elements per column");
-        }
+        // FULLY immediate dispatch
+        //
+        // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
+        // ^^^^^^^^^^^^^^^^^^^^^^^
+        program_spec *ps = parseDispatchStatementDeviceProgramPart();
+        // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
+        //                        ^
+        consume(BACKTICK);
+        // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+        //                ^^^^^^
+        ds->kernel = parseDispatchStatementKernelPart(ps);
       }
-      p.consume(RANGLE);
+    } else {
+      fatal("expected statement");
     }
-    p.consume(LPAREN);
-    if (!p.lookingAt(IDENT))
-      p.fatal("expected reference to memory object");
-    refable<init_spec_mem> r_surf = dereferenceLetMem(p,s);
-    p.consume(RPAREN);
-    loc.extend_to(p.nextLoc());
-    s.statement_list.statements.push_back(
-      new print_spec(loc, r_surf, elem_type, elems_per_row));
-    return true;
-  } else if (p.lookingAtIdentEq("save")) {
-    p.skip();
-    p.consume(LPAREN);
-    if (!p.lookingAt(STRLIT))
-      p.fatal("expected file name (string literal)");
-    std::string file = p.tokenStringLiteral();
-    p.skip();
-    p.consume(COMMA);
-    refable<init_spec_mem> r_surf = dereferenceLetMem(p,s);
-    p.consume(RPAREN);
-    loc.extend_to(p.nextLoc());
-    s.statement_list.statements.push_back(new save_spec(loc, file, r_surf));
-    return true;
-  } else {
-    return false;
-  }
-}
 
-// X=...
-static void parseLetBinding(parser &p, script &s)
-{
-  if (!p.lookingAt(IDENT)) {
-    p.fatal("expected identifier");
+    // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+    //                      ^^^^^^^^^^^^^^^^^
+    parseDispatchStatementDimensions(*ds);
+
+    // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where ...
+    //                                 ^^^^^^^^^^^^^^^^^^^^^^^
+    parseDispatchStatementArguments(*ds);
+    // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
+    //                                               ^^^^^^^^^^^^^^^^^^^^^^
+    parseDispatchStatementWhereClause(*ds, nullptr);
+    ds->defined_at.extend_to(nextLoc());
+
+    return ds;
   }
-  auto at = p.nextLoc();
-  auto name = p.tokenString(); // X
-  if (s.let_bindings.find(name) != s.let_bindings.end()) {
-    p.fatal(name, ": redefinition of let binding");
-  }
-  p.skip();      // X
-  let_spec *ls = new let_spec(at, name);
-  if (p.consumeIf(LPAREN)) {
-    // let F(X,Y) = #1`foo.cl`bar<...>(X,Y)
-    if (!p.lookingAt(RPAREN)) {
-      do {
-        ls->params.push_back(p.consumeIdent());
-      } while (p.consumeIf(COMMA));
-      p.consume(RPAREN);
-      p.fatal("let arguments not supported yet");
+
+  init_spec_symbol *parseSymbol(parser &p)
+  {
+    auto loc = nextLoc();
+    if (lookingAtIdent()) {
+      auto ident = tokenString();
+      return new init_spec_symbol(loc, ident);
+    } else {
+      fatal("expected identifier");
+      return nullptr;
     }
   }
-  p.consume(EQ); // =
 
-  spec *value = nullptr;
-  loc value_loc = p.nextLoc();
-  bool is_init_expr_start =
-    p.lookingAtFloat() ||
-    p.lookingAtInt() ||
-    p.lookingAt(LPAREN) ||
-    p.lookingAtIdentEq("seq") ||
-    p.lookingAtIdentEq("random") ||
-    p.lookingAtIdentEq("file") ||
-    p.lookingAtIdentEq("image");
-  if (!is_init_expr_start && p.lookingAtSeq(IDENT, LANGLE)) {
-    // let D = K<1024>(....) where ...
-    dispatch_spec *ds = new dispatch_spec(value_loc);
-    ds->kernel = dereferenceLet<kernel_spec>(p, s, spec::KERNEL_SPEC, "kernel");
-    parseDispatchStatementDimensions(p, s, *ds);
-    parseDispatchStatementArguments(p, s, *ds);
-    parseDispatchStatementWhereClause(p, s, *ds, ls);
-    ds->defined_at.extend_to(p.nextLoc());
-    value = ds;
-  } else if (!is_init_expr_start && p.lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE)) {
-    // let D = P`kernel<...>(...) where ...
-    dispatch_spec *ds = new dispatch_spec(value_loc);
-    refable<program_spec> rps =
-      dereferenceLet<program_spec>(p, s, spec::PROGRAM_SPEC, "programs");
-    p.consume(BACKTICK);
-    ds->kernel = new kernel_spec(rps.value);
-    parseDispatchStatementDimensions(p, s, *ds);
-    parseDispatchStatementArguments(p, s, *ds);
-    parseDispatchStatementWhereClause(p, s, *ds, ls);
-    ds->defined_at.extend_to(p.nextLoc());
-    value = ds;
-  } else if (!is_init_expr_start && lookingAtImmediateDispatchStatement(p)) {
-    // let P = #1`foo/bar.cl
-    // let K = foo/bar.cl`kernel
-    // let D = foo/bar.cl`kernel<...>(...) where ...
-    program_spec *ps = parseDispatchStatementDeviceProgramPart(p, s);
-    if (p.consumeIf(BACKTICK)) {
-      // includes the kernel
-      kernel_spec *ks = parseDispatchStatementKernelPart(ps, p, s);
-      ks->program = ps;
-      if (p.lookingAt(LANGLE)) {
-        // let D = ...<...>(...) where ...
-        dispatch_spec *ds = new dispatch_spec(value_loc);
-        ds->kernel = ks;
-        parseDispatchStatementDimensions(p, s, *ds);
-        parseDispatchStatementArguments(p, s, *ds);
-        parseDispatchStatementWhereClause(p, s, *ds, ls);
-        ds->defined_at.extend_to(p.nextLoc());
-        value = ds;
+  // Given an arugment; we resolve symbol the symbol to a let target (or fail)
+  refable<init_spec> parseInitResolved()
+  {
+    init_spec *is = parseInit();
+    if (is->skind == init_spec::IS_SYM) {
+      // make a reference argument
+      auto itr = s.let_bindings.find(((const init_spec_symbol *)is)->identifier);
+      if (itr == s.let_bindings.end()) {
+        fatalAt(is->defined_at, "unbound identifier");
+      } else if (itr->second->value->skind != spec::INIT_SPEC ||
+        ((init_spec *)itr->second->value)->skind != init_spec::IS_MEM)
+      {
+        fatalAt(is->defined_at, "identifier does not reference a memory object");
+      }
+      refable<init_spec> ris(
+        is->defined_at,
+        ((const init_spec_symbol *)is)->identifier,
+        (init_spec_mem *)itr->second->value);
+      delete is; // delete the old object
+      return ris;
+    } else {
+      // immediate value
+      return refable<init_spec>(is);
+    }
+  }
+
+  static bool isFloating(const type &elem_type) {
+    if (elem_type.is<type_struct>()) {
+      const type_struct &s = elem_type.as<type_struct>();
+      return s.is_uniform() && isFloating(*s.elements[0]);
+    }
+    return elem_type.is<type_num>() &&
+      elem_type.as<type_num>().skind == type_num::FLOATING;
+  }
+
+  // EXAMPLES
+  // barrier
+  // diff(X,Y) | diff<float>(X,Y) | diff<float,0.001> | diff<double2,0.0001>
+  // print(X) | print<float>(X)
+  // save(sym,X)
+  bool parseBuiltIn()
+  {
+    auto loc = nextLoc();
+    if (lookingAtIdentEq("barrier")) {
+      s.statement_list.statements.push_back(new barrier_spec(loc));
+      skip();
+      if (consumeIf(LPAREN)) // optional ()
+        consume(RPAREN);
+      s.statement_list.statements.back()->defined_at.extend_to(nextLoc());
+      return true;
+    } else if (lookingAtIdentEq("diff")) {
+      skip();
+      const type *elem_type = nullptr;
+      std::optional<double> max_diff;
+      if (consumeIf(LANGLE)) {
+        auto at = nextLoc();
+        // HACK: need to know the pointer size; assume 64b for now
+        // technically we should probably just save the string and deal with
+        // it during compilation once devices are matched etc...
+        const size_t HACK = 8;
+        elem_type = lookupBuiltinType(consumeIdent("type name"), HACK);
+        if (consumeIf(COMMA)) {
+          auto diff_loc = nextLoc();
+          max_diff = consumeFloat("floating point (max diff)");
+          if (!isFloating(*elem_type)) {
+            fatalAt(diff_loc, "diff max error requires floating point type");
+          }
+        }
+        consume(RANGLE);
+      }
+      consume(LPAREN);
+      auto ref = parseInitResolved();
+      consume(COMMA);
+      if (!lookingAt(IDENT))
+        fatal("expected reference to memory object");
+      refable<init_spec_mem> r_sut = dereferenceLetMem();
+      consume(RPAREN);
+      loc.extend_to(nextLoc());
+      diff_spec *ds = new diff_spec(loc, ref, r_sut, elem_type);
+      s.statement_list.statements.push_back(ds);
+      if (max_diff.has_value()) {
+        ds->max_diff = max_diff.value();
+      }
+      return true;
+    } else if (lookingAtIdentEq("print")) {
+      // print(X)
+      // print<TYPE>(X)
+      // print<INT>(X)
+      // print<TYPE,INT>(X)
+      skip();
+      const type *elem_type = nullptr;
+      int elems_per_row = 0;
+      if (consumeIf(LANGLE)) {
+        if (lookingAtInt()) {
+          elems_per_row = consumeIntegral<int>("elements per column");
+        } else {
+          // HACK: we can't know the bits per ptr until we unify the
+          // arguments with the owning context.
+          const size_t HACK = 8;
+          elem_type = lookupBuiltinType(consumeIdent("type name"), HACK);
+          if (consumeIf(COMMA)) {
+            elems_per_row = consumeIntegral<int>("elements per column");
+          }
+        }
+        consume(RANGLE);
+      }
+      consume(LPAREN);
+      if (!lookingAt(IDENT))
+        fatal("expected reference to memory object");
+      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      consume(RPAREN);
+      loc.extend_to(nextLoc());
+      s.statement_list.statements.push_back(
+        new print_spec(loc, r_surf, elem_type, elems_per_row));
+      return true;
+    } else if (lookingAtIdentEq("save")) {
+      skip();
+      consume(LPAREN);
+      if (!lookingAt(STRLIT))
+        fatal("expected file name (string literal)");
+      std::string file = tokenStringLiteral();
+      skip();
+      consume(COMMA);
+      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      consume(RPAREN);
+      loc.extend_to(nextLoc());
+      s.statement_list.statements.push_back(new save_spec(loc, file, r_surf));
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // X=...
+  void parseLetBinding()
+  {
+    if (!lookingAt(IDENT)) {
+      fatal("expected identifier");
+    }
+    auto at = nextLoc();
+    auto name = tokenString(); // X
+    if (s.let_bindings.find(name) != s.let_bindings.end()) {
+      fatal(name, ": redefinition of let binding");
+    }
+    skip();      // X
+    let_spec *ls = new let_spec(at, name);
+    if (consumeIf(LPAREN)) {
+      // let F(X,Y) = #1`foo.cl`bar<...>(X,Y)
+      if (!lookingAt(RPAREN)) {
+        do {
+          ls->params.push_back(consumeIdent());
+        } while (consumeIf(COMMA));
+        consume(RPAREN);
+        fatal("let arguments not supported yet");
+      }
+    }
+    consume(EQ); // =
+
+    spec *value = nullptr;
+    loc value_loc = nextLoc();
+    bool is_init_expr_start =
+      lookingAtFloat() ||
+      lookingAtInt() ||
+      lookingAt(LPAREN) ||
+      lookingAtIdentEq("seq") ||
+      lookingAtIdentEq("random") ||
+      lookingAtIdentEq("file") ||
+      lookingAtIdentEq("image");
+    if (!is_init_expr_start && lookingAtSeq(IDENT, LANGLE)) {
+      // let D = K<1024>(....) where ...
+      dispatch_spec *ds = new dispatch_spec(value_loc);
+      ds->kernel = dereferenceLet<kernel_spec>(spec::KERNEL_SPEC, "kernel");
+      parseDispatchStatementDimensions(*ds);
+      parseDispatchStatementArguments(*ds);
+      parseDispatchStatementWhereClause(*ds, ls);
+      ds->defined_at.extend_to(nextLoc());
+      value = ds;
+    } else if (
+      !is_init_expr_start &&
+      lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE))
+    {
+      // let D = P`kernel<...>(...) where ...
+      dispatch_spec *ds = new dispatch_spec(value_loc);
+      refable<program_spec> rps =
+        dereferenceLet<program_spec>(spec::PROGRAM_SPEC, "programs");
+      consume(BACKTICK);
+      ds->kernel = new kernel_spec(rps.value);
+      parseDispatchStatementDimensions(*ds);
+      parseDispatchStatementArguments(*ds);
+      parseDispatchStatementWhereClause(*ds, ls);
+      ds->defined_at.extend_to(nextLoc());
+      value = ds;
+    } else if (!is_init_expr_start && lookingAtImmediateDispatchStatement()) {
+      // let P = #1`foo/bar.cl
+      // let K = foo/bar.cl`kernel
+      // let D = foo/bar.cl`kernel<...>(...) where ...
+      program_spec *ps = parseDispatchStatementDeviceProgramPart();
+      if (consumeIf(BACKTICK)) {
+        // includes the kernel
+        kernel_spec *ks = parseDispatchStatementKernelPart(ps);
+        ks->program = ps;
+        if (lookingAt(LANGLE)) {
+          // let D = ...<...>(...) where ...
+          dispatch_spec *ds = new dispatch_spec(value_loc);
+          ds->kernel = ks;
+          parseDispatchStatementDimensions(*ds);
+          parseDispatchStatementArguments(*ds);
+          parseDispatchStatementWhereClause(*ds, ls);
+          ds->defined_at.extend_to(nextLoc());
+          value = ds;
+        } else {
+          // let P = #1`prog.cl`kernel
+          value = ks;
+        }
       } else {
         // let P = #1`prog.cl`kernel
-        value = ks;
+        value = ps;
       }
     } else {
-      // let P = #1`prog.cl`kernel
-      value = ps;
+      // a regular initializer
+      // let M = 0:w
+      value = parseInit();
     }
-  } else {
-    // a regular initializer
-    // let M = 0:w
-    value = parseInit(p, s);
+    ls->value = value;
+    s.let_bindings[name] = ls;
+    s.statement_list.statements.push_back(ls);
+    s.statement_list.statements.back()->defined_at.extend_to(nextLoc());
   }
-  ls->value = value;
-  s.let_bindings[name] = ls;
-  s.statement_list.statements.push_back(ls);
-  s.statement_list.statements.back()->defined_at.extend_to(p.nextLoc());
-}
 
-// let X=...
-// let X=..., Y=...
-static void parseLetStatement(parser &p, script &s)
-{
-  auto let_loc = p.nextLoc();
-  p.skip(); // let
-  parseLetBinding(p, s);
-  while (p.consumeIf(COMMA))
-    parseLetBinding(p, s);
-}
-
-static void parseStatementLine(parser &p, script &s)
-{
-  if (p.lookingAtIdentEq("let") && p.lookingAt(IDENT,1)) {
-    // let X = ...
-    // let F(X,Y) = ...
-    parseLetStatement(p,s);
-  } else if (parseBuiltIn(p,s)) {
-    // barrier
-    // save('foo.bin',A);
-    ;
-  } else {
-    // #1`foo/bar.cl
-    s.statement_list.statements.emplace_back(parseDispatchStatement(p,s));
+  // let X=...
+  // let X=..., Y=...
+  void parseLetStatement()
+  {
+    auto let_loc = nextLoc();
+    skip(); // let
+    parseLetBinding();
+    while (consumeIf(COMMA))
+      parseLetBinding();
   }
-}
+
+  void parseStatementLine()
+  {
+    if (lookingAtIdentEq("let") && lookingAt(IDENT, 1)) {
+      // let X = ...
+      // let F(X,Y) = ...
+      parseLetStatement();
+    } else if (parseBuiltIn()) {
+      // barrier
+      // save('foo.bin',A);
+      ;
+    } else {
+      // #1`foo/bar.cl
+      s.statement_list.statements.emplace_back(parseDispatchStatement());
+    }
+  }
+
+  ///////////////////////////////////////////////////////////
+  void parseScript()
+  {
+    while (!endOfFile()) {
+      while (consumeIf(NEWLINE))
+        ;
+      if (endOfFile())
+        break;
+      //
+      parseStatementLine(); // S ((<NEWLINE> | ';') S)*
+      //
+      if (endOfFile())
+        break;
+      if (!consumeIf(SEMI) && !consumeIf(NEWLINE)) { // ';' S
+        fatal("syntax error in statement");
+      }
+    }
+  }
+};
+
 
 void cls::parse_script(
   const opts &os,
@@ -1780,20 +1782,7 @@ void cls::parse_script(
   script &s,
   warning_list &wl)
 {
-  parser p(input);
-  while (!p.endOfFile()) {
-    while (p.consumeIf(NEWLINE))
-      ;
-    if (p.endOfFile())
-      break;
-    //
-    parseStatementLine(p,s); // S ((<NEWLINE> | ';') S)*
-    //
-    if (p.endOfFile())
-      break;
-    if (!p.consumeIf(SEMI) && !p.consumeIf(NEWLINE)) { // ';' S
-      p.fatal("syntax error in statement");
-    }
-  }
-  wl = p.warnings();
+  cls_parser cp(input, s);
+  cp.parseScript();
+  wl = cp.warnings();
 }
