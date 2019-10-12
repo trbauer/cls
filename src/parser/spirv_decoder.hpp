@@ -1,5 +1,5 @@
-#ifndef INTEL_GEN_BINARY_DECODER_HPP
-#define INTEL_GEN_BINARY_DECODER_HPP
+#ifndef INTEL_SPIRV_DECODER_HPP
+#define INTEL_SPIRV_DECODER_HPP
 
 #include "kargs.hpp"
 #include "../cls_opts.hpp"
@@ -10,9 +10,9 @@
 
 namespace cls
 {
-  constexpr uint32_t ELF_MAGIC = 0x464C457F; // "\7FELF"
+  constexpr uint32_t SPIRV_MAGIC = 0x07230203;
 
-  cls::k::program_info *parseProgramInfoBinaryGEN(
+  cls::k::program_info *parseProgramInfoBinarySPIRV(
     const opts &os,
     fatal_handler *fh, loc at,
     const std::string &path);

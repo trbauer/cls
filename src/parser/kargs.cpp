@@ -1,6 +1,7 @@
 #include "intel_gen_binary_decoder.hpp"
 #include "kargs.hpp"
 #include "parser.hpp"
+#include "spirv_decoder.hpp"
 #include "../cl_headers.hpp"
 #include "../half.hpp"
 #include "../ir/types.hpp"
@@ -56,9 +57,15 @@ std::string cls::k::arg_info::typeSyntax() const
 
 program_info::~program_info()
 {
-  for (type *t : types)
+  for (const type *t : types) {
+    if (t->is<type_struct>()) {
+      auto &ts = t->as<type_struct>();
+      if (ts.needs_cleanup())
+        ts.cleanup();
+    }
     delete t;
-  for (type_ptr *pt : pointer_types)
+  }
+  for (const type_ptr *pt : pointer_types)
     delete pt;
 }
 
@@ -297,16 +304,18 @@ static cls::k::program_info *parseProgramInfoText(
 
 static program_info *parseProgramInfoBinary(
   const opts &os,
-  const fatal_handler *fh, loc at,
+  fatal_handler *fh, loc at,
   const std::string &path,
   cl_device_id dev_id)
 {
   // auto bits = sys::read_file_binary(path);
-  // TODO: parse PTX or GEN binary
   auto ma = getDeviceMicroArchitecture(dev_id);
   if (isIntelGEN(ma)) {
     return parseProgramInfoBinaryGEN(os, fh, at, path);
   } else {
+    // TODO: would love to handle more binary formats
+    // PTX won't work because it lacks type information we need unify
+    // arg initializers with arguments
     fh->fatalAt(at,
       "parseProgramInfoBinary: "
       "argument info from binaries not supported yet on this device");
@@ -316,14 +325,20 @@ static program_info *parseProgramInfoBinary(
 
 program_info *cls::k::parseProgramInfo(
   const opts &os,
-  const fatal_handler *fh, loc at,
+  fatal_handler *fh, loc at,
   const program_source &src,
   cl_device_id dev_id)
 {
 
-  if (src.is_binary) {
+  if (src.kind == program_source::BINARY) {
     return parseProgramInfoBinary(os, fh, at, src.path, dev_id);
-  } else {
+  } else if (src.kind == program_source::SPIRV) {
+    return parseProgramInfoBinarySPIRV(os, fh, at, src.path);
+  } else { // TEXT
+    // loading from binary gives us a pointer size to sanity check,
+    // for here we just trust the OpenCL C runtime compiler to tell the truth
+    // (i.e. there's nothing to check); however, we do store the value
+    // in the program_info structure for consistency
     cl_uint bytes_per_addr;
     if (getDeviceInfo(
       dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
@@ -331,7 +346,9 @@ program_info *cls::k::parseProgramInfo(
       fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
     bytes_per_addr /= 8;
-    return parseProgramInfoText(os, fh, at, src, bytes_per_addr);
+    auto *pi = parseProgramInfoText(os, fh, at, src, bytes_per_addr);
+    pi->pointer_size = bytes_per_addr;
+    return pi;
   }
 }
 
@@ -366,6 +383,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
     fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
   }
   bytes_per_addr /= 8;
+  pi->pointer_size = bytes_per_addr;
 
   for (cl_uint k_ix = 0; k_ix < ks_len; k_ix++) {
     char knm_buf_static[256];

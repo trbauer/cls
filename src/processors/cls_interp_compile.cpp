@@ -1,12 +1,16 @@
-#include "cls_interp_internal.hpp"
 #include "../devices.hpp"
+#include "../parser/intel_gen_binary_decoder.hpp"
+#include "../parser/spirv_decoder.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
+#include "cls_interp_internal.hpp"
 
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <numeric>
 #include <set>
+#include <sstream>
 #include <type_traits>
 
 
@@ -296,21 +300,37 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     strsfx(".bin",ps->path) ||
     strsfx(".ptx",ps->path) ||
     strsfx(".obj",ps->path);
+  bool is_spv =
+    strsfx(".spv", ps->path);
   bool is_clc =
     strsfx(".cl",ps->path) ||
     strsfx(".clc",ps->path);
-  if (!is_bin && !is_clc) {
+  if (!is_bin && !is_spv && !is_clc) {
     // look at the file contents
     auto bs = sys::read_file_binary(ps->path);
+    bool has_non_ascii = false;
     for (uint8_t c : bs) {
       if (!::isprint(c)) {
-        is_bin = true;
+        has_non_ascii = true;
         break;
       }
     }
-    os.warning() << ps->path << ": unable to infer program type from extension\n"
-      << "based on contents we're assuming " << (is_bin ? "binary" : "text") << "\n"
-      << "NOTE: we recognize .cl, .clc as text and .bin, .ptx, and .obj as binary\n";
+    if (has_non_ascii) {
+      is_spv =
+        bs.size() > 4 &&
+        *((const uint32_t *)bs.data()) == SPIRV_MAGIC;
+      is_bin =
+        bs.size() > 4 &&
+        *((const uint32_t *)bs.data()) == ELF_MAGIC;
+    }
+    if (!is_spv && !is_bin) {
+      is_bin = has_non_ascii;
+      warningAt(ps->defined_at,
+        "unable to infer program type from extension; "
+        "based on contents we're assuming ", (is_bin ? "binary" : "text"), "\n",
+        "NOTE: .cl, .clc imply OpenCL C, .spv implies SPIR-V, "
+        "and .bin, .ptx, and .obj imply binary\n");
+    }
   }
   auto fatalHere =
     [&](const char *do_what, const char *with_what, cl_int err) {
@@ -323,16 +343,20 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       }
       fatalAt(ps->defined_at,
         ps->path, ": failed to ", do_what, " with ", with_what,
-        " (", status_to_symbol(err), ") on device [",dev_nm,"]");
+        " (", status_to_symbol(err), ") on device [", dev_nm, "]");
     };
 
   std::string build_opts = ps->build_options;
   std::string build_opts_with_arg_info = build_opts;
   auto vend = getDeviceVendor(po.device->device);
   if (os.use_kernel_arg_info) {
-    if (is_bin && vend != vendor::INTEL)
-      os.warning() <<
-        "trying to use kernel argument info on non-Intel binary\n";
+    if (is_bin && vend != vendor::INTEL) {
+      // according to the OpenCL rules argument info doesn't have to be there
+      // for binaries; Intel does include this though
+      warningAt(ps->defined_at,
+        "trying to use kernel argument info on non-Intel binary "
+        "(this may not work)");
+    }
     if (getDeviceSpec(po.device->device) <  cl_spec::CL_1_2)
       fatalAt(ps->defined_at,"kernel argument info needs OpenCL 1.2+");
     if (build_opts.empty()) {
@@ -345,38 +369,20 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   program_source src;
   src.path = ps->path;
   src.build_opts = build_opts;
-  src.is_binary = is_bin;
+  src.kind =
+    is_bin ? program_source::BINARY :
+      is_spv ? program_source::SPIRV :
+        program_source::SOURCE;
 
   cl_context ctx = po.device->context;
 
-  if (is_bin) {
-    auto bits = sys::read_file_binary(ps->path);
-    size_t len = bits.size();
-    const unsigned char *bins = bits.data();
-    cl_int bs_errs = 0;
-    CL_COMMAND_CREATE(po.program, ps->defined_at,
-      clCreateProgramWithBinary,
-        ctx,
-        1,
-        &po.device->device,
-        &len,
-        &bins,
-        &bs_errs);
-    CL_COMMAND(ps->defined_at,
-      clBuildProgram,
-        po.program,
-        1,
-        &po.device->device,
-        build_opts.empty() ? nullptr : build_opts.c_str(),
-        nullptr,
-        nullptr);
-  } else { // is_clc (text)
+  if (is_clc) {
     std::string inp = sys::read_file_text(ps->path);
     const char *src = inp.c_str();
     size_t len = inp.size();
     CL_COMMAND_CREATE(po.program, ps->defined_at,
       clCreateProgramWithSource,
-        ctx,1,&src,&len);
+      ctx, 1, &src, &len);
 
     cl_int bp_err =
       clBuildProgram(po.program, 1, &po.device->device,
@@ -388,7 +394,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         ps->defined_at,
         po.program,
         po.device->device) << "\n";
-      fatalAt(ps->defined_at,ss.str());
+      fatalAt(ps->defined_at, ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
       os.debug() << getLabeledBuildLog(
         ps->defined_at,
@@ -408,7 +414,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       auto bin_path =
         std::string(".") +
         sys::path_separator +
-        sys::replace_extension(ps->path,bin_ext);
+        sys::replace_extension(ps->path, bin_ext);
 
       size_t bits_len = 0;
       CL_COMMAND(ps->defined_at,
@@ -423,20 +429,48 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         clGetProgramInfo,
           po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
 
-//      int err_x = 0;
-//    CL_COMMAND_CREATE(po.program, ps->defined_at,
-//      clCreateProgramWithBinary,
-//        ctx,
-//        1,
-//        &dev,
-//        &bits_len,
-//        (const unsigned char **)&bits,
-//        &err_x);
+      //      int err_x = 0;
+      //    CL_COMMAND_CREATE(po.program, ps->defined_at,
+      //      clCreateProgramWithBinary,
+      //        ctx,
+      //        1,
+      //        &dev,
+      //        &bits_len,
+      //        (const unsigned char **)&bits,
+      //        &err_x);
 
       os.verbose() << "dumping binary " << bin_path << "\n";
-      sys::write_bin_file(bin_path,bits,bits_len);
+      sys::write_bin_file(bin_path, bits, bits_len);
     }
-  } // endif text
+  } else { // is_bin || is_spv
+    auto bits = sys::read_file_binary(ps->path);
+    if (is_spv) {
+      CL_COMMAND_CREATE(po.program, ps->defined_at,
+        clCreateProgramWithIL,
+        ctx,
+        bits.data(),
+        bits.size());
+    } else {
+      const uint8_t *bin = bits.data();
+      size_t bin_len = bits.size();
+      CL_COMMAND_CREATE(po.program, ps->defined_at,
+        clCreateProgramWithBinary,
+          ctx,
+          1,
+          &po.device->device,
+          &bin_len,
+          &bin,
+          nullptr);
+    }
+    CL_COMMAND(ps->defined_at,
+      clBuildProgram,
+        po.program,
+        1,
+        &po.device->device,
+        build_opts.empty() ? nullptr : build_opts.c_str(),
+        nullptr,
+        nullptr);
+  }
 
   ////////////////////////////////////////////////
   // kernel info
@@ -456,6 +490,49 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       ps->defined_at,
       src,
       po.device->device);
+  }
+
+  cl_uint bytes_per_addr;
+  if (getDeviceInfo(
+    po.device->device, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
+  {
+    fatalAt(ps->defined_at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+  }
+  bytes_per_addr /= 8;
+  if (bytes_per_addr != po.program_info->pointer_size) {
+    fatalAt(ps->defined_at,
+      "mismatch between clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS) "
+      "and program's reported byte size");
+  }
+
+  if (os.verbose_enabled()) {
+    std::stringstream ss;
+    ss << "program info=====================================\n";
+    ss << "  types:\n";
+    for (const type *t : po.program_info->types) {
+      ss << " - " << t->syntax() << " (" << t->size() << "B)\n";
+    }
+    ss << "  pointer size: " << po.program_info->pointer_size << "B\n";
+    ss << "  pointer types:\n";
+    for (const type_ptr *t : po.program_info->pointer_types) {
+      ss << " - "<< t->syntax() << "\n";
+    }
+    for (const kernel_info &k : po.program_info->kernels) {
+      ss <<
+        "  - kernel: " << k.name << "\n";
+      ss <<
+        "  - reqd_word_group_size: " <<
+        k.reqd_word_group_size[0] << ", " <<
+        k.reqd_word_group_size[1] << ", " <<
+        k.reqd_word_group_size[2] << "\n";
+      ss <<
+        "  - args:\n";
+      for (size_t i = 0; i < k.args.size(); i++) {
+        ss <<
+          "    - " << k.args[i].typeSyntax() << " " << k.args[i].name << "\n";
+      }
+    }
+    debugAt(ps->defined_at, ss.str());
   }
 
   return po;

@@ -180,6 +180,7 @@ namespace cls
   struct type;
   struct type_struct {
     const char                 *name;
+
     bool                        packed = false; // __attribute__ ((packed))
     size_t                      alignment = 0; // e.g. __attribute__ ((aligned (8)));
 
@@ -197,7 +198,40 @@ namespace cls
       memcpy(elements_memory, ts.elements_memory, sizeof(elements_memory));
     }
     */
-
+    type_struct(
+      const char *_name,
+      bool _packed,
+      size_t _alignment,
+      std::vector<const type *> ts)
+      : packed(_packed), alignment(_alignment)
+    {
+      char *name_buf = new char[strlen(_name+1)];
+      memcpy(name_buf, _name, strlen(_name));
+      name_buf[strlen(_name)] = 0;
+      name = name_buf;
+      //
+      elements_length = ts.size();
+      elements = (const type **)(new type *[ts.size()]);
+      memcpy(elements, &ts[0], sizeof(ts[0])*ts.size());
+      //
+      elements_length = 0;
+      for (const type *t : ts)
+        elements[elements_length++] = t;
+    }
+    //
+    bool needs_cleanup() const {return elements != elements_memory;}
+    void cleanup() const {
+      delete[] name;
+      delete[] elements;
+    }
+    /*
+    ~type_struct() {
+      if () {
+        delete[] elements;
+        delete[] name;
+      }
+    }
+    */
     constexpr type_struct(
       const char *_name,
       bool _packed,

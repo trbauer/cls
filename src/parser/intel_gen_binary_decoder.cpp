@@ -18,12 +18,11 @@ using namespace cls::k;
 struct igb_decoder : decoder {
   const uint32_t INTEL_GEN_DEVICE_BINARY_SH_TYPE = 0xFF000005;
   const uint32_t INTEL_GEN_DEVICE_BINARY_MAGIC = 0x494E5443; // "CTNI"
-  const uint32_t ELF_MAGIC = 0x464C457F; // "\7FELF"
 
   program_info &pi;
 
   igb_decoder(
-    const fatal_handler &fh,
+    fatal_handler &fh,
     loc at, const uint8_t *bits, size_t bits_length,
     program_info &_pi)
     : decoder(fh, at, bits, bits_length), pi(_pi) { }
@@ -40,9 +39,7 @@ struct igb_decoder : decoder {
   }
 
   void decElf() {
-    if (peek<uint32_t>() != ELF_MAGIC) {
-      fatalHere("expected ELF file input");
-    }
+    decodeEq(ELF_MAGIC, "expected ELF input (bad magic)");
 
     seek(0x28);
     auto e_shoff = decode<uint64_t>();
@@ -63,13 +60,17 @@ struct igb_decoder : decoder {
         auto sh_offset = (size_t)decode<uint64_t>();
         auto sh_size = (size_t)decode<uint64_t>();
         // bounds check to ensure the section is complete
+        // this'll for the blow up to happen in the context of this
+        // error handler
         seek(sh_offset);
         skip(sh_size);
         //
-        // parse the CTNI
-        // construct a subview of the section
-        // retain the offset in terms of the ELF file though
-        igb_decoder ctni(fh, at, bits, off + sh_size, pi);
+        // parse the CTNI with a new binary bound on the end of the section
+        // this prevents us from overflowing from the CTNI section
+        // N.b. retain the offset in terms of the ELF file though so
+        // diagnostics make sense
+        igb_decoder ctni(
+          get_handler(), get_at(), get_bits(), offset() + sh_size, pi);
         ctni.seek(sh_offset);
         ctni.decCtni();
         return;
@@ -120,7 +121,7 @@ struct igb_decoder : decoder {
     {
       ai.addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
     } else {
-      fatalHere(
+      fatal(
         "in kernel ",ki.name," for arg ",arg_ix,
         ": invalid address qualifier encoded: ", addr_qual);
     }
@@ -136,7 +137,7 @@ struct igb_decoder : decoder {
     } else if (acc_qual == "" || acc_qual == "") {
       ki.args[arg_ix].accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
     } else {
-      fatalHere(
+      fatal(
         "in kernel ",ki.name," for arg ",arg_ix,
         ": invalid access qualifier encoded: ", acc_qual);
     }
@@ -150,7 +151,7 @@ struct igb_decoder : decoder {
     auto base_type = type_name.substr(0,std::min(semi,star));
     const type *t = lookupBuiltinType(base_type, ptr_size);
     if (!t) {
-      fatalHere(
+      fatal(
         "in kernel ",ki.name," for arg ",arg_ix,
         ": invalid type name: ", type_name);
     }
@@ -186,7 +187,7 @@ struct igb_decoder : decoder {
         parsed_something = true;
       }
       if (!parsed_something) {
-        fatalHere(
+        fatal(
           "in kernel ",ki.name," for arg ",arg_ix,
           ": invalid type qualifier encoded: ", type_qual);
       }
@@ -199,7 +200,7 @@ struct igb_decoder : decoder {
   // C.f. SKernelBinaryHeaderCommon
   void decCtni() {
     if (peek<uint32_t>() != INTEL_GEN_DEVICE_BINARY_MAGIC) {
-      fatalHere("expected Intel GEN Device Binary magic");
+      fatal("expected Intel GEN Device Binary magic");
     }
     skip(sizeof(uint32_t));
     auto version = decode<uint32_t>();
@@ -212,10 +213,13 @@ struct igb_decoder : decoder {
     // so better diagnostics are the only gain
     //
     auto ptr_size = peek<uint32_t>();
-    if (ptr_size != sizeof(void *)) {
-      fatalHere("GPUPointerSizeInBytes is not ",
-        8*sizeof(void*), "b is this a ",8*ptr_size,"b binary");
-    }
+    pi.pointer_size = ptr_size;
+    // THIS may not be a problem, it may be reasonable for a host and device
+    // to disagree on this
+    // if (ptr_size != sizeof(void *)) {
+    //   fatalHere("GPUPointerSizeInBytes is not ",
+    //     8*sizeof(void*), "b is this a ",8*ptr_size,"b binary");
+    // }
     skip(sizeof(ptr_size));
     //
     auto num_kernels = decode<uint32_t>();
@@ -257,8 +261,7 @@ struct igb_decoder : decoder {
         kernel_surface_state_heap_size +
         kernel_text_size);
       //
-      // patches are here even though that's logically out of order;
-      // just another wart from lazy programmers
+      // patches are here even though that's logically out of order
       //
       size_t patch_bytes_read = 0;
       while (patch_bytes_read < kernel_patch_list_size) {
@@ -286,7 +289,7 @@ struct igb_decoder : decoder {
 
 program_info *cls::parseProgramInfoBinaryGEN(
   const opts &os,
-  const fatal_handler *fh, loc at,
+  fatal_handler *fh, loc at,
   const std::string &path)
 {
   program_info *pi = new program_info();

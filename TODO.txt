@@ -2,16 +2,38 @@ SEE; https://github.com/trbauer/cls/issues/
 
 
 TODO:
+* CLEANUP:
+   - get rid of FATAL macro
+   - get rid of logging in sys
+   - collapse fatal_handler::debugAt and the stuff rolled into compiler and executor
+      in the past others didn't have fatal_handler access IIRC
+   - merge string prefix/suffix stuff into text.hpp from system.hpp
+
+* CONSIDER:
+   - types.hpp: splitting vector types out of structure types to
+     simplify the constexpr stuff; this more clearly shows structures
+     as user-defined types and vectors as special creatures.
+
+   - in tandem with this, prefer OpenCL C vector construction syntax
+       (float4)3.14f or (float4)(...)
+     consider
+
 * TEST:
    images loaded into a buffer?
    does that work? e.g. uchar4...
-   
+
+* demo an explict buffer size with a complex.cl example
+* demo struct types with float2 in a complex example
+
 * FEATURE
    flush and finish on context
    #0:A`finish
    #0:A`flush
+   @A(#0)`.... // binds A to device 0 instance
    finish(A)
    flush(A)
+   finish() // flushes all queues
+   flush()  // finishes all queues
 
 * FEATURE
     - image diff

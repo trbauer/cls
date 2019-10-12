@@ -110,7 +110,8 @@ namespace cls
     }
     template <typename...Ts>
     void debugAt(const loc &at, Ts... ts) const {
-      formatMessageWithContext(std::cout, at, input(), ts...);
+      formatMessageWithContext(
+        std::cout, at, &text::ANSI_GREEN,  input(), ts...);
     }
   }; // fatal_handler
 } // namespace cls

@@ -24,6 +24,18 @@ namespace text
     return strncmp(str, pfx, strlen(pfx)) == 0;
   }
 
+  template <typename T>
+  static std::string fmtHex(T val, int w) {
+    std::stringstream ss;
+    ss << std::uppercase << std::hex << std::setfill('0') << std::setw(w) <<
+      val;
+    return ss.str();
+  }
+  template <typename T>
+  static std::string fmtHex(T val) {
+    return fmtHex(val, 2*sizeof(val));
+  }
+
   /////////////////////////////////////////////////////////////////////////////
   // COLORED TEXT
   //

@@ -20,6 +20,14 @@ else()
   message(FATAL_ERROR "unexpected platform")
 endif()
 
+# On Windows MSVC enable both 32 and 64 as separate targets.
+# Everyone else omits the suffix.
+if (MSVC)
+    set(CLS_EXE "cls${TARGET_MODIFIER}")
+else()
+    set(CLS_EXE "cls")
+endif()
+
 # NOTE: use MSVC (bare non-variable)   if (MSVC)
 # if(${CMAKE_GENERATOR} MATCHES "Visual Studio")
 #  set(MSVC_GENERATOR 1)
@@ -52,13 +60,6 @@ endif()
 ###############################################################################
 # cls##.exe
 ###############################################################################
-# file(GLOB CLS_SOURCES
-#  "src/*.hpp" "src/*.cpp"
-#  "src/ir/*.hpp" "src/ir/*.cpp"
-#  "src/parser/*.hpp" "src/parser/*.cpp" "src/parser/cls.flex"
-#  "src/processors/*.hpp" "src/processors/*.cpp"
-#	)
-#
 # we split the above up so we can setup the source groups
 file(GLOB CLS_ROOT
   "src/*.hpp" "src/*.cpp"
@@ -81,23 +82,26 @@ if (${USE_LODE_PNG})
   source_group("Source\\LodePNG" FILES ${LODE_PNG_SRC})
 endif()
 
+set(CLS_SOURCES
+  ${CLS_ROOT}
+  ${CLS_IR}
+  ${CLS_PARSE}
+  ${CLS_PROC}
+  ${LODE_PNG_SRC})
 
-# set(CLS_SOURCES ${CLS_ROOT} ${CLS_IR} ${CLS_PARSE} ${CLS_PROC} .editorconfig)
-set(CLS_SOURCES ${CLS_ROOT} ${CLS_IR} ${CLS_PARSE} ${CLS_PROC} ${LODE_PNG_SRC})
-
-add_executable("cls${TARGET_MODIFIER}"
-  ${CLS_SOURCES}
-  )
+add_executable("${CLS_EXE}" ${CLS_SOURCES})
 
 ###############################################################################
 # enable parallel build
 if (MSVC)
-  target_compile_options("cls${TARGET_MODIFIER}" PRIVATE "/MP")
+  target_compile_options("${CLS_EXE}" PRIVATE "/MP")
   add_compile_options("/w4")
 endif()
 # disable nagging warning on MSVC 2017 since I don't own that source
 if (${USE_LODE_PNG} AND MSVC)
-  set_source_files_properties(SOURCE "deps/lodepng/lodepng.cpp" COMPILE_FLAGS "/wd4267")
+  set_source_files_properties(
+    SOURCE "deps/lodepng/lodepng.cpp"
+    COMPILE_FLAGS "/wd4267")
 endif()
 
 ###############################################################################
@@ -105,12 +109,8 @@ endif()
 # Note, I'm using the latest Intel OpenCL SDK.
 #
 # TODO: need to ensure it's a 2.0 version when we start using SVM
-# find_package(OpenCL REQUIRED)
-# include_directories(. ${OpenCL_INCLUDE_DIRS})
-# target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARIES})
-#
-# NOTE: the above aren't working because find_package(OpenCL ...) does
-# find a OpenCL 2.0 version of the library
+# NOTE: find_patckage above isn't working because find_package(OpenCL ...)
+# doesn't find a OpenCL 2.0 version of the library.
 # (c.f. $CMAKE_ROOT/share/cmake-3.11/Modules/FindOpenCL.cmake)
 # This could be because Intel moved their SDK paths around recently
 # (I did have env $INTELOCLSDKROOT set).
@@ -120,23 +120,39 @@ endif()
 # such sensitive needs (e.g. needs binding points for SVM and KHR stubs).
 # Some SDKs do not have new enough libraries and miss some of these.
 #
-set(OpenCL_INCLUDE_DIRS "C:\\Intel\\OpenCL\\sdk\\include")
-if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-set(OpenCL_LIBRARY_STUB "C:\\Intel\\OpenCL\\sdk\\lib\\x86\\OpenCL.lib")
+# Using headers from my own version of deps/CL/* doesn't work
+# (or I can't figure it out)
+# Cmake or the compiler sniffs out headers from SDKs or the system and causes
+# cross-version chaos.  I tried prepending inlcudes without success.
+#
+set(USE_INTEL_SDK WIN32)
+#
+# FIXME: I would love a better solution to this.
+#
+if (USE_INTEL_SDK)
+  set(OpenCL_INCLUDE_DIRS "C:\\Intel\\OpenCL\\sdk\\include")
+  if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    set(OpenCL_LIBRARIES "C:\\Intel\\OpenCL\\sdk\\lib\\x86\\OpenCL.lib")
+  else()
+    set(OpenCL_LIBRARIES "C:\\Intel\\OpenCL\\sdk\\lib\\x64\\OpenCL.lib")
+  endif()
+  #
+  if (NOT EXISTS "${OpenCL_LIBRARIES}")
+    message(FATAL_ERROR
+        "${OpenCL_LIBRARIES}: OpenCL library not found: Install the Intel OpenCL SDK")
+  endif()
+  if (NOT EXISTS "${OpenCL_INCLUDE_DIRS}")
+    message(FATAL_ERROR
+        "${OpenCL_INCLUDE_DIRS}: OpenCL include directory: Install the Intel OpenCL SDK")
+  endif()
 else()
-set(OpenCL_LIBRARY_STUB "C:\\Intel\\OpenCL\\sdk\\lib\\x64\\OpenCL.lib")
+  find_package(OpenCL REQUIRED)
 endif()
 
-# Using headers from ./CL is not working out
-# (cmake or the compiler sniffs out headers from SDKs and causes
-# cross-version chaos)
-# include_directories(.)
+target_include_directories("${CLS_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS})
+target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES})
 
-include_directories(${OpenCL_INCLUDE_DIRS})
-
-target_link_libraries("cls${TARGET_MODIFIER}" ${OpenCL_LIBRARY_STUB})
-
-set_target_properties("cls${TARGET_MODIFIER}" PROPERTIES
+set_target_properties("${CLS_EXE}" PROPERTIES
   CXX_STANDARD 17
-  OUTPUT_NAME  "cls${TARGET_MODIFIER}"
+  OUTPUT_NAME  "${CLS_EXE}"
 )

@@ -55,8 +55,11 @@ struct opts {
   }
   filtered_stream always() const{return filtered_stream(true);}
   filtered_stream normal() const{return filtered_stream(verbosity >= 0);}
-  filtered_stream verbose() const{return filtered_stream(verbosity >= 1);}
-  filtered_stream debug() const{return filtered_stream(verbosity >= 2);}
+  filtered_stream verbose() const{return filtered_stream(verbose_enabled());}
+  filtered_stream debug() const{return filtered_stream(debug_enabled());}
+
+  bool debug_enabled() const { return verbosity >= 2; }
+  bool verbose_enabled() const { return verbosity >= 1; }
 };
 
 } // namespace cls

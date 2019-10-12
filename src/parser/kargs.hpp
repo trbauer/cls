@@ -30,7 +30,7 @@ namespace cls
   //  program_source(binary b, std::string opts)
   //    : source(b), build_opts(opts) { }
 //    std::variant<std::string,binary>  source;
-    bool                              is_binary = false;
+    enum {INVALID, SOURCE, SPIRV, BINARY} kind = INVALID;
     std::string                       path;
     std::string                       build_opts;
   };
@@ -76,8 +76,9 @@ namespace cls
     struct program_info {
       std::vector<kernel_info>     kernels;
 
-      std::vector<type*>           types;
-      std::vector<type_ptr*>       pointer_types;
+      std::vector<const type*>     types;
+      std::vector<const type_ptr*> pointer_types;
+      size_t                       pointer_size = 0;
 
       // default constructible, not copyable
       program_info() { }
@@ -93,7 +94,7 @@ namespace cls
 
     program_info *parseProgramInfo(
       const cls::opts &os,
-      const cls::fatal_handler *fh, cls::loc at,
+      cls::fatal_handler *fh, cls::loc at,
       const cls::program_source &src,
       cl_device_id dev_id);
 
