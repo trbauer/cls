@@ -99,7 +99,37 @@
 #define CL_AVC_ME_VERSION_1_INTEL                           0x1
 #endif
 
+///////////////////////////////////////////////////////////////////////////////
+// cl_intel_unified_shared_memory
+// https://github.com/intel/llvm/blob/863887687681f9fcd51b03572b2df470ebc1498f/sycl/doc/extensions/usm/cl_intel_unified_shared_memory.asciidoc
+#ifndef CL_DEVICE_HOST_MEM_CAPABILITIES_INTEL
+#define CL_DEVICE_HOST_MEM_CAPABILITIES_INTEL                   0x4190
+#endif
+#ifndef CL_DEVICE_DEVICE_MEM_CAPABILITIES_INTEL
+#define CL_DEVICE_DEVICE_MEM_CAPABILITIES_INTEL                 0x4191
+#endif
+#ifndef CL_DEVICE_SINGLE_DEVICE_SHARED_MEM_CAPABILITIES_INTEL
+#define CL_DEVICE_SINGLE_DEVICE_SHARED_MEM_CAPABILITIES_INTEL   0x4192
+#endif
+#ifndef CL_DEVICE_CROSS_DEVICE_SHARED_MEM_CAPABILITIES_INTEL
+#define CL_DEVICE_CROSS_DEVICE_SHARED_MEM_CAPABILITIES_INTEL    0x4193
+#endif
+#ifndef CL_DEVICE_SHARED_SYSTEM_MEM_CAPABILITIES_INTEL
+#define CL_DEVICE_SHARED_SYSTEM_MEM_CAPABILITIES_INTEL          0x4194
+#endif
 
+#ifndef CL_UNIFIED_SHARED_MEMORY_ACCESS_INTEL
+#define CL_UNIFIED_SHARED_MEMORY_ACCESS_INTEL                   (1 << 0)
+#endif
+#ifndef CL_UNIFIED_SHARED_MEMORY_ATOMIC_ACCESS_INTEL
+#define CL_UNIFIED_SHARED_MEMORY_ATOMIC_ACCESS_INTEL            (1 << 1)
+#endif
+#ifndef CL_UNIFIED_SHARED_MEMORY_CONCURRENT_ACCESS_INTEL
+#define CL_UNIFIED_SHARED_MEMORY_CONCURRENT_ACCESS_INTEL        (1 << 2)
+#endif
+#ifndef CL_UNIFIED_SHARED_MEMORY_CONCURRENT_ATOMIC_ACCESS_INTEL
+#define CL_UNIFIED_SHARED_MEMORY_CONCURRENT_ATOMIC_ACCESS_INTEL (1 << 3)
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_planar_yuv
