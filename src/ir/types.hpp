@@ -19,13 +19,13 @@ namespace cls
   // int foo[16];
   struct type_array {
     const type    *element_type;
-    int64_t        length;
+    size_t         length;
     //
-    type_array(const type *t, int64_t l)
+    type_array(const type *t, size_t l)
       : element_type(t), length(l)
     {
     }
-    constexpr type_array(type *t, int64_t l)
+    constexpr type_array(type *t, size_t l)
       : element_type(t), length(l)
     {
     }

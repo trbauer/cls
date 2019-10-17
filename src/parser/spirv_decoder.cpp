@@ -251,7 +251,7 @@ struct spv_decoder: decoder {
       uint16_t opcode = (uint16_t)(inst_header & 0xFFFF);
       if (curr_inst_words == 0) { // to prevent skip by 0xFFFFF...
         fatalAtInst("invalid SPIR-V instruction (invalid word count)");
-      } else if (4*(curr_inst_words - 1) > bytes_left()) {
+      } else if (4*((size_t)curr_inst_words - 1) > bytes_left()) {
         fatalAtInst("invalid SPIR-V instruction (truncated instruction)");
       }
       decodeInst(opcode);
@@ -453,7 +453,9 @@ struct spv_decoder: decoder {
       uint32_t id = decodeWord();
       const type *et = getType(decodeWord());
       int64_t ic = getIntegerConstant(decodeWord());
-      builtin_types[id] = new type(type_array(et,ic));
+      if (ic < 0)
+        fatalAtInst("OpTypeArray with negative size");
+      builtin_types[id] = new type(type_array(et,(size_t)ic));
       //
     } else if (opcode == OpTypeStruct) {
       curr_inst_opname = "OpTypeStruct";
