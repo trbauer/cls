@@ -67,8 +67,12 @@ int main(int argc, const char **argv)
     os.save_preprocessed);
   cmdspec.defineFlag(
     "B", "save-binaries",
-    "saves all program binaries",
-    "This uses clGetProgramInfo(...CL_PROGRAM_BINARIES...)",
+    "saves program binaries after compile",
+    "This uses clGetProgramInfo(...CL_PROGRAM_BINARIES...).  "
+    "The file is saved to the current working directory with the "
+    "same filename with a replaced device-specific extension.  Hence, input "
+    "programs with the same file name will conflict and the last will stomp "
+    "the earlier program binaries of the same name.",
     opts::NONE,
     os.save_binaries);
   cmdspec.defineFlag(
@@ -180,7 +184,7 @@ int main(int argc, const char **argv)
       return EXIT_FAILURE;
     }
     auto file_text = sys::read_file_text(file);
-    runFile(os,file,file_text);
+    runFile(os, file, file_text);
   }
 }
 
@@ -190,35 +194,34 @@ static void runFile(
   std::string file_contents)
 {
   cls::script s(file_contents);
+  cls::diagnostics ds(os.verbosity, file_contents);
+
   try {
     os.verbose() << "============ parsing script\n";
 
-    cls::warning_list wl;
-    cls::parse_script(os, file_contents, file_name, s, wl);
-    for (auto &wp : wl) {
-      formatMessageWithContext(
-        std::cout,
-        std::get<0>(wp),
-        &text::ANSI_YELLOW,
-        file_contents,
-        std::get<1>(wp));
-    }
+    cls::parse_script(os, file_contents, file_name, s, ds);
+
+    ds.flushWarnings(std::cerr);
+
     if (os.parse_only) {
       cls::format_opts fopts;
       fopts.opts = cls::format_opts::USE_COLOR;
-      s.str(std::cout,fopts);
+      s.str(std::cout, fopts);
       exit(EXIT_SUCCESS);
     }
   } catch (const cls::diagnostic &d) {
-    d.exit_with_error();
+    d.emit_and_exit_with_error();
   }
 
   cls::compiled_script cs;
   try {
     os.verbose() << "============ compiling script\n";
-    cs = cls::compile(os, s);
+    //
+    cs = cls::compile(os, s, ds);
+    //
+    ds.flushWarnings(std::cerr);
   } catch (const cls::diagnostic &d) {
-    d.exit_with_error();
+    d.emit_and_exit_with_error();
   }
 
   sampler execute_times;
@@ -239,7 +242,7 @@ static void runFile(
           std::chrono::high_resolution_clock::now() - start_execute);
       execute_times.add(duration_exec.count()/1000.0/1000.0);
     } catch (const cls::diagnostic &d) {
-      d.exit_with_error();
+      d.emit_and_exit_with_error();
     }
   }
 

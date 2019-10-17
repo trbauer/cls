@@ -22,10 +22,10 @@ struct igb_decoder : decoder {
   program_info &pi;
 
   igb_decoder(
-    fatal_handler &fh,
+    diagnostics &_diags,
     loc at, const uint8_t *bits, size_t bits_length,
     program_info &_pi)
-    : decoder(fh, at, bits, bits_length), pi(_pi) { }
+    : decoder(_diags, at, bits, bits_length), pi(_pi) { }
 
 
   void run() {
@@ -164,7 +164,7 @@ struct igb_decoder : decoder {
         }
       }
     }
-    ki.args[arg_ix].type = *t;
+    ki.args[arg_ix].type = t;
     //
     ki.args[arg_ix].type_qual = CL_KERNEL_ARG_TYPE_NONE;
     auto type_qual = decodeString(type_qual_len);
@@ -289,12 +289,12 @@ struct igb_decoder : decoder {
 
 program_info *cls::parseProgramInfoBinaryGEN(
   const opts &os,
-  fatal_handler *fh, loc at,
+  diagnostics &ds, loc at,
   const std::string &path)
 {
   program_info *pi = new program_info();
   auto bits = sys::read_file_binary(path);
-  igb_decoder d(*fh, at, bits.data(), bits.size(), *pi);
+  igb_decoder d(ds, at, bits.data(), bits.size(), *pi);
   d.run();
   return pi;
 }

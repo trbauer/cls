@@ -43,11 +43,11 @@ namespace cls
 
     // global int *foo, ...
     struct arg_info {
-      cl_kernel_arg_address_qualifier  addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
+      cl_kernel_arg_address_qualifier  addr_qual = 0;
       cl_kernel_arg_access_qualifier   accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
       cl_kernel_arg_type_qualifier     type_qual = CL_KERNEL_ARG_TYPE_NONE;
       std::string                      name;
-      type                             type;
+      const type                      *type;
       std::string typeSyntax() const;
     };
 
@@ -77,7 +77,10 @@ namespace cls
       std::vector<kernel_info>     kernels;
 
       std::vector<const type*>     types;
-      std::vector<const type_ptr*> pointer_types;
+
+      // binaries and SPIRV define a pointer size; we can sanity check
+      // the binary with CL_DEVICE_ADDRESS_BITS; for program sources this
+      // will just be derived from CL_DEVICE_ADDRESS_BITS (no check needed)
       size_t                       pointer_size = 0;
 
       // default constructible, not copyable
@@ -94,13 +97,13 @@ namespace cls
 
     program_info *parseProgramInfo(
       const cls::opts &os,
-      cls::fatal_handler *fh, cls::loc at,
+      cls::diagnostics &ds, cls::loc at,
       const cls::program_source &src,
       cl_device_id dev_id);
 
     program_info *parseProgramInfoFromAPI(
       const cls::opts &os,
-      const cls::fatal_handler *fh, cls::loc at,
+      cls::diagnostics &ds, cls::loc at,
       cl_program program,
       cl_device_id dev_id);
 

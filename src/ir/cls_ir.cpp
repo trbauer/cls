@@ -41,6 +41,7 @@ std::string spec::name() const
     case init_spec::IS_INT: return "integral initializer";
     case init_spec::IS_FLT: return "floating-point initializer";
     case init_spec::IS_REC: return "record initializer";
+    case init_spec::IS_VEC: return "vector initializer";
     case init_spec::IS_BIV: return "built-in variable initializer";
     case init_spec::IS_SYM: return "symbol initializer";
     case init_spec::IS_BEX: return "binary expression initializer";
@@ -207,13 +208,14 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_SZO: fmt(os, fopts, (const init_spec_sizeof        *)this); break;
   case IS_BIV: fmt(os, fopts, (const init_spec_builtin       *)this); break;
   case IS_REC: fmt(os, fopts, (const init_spec_record        *)this); break;
+  case IS_VEC: fmt(os, fopts, (const init_spec_vector        *)this); break;
   case IS_BEX: fmt(os, fopts, (const init_spec_bex           *)this); break;
   case IS_UEX: fmt(os, fopts, (const init_spec_uex           *)this); break;
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
   case IS_IMG: fmt(os, fopts, (const init_spec_image         *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
-  case IS_MEM: fmt(os, fopts, (const init_spec_mem        *)this); break;
+  case IS_MEM: fmt(os, fopts, (const init_spec_mem           *)this); break;
   default: os << "init_spec?"; break;
   }
 }
@@ -228,13 +230,9 @@ const char *init_spec_builtin::syntax_for(biv_kind skind)
   case BIV_GX:   return "g.x";
   case BIV_GY:   return "g.y";
   case BIV_GZ:   return "g.z";
-  // case BIV_GXY:  return "g.xy"; // use g.x*g.y
-  // case BIV_GXYZ: return "g.xyz";
   case BIV_LX:   return "l.x";
   case BIV_LY:   return "l.y";
   case BIV_LZ:   return "l.z";
-  // case BIV_LXY:  return "l.xy";
-  // case BIV_LXYZ: return "l.xyz";
   default:       return "?biv?";
   }
 }
@@ -250,6 +248,19 @@ void init_spec_record::str(std::ostream &os, format_opts fopts) const {
     c->str(os,fopts);
   }
   os << "}";
+}
+
+void init_spec_vector::str(std::ostream &os, format_opts fopts) const {
+  os << type->syntax() << "(";
+  bool first = true;
+  for (const auto *c : children) {
+    if (first)
+      first = false;
+    else
+      os << ",";
+    c->str(os, fopts);
+  }
+  os << ")";
 }
 
 void init_spec_sizeof::str(std::ostream &os, format_opts fopts) const {
@@ -322,7 +333,9 @@ void test()
 // I sort of got it to work, but the template deduction and function
 // conversion is too complex
 #define BIN_OP(F) \
-  static val apply_ ## F (fatal_handler *,const loc &,const val &vl,const val &vr) {\
+  static val apply_ ## F (\
+    diagnostics &,const loc &,const val &vl,const val &vr)\
+ {\
     if (vl.is_float() || vr.is_float()) {\
       return std:: F (vl.as<double>(),vr.as<double>());\
     } else if (vl.is_signed() || vr.is_signed()) {\
@@ -332,7 +345,9 @@ void test()
     }\
   }
 #define BIN_OP_INFIX(SYM,OP) \
-  static val apply_ ## SYM (fatal_handler *,const loc &,const val &vl,const val &vr) {\
+  static val apply_ ## SYM (\
+    diagnostics &,const loc &,const val &vl,const val &vr)\
+ {\
     if (vl.is_float() || vr.is_float()) {\
       return (vl.as<double>() OP vr.as<double>());\
     } else if (vl.is_signed() || vr.is_signed()) {\
@@ -343,9 +358,11 @@ void test()
   }
 
 #define BIN_OP_INTEGRAL(F) \
-  static val apply_ ## F (fatal_handler *fh,const loc &at,const val &vl,const val &vr) {\
+  static val apply_ ## F (\
+    diagnostics &ds,const loc &at,const val &vl,const val &vr)\
+ {\
     if (vl.is_float() || vr.is_float()) {\
-      fh->fatalAt(at,"function/operator requires integral arguments");\
+      ds.fatalAt(at, "function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return std:: F (vl.as<int64_t>(),vr.as<int64_t>());\
@@ -354,9 +371,11 @@ void test()
     }\
   }
 #define BIN_OP_INFIX_INTEGRAL(SYM,OP) \
-  static val apply_ ## SYM (fatal_handler *fh,const loc &at,const val &vl,const val &vr) {\
+  static val apply_ ## SYM (\
+      diagnostics &ds,const loc &at,const val &vl,const val &vr)\
+  {\
     if (vl.is_float() || vr.is_float()) {\
-      fh->fatalAt(at,"function/operator requires integral arguments");\
+      ds.fatalAt(at,"function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return (vl.as<int64_t>() OP vr.as<int64_t>());\
@@ -365,7 +384,8 @@ void test()
     }\
   }
 
-static val apply_pow(fatal_handler *,const loc &,const val &vl, const val &vr)
+static val apply_pow(
+  diagnostics &,const loc &,const val &vl, const val &vr)
 {
   if (vl.is_float()) {
     if (vr.is_float()) {
@@ -379,24 +399,26 @@ static val apply_pow(fatal_handler *,const loc &,const val &vl, const val &vr)
     return std::pow(vl.as<uint64_t>(),vr.as<uint64_t>());
   }
 }
-static val apply_div(fatal_handler *fh,const loc &at,const val &vl, const val &vr)
+static val apply_div(
+  diagnostics &ds, const loc &at, const val &vl, const val &vr)
 {
   if (vl.is_float() || vr.is_float()) {
     return vl.as<double>() / vr.as<double>();
   } else if (vr.s64 == 0) {
-    fh->fatalAt(at,"division by 0");
+    ds.fatalAt(at, "division by 0");
   } else if (vl.is_signed() || vr.is_signed()) {
     return vl.as<int64_t>() / vr.as<int64_t>();
   } else {
     return vl.as<uint64_t>() / vr.as<uint64_t>();
   }
 }
-static val apply_mod(fatal_handler *fh,const loc &at,const val &vl, const val &vr)
+static val apply_mod(
+  diagnostics &ds, const loc &at,const val &vl, const val &vr)
 {
   if (vl.is_float() || vr.is_float()) {
     return std::fmod(vl.as<double>(),vr.as<double>());
   } else if (vr.s64 == 0) {
-    fh->fatalAt(at,"division by 0");
+    ds.fatalAt(at, "modulus by 0");
   } else if (vl.is_signed() || vr.is_signed()) {
     return vl.as<int64_t>() % vr.as<int64_t>();
   } else {
@@ -603,7 +625,7 @@ void init_spec_image::str(std::ostream &os, format_opts fopts) const
 
 
 #define UNR_OP(F) \
-  static val apply_ ## F (fatal_handler *,const loc &,const val &v) {\
+  static val apply_ ## F (diagnostics &,const loc &,const val &v) {\
     if (v.is_float()) {\
       return std:: F (v.as<double>());\
     } else if (v.is_signed()) {\
@@ -613,20 +635,20 @@ void init_spec_image::str(std::ostream &os, format_opts fopts) const
     }\
   }
 #define UNR_OP_FLOAT(F) \
-  static val apply_ ## F (fatal_handler *,const loc &,const val &v) {\
+  static val apply_ ## F (diagnostics &,const loc &,const val &v) {\
     return std:: F (v.as<double>());\
   }
 
-static val apply_float(fatal_handler *,const loc &,const val &v) {
+static val apply_float(diagnostics &, const loc &, const val &v) {
   return v.as<double>();
 }
-static val apply_signed(fatal_handler *,const loc &,const val &v) {
+static val apply_signed(diagnostics &, const loc &, const val &v) {
   return v.as<int64_t>();
 }
-static val apply_unsigned(fatal_handler *,const loc &,const val &v) {
+static val apply_unsigned(diagnostics &, const loc &, const val &v) {
   return v.as<uint64_t>();
 }
-static val apply_abs(fatal_handler *,const loc &,const val &v) {
+static val apply_abs(diagnostics &, const loc &, const val &v) {
   if (v.is_float()) {
     return std::abs(v.as<double>());
   } else if (v.is_signed()) {
@@ -636,7 +658,7 @@ static val apply_abs(fatal_handler *,const loc &,const val &v) {
   }
 }
 
-static val apply_negate(fatal_handler *,const loc &,const val &v) {
+static val apply_negate(diagnostics &, const loc &, const val &v) {
   if (v.is_float()) {
     return -v.as<double>();
   } else if (v.is_signed()) {
@@ -645,9 +667,9 @@ static val apply_negate(fatal_handler *,const loc &,const val &v) {
     return v.as<uint64_t>();
   }
 }
-static val apply_complement(fatal_handler *fh,const loc &at,const val &v) {
+static val apply_complement(diagnostics &ds, const loc &at, const val &v) {
   if (v.is_float()) {
-    fh->fatalAt(at,"~ requires integer argument");
+    ds.fatalAt(at, "~ requires integer argument");
   } else if (v.is_signed()) {
     return ~v.as<int64_t>();
   } else {
@@ -687,7 +709,7 @@ UNR_OP_FLOAT(ceil)
 UNR_OP_FLOAT(floor)
 UNR_OP_FLOAT(trunc)
 UNR_OP_FLOAT(round)
-static val apply_llround(fatal_handler *,const loc &,const val &v) {
+static val apply_llround(diagnostics &, const loc &, const val &v) {
   if (v.is_float()) {
     return std::llround(v.as<double>());
   } else if (v.is_signed()) {
@@ -696,26 +718,26 @@ static val apply_llround(fatal_handler *,const loc &,const val &v) {
     return v.as<uint64_t>();
   }
 }
-static val apply_nearbyint(fatal_handler *fh,const loc &at,const val &v) {
+static val apply_nearbyint(diagnostics &ds,const loc &at,const val &v) {
   return  std::nearbyint(v.as<double>());
 }
 template<int mode>
-static val apply_nearbyint_by(fatal_handler *fh,const loc &at,const val &v) {
+static val apply_nearbyint_by(diagnostics &ds,const loc &at,const val &v) {
   auto old_mode = std::fegetround();
   if (old_mode < 0) {
-    fh->fatalAt(at,"cannot determine old rounding mode");
+    ds.fatalAt(at,"cannot determine old rounding mode");
   }
   double d = std::nearbyint(v.as<double>());
   if (std::fesetround(old_mode) != 0)
-    fh->fatalAt(at,"cannot restore old rounding mode");
+    ds.fatalAt(at, "cannot restore old rounding mode");
   return d;
 }
 #define UNR_OP_FLOAT_BOOL(F) \
-  static val apply_ ## F (fatal_handler *fh,const loc &at,const val &v) { \
+  static val apply_ ## F (diagnostics &ds, const loc &at, const val &v) { \
     if (v.is_float()) { \
       return std:: F (v.as<double>()) ? 1 : 0; \
     } else { \
-      fh->fatalAt(at, "floating point input required"); \
+      ds.fatalAt(at, "floating point input required"); \
     } \
   }
 

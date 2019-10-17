@@ -4,8 +4,9 @@
 #include "../system.hpp"
 
 #include <cmath>
-#include <optional>
 #include <iostream>
+#include <limits>
+#include <optional>
 #include <sstream>
 
 using namespace cls;
@@ -108,9 +109,11 @@ const char *cls::CLS_SYNTAX =
   "  - type conversions and coercions attempt to mimic most C/C++ rules\n"
   "    at least: " SLIT("float(..)") ", " SLIT("int(..)") ", "
                    SLIT("signed(..)") ", " SLIT("unsigned(..)") " are supported\n"
-  "      e.g. " SLIT("unsigned(pi)") " evaluates to 3\n"
+  "      e.g. " SLIT("unsigned(M_PI)") " evaluates to 3\n"
   "    we also permit type conversions; e.g. " SLIT("unsigned(x)") "\n"
-  "    the constants " SLIT("E") " and " SLIT("PI") " are also defined\n"
+  "    some OpenCL builtin constants are also defined (e.g. M_PI)\n"
+  "    https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/mathConstants.html\n"
+  "    "
   "  - the unary C++ STL functions are:\n"
   "      " SLIT("abs") ", " SLIT("fabs") ", " SLIT("sqrt") ", " SLIT("cbrt") ",\n"
   "      " SLIT("exp") ", " SLIT("exp2") ", " SLIT("expm1") ", "
@@ -309,11 +312,13 @@ const char *cls::CLS_SYNTAX =
   ;
 
 
-struct cls_parser : parser
+struct cls_parser: parser
 {
   script &s;
 
-  cls_parser(const std::string &inp, script &_s) : parser(inp), s(_s) { }
+  cls_parser(
+    diagnostics &ds, const std::string &inp, script &_s)
+    : parser(ds, inp), s(_s) { }
 
   // a rough solution to enable use to read tokens including spaces
   // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
@@ -839,10 +844,43 @@ struct cls_parser : parser
           return nullptr; // unreachable
         } // end else not random
       } else {
-        if (id == "E")
+        // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/mathConstants.html
+        if (id == "MAXFLOAT")
+          return new init_spec_float(at, std::numeric_limits<float>::max());
+        else if (id == "HUGE_VALF")
+          return new init_spec_float(at, HUGE_VALF);
+        else if (id == "NAN")
+          return new init_spec_float(at, std::numeric_limits<float>::quiet_NaN());
+        //
+        else if (id == "HUGE_VAL")
+          return new init_spec_float(at, HUGE_VAL);
+        //
+        else if (id == "M_E")
           return new init_spec_float(at, M_E);
-        else if (id == "PI")
+        else if (id == "M_LOG2E")
+          return new init_spec_float(at, M_LOG2E);
+        else if (id == "M_LOG10E")
+          return new init_spec_float(at, M_LOG10E);
+        else if (id == "M_LN2")
+          return new init_spec_float(at, M_LN2);
+        else if (id == "M_LN10")
+          return new init_spec_float(at, M_LN10);
+        else if (id == "M_PI")
           return new init_spec_float(at, M_PI);
+        else if (id == "M_PI_2")
+          return new init_spec_float(at, M_PI_2);
+        else if (id == "M_PI_4")
+          return new init_spec_float(at, M_PI_4);
+        else if (id == "M_1_PI")
+          return new init_spec_float(at, M_1_PI);
+        else if (id == "M_2_PI")
+          return new init_spec_float(at, M_2_PI); // 2/pi
+        else if (id == "M_2_SQRTPI")
+          return new init_spec_float(at, M_2_SQRTPI); // 2/sqrt(pi)
+        else if (id == "M_SQRT2")
+          return new init_spec_float(at, M_SQRT2);
+        else if (id == "M_SQRT1_2")
+          return new init_spec_float(at, M_SQRT1_2);
         // some other symbol (may target a LET binding)
         return new init_spec_symbol(at, id);
       }
@@ -858,9 +896,44 @@ struct cls_parser : parser
       re->defined_at.extend_to(nextLoc());
       return re;
     } else if (consumeIf(LPAREN)) {
-      init_spec_atom *e = parseInitAtom();
-      consume(RPAREN);
-      return e;
+      // grouping expression or vector value
+      const type *et;
+      if (lookingAtSeq(IDENT,RPAREN) &&
+        (et = lookupBuiltinType(tokenString(), 8)))
+      {
+        // vector initializer
+        if (!et->is<type_vector>()) {
+          fatal("vector initializer type is not vector");
+        }
+        auto *vi = new init_spec_vector(at, et);
+        skip();
+        consume(RPAREN);
+        //   vector:    (float4)(1,2,3,4)
+        //   broadcast: (float4)(3.14f)
+        if (lookingAt(LPAREN)) {
+          consume(LPAREN);
+          vi->children.push_back(parseInitAtom());
+          while (consumeIf(COMMA))
+            vi->children.push_back(parseInitAtom());
+          consume(RPAREN);
+          if (vi->children.size() == 1) {
+            // broadcast
+            for (int i = 0; i < (int)et->as<type_vector>().length; i++)
+              vi->children.push_back(vi->children[i]);
+          }
+        } else {
+          // broadcast: (float4)3.14f
+          auto *e = parseInitAtom();
+          for (int i = 0; i < (int)et->as<type_vector>().length; i++)
+            vi->children.push_back(e);
+        }
+        return vi;
+      } else {
+        // grouping expression (E)
+        init_spec_atom *e = parseInitAtom();
+        consume(RPAREN);
+        return e;
+      }
     } else {
       fatal("syntax error in initializer expression");
       return nullptr;
@@ -1525,9 +1598,9 @@ struct cls_parser : parser
   }
 
   static bool isFloating(const type &elem_type) {
-    if (elem_type.is<type_struct>()) {
-      const type_struct &s = elem_type.as<type_struct>();
-      return s.is_uniform() && isFloating(*s.elements[0]);
+    if (elem_type.is<type_vector>()) {
+      const type_vector &s = elem_type.as<type_vector>();
+      return isFloating(s.element_type);
     }
     return elem_type.is<type_num>() &&
       elem_type.as<type_num>().skind == type_num::FLOATING;
@@ -1780,9 +1853,8 @@ void cls::parse_script(
   const std::string &input,
   const std::string &filename,
   script &s,
-  warning_list &wl)
+  diagnostics &ds)
 {
-  cls_parser cp(input, s);
+  cls_parser cp(ds, input, s);
   cp.parseScript();
-  wl = cp.warnings();
 }

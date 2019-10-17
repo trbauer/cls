@@ -1,13 +1,13 @@
-#include "intel_gen_binary_decoder.hpp"
-#include "kargs.hpp"
-#include "parser.hpp"
-#include "spirv_decoder.hpp"
 #include "../cl_headers.hpp"
 #include "../half.hpp"
 #include "../ir/types.hpp"
 #include "../devices.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
+#include "intel_gen_binary_decoder.hpp"
+#include "kargs.hpp"
+#include "parser.hpp"
+#include "spirv_decoder.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -25,10 +25,6 @@ std::string cls::k::arg_info::typeSyntax() const
     ss << sep << "const";
     sep = " ";
   }
-  if (type_qual & CL_KERNEL_ARG_TYPE_RESTRICT) {
-    ss << sep << "restrict";
-    sep = " ";
-  }
   if (type_qual & CL_KERNEL_ARG_TYPE_VOLATILE) {
     ss << sep << "volatile";
     sep = " ";
@@ -44,13 +40,22 @@ std::string cls::k::arg_info::typeSyntax() const
   case CL_KERNEL_ARG_ADDRESS_CONSTANT:   ss << sep << "constant"; break;
   case CL_KERNEL_ARG_ADDRESS_PRIVATE:    ss << sep << "private"; break;
   }
+  if (addr_qual != 0 && accs_qual != CL_KERNEL_ARG_ACCESS_NONE) {
+    ss << " ";
+  }
   switch (accs_qual) {
-  case CL_KERNEL_ARG_ACCESS_READ_ONLY:   ss << " read_only"; break;
-  case CL_KERNEL_ARG_ACCESS_WRITE_ONLY:  ss << " write_only"; break;
-  case CL_KERNEL_ARG_ACCESS_READ_WRITE:  ss << " read_write"; break;
+  case CL_KERNEL_ARG_ACCESS_READ_ONLY:   ss << "read_only"; break;
+  case CL_KERNEL_ARG_ACCESS_WRITE_ONLY:  ss << "write_only"; break;
+  case CL_KERNEL_ARG_ACCESS_READ_WRITE:  ss << "read_write"; break;
   case CL_KERNEL_ARG_ACCESS_NONE: break;
   }
-  ss << " " << type.syntax();
+  ss << " " << type->syntax();
+
+  if (type_qual & CL_KERNEL_ARG_TYPE_RESTRICT) {
+    // restrict applies to the pointer
+    // global int * restrict foo, ...
+    ss << " restrict";
+  }
 
   return ss.str();
 }
@@ -65,8 +70,6 @@ program_info::~program_info()
     }
     delete t;
   }
-  for (const type_ptr *pt : pointer_types)
-    delete pt;
 }
 
 const type &program_info::pointerTo(const type &t_ref, size_t ptr_size)
@@ -76,23 +79,23 @@ const type &program_info::pointerTo(const type &t_ref, size_t ptr_size)
       return *t;
     }
   }
-  pointer_types.push_back(new type_ptr(&t_ref,ptr_size));
-  types.push_back(new type(*pointer_types.back()));
+  types.push_back(new type(type_ptr(&t_ref, ptr_size)));
   return *types.back();
 }
 
 
 struct karg_parser : cls::parser
 {
-  program_info  &p;
+  program_info  &pi;
   size_t         bytes_per_addr;
 
   karg_parser(
+    diagnostics &ds,
     const std::string &inp,
     program_info  &_p,
     size_t _bytes_per_addr)
-    : cls::parser(inp,true)
-    , p(_p)
+    : cls::parser(ds, inp, true)
+    , pi(_p)
     , bytes_per_addr(_bytes_per_addr)
   {
   }
@@ -119,8 +122,8 @@ struct karg_parser : cls::parser
   void parseKernel() {
     skip(); // kernel
 
-    p.kernels.emplace_back();
-    kernel_info &k = p.kernels.back();
+    pi.kernels.emplace_back();
+    kernel_info &k = pi.kernels.back();
 
     consumeIdentEq("void","void");
     k.name = consumeIdent("kernel name");
@@ -204,15 +207,24 @@ struct karg_parser : cls::parser
     if (t == nullptr) {
       fatalAt(type_loc,"unrecognized type");
     }
-    a.type = *t;
+    a.type = t;
     while (consumeIf(MUL)) {
-      a.type = p.pointerTo(*t,bytes_per_addr);
+      a.type = &pi.pointerTo(*t, bytes_per_addr);
       // this allows (global char *const *name)
       //                           ^^^^^
       // maybe useful for SVM
       //
       // we discard it because it's not an attribute of the outermost pointer
       (void)parseTypeQualsOpt();
+    }
+
+    // omit address qualifier for images
+    if (a.type->is<type_builtin>() && type_name.substr(0, 5) == "image") {
+      a.addr_qual = 0;
+      if (a.accs_qual == CL_KERNEL_ARG_ACCESS_NONE) {
+        // image without an access qualifier is implicitly read_only
+        a.accs_qual = CL_KERNEL_ARG_ACCESS_READ_ONLY;
+      }
     }
 
     if (lookingAtIdent()) {
@@ -226,7 +238,7 @@ struct karg_parser : cls::parser
 
 static cls::k::program_info *parseProgramInfoText(
   const cls::opts &os,
-  const cls::fatal_handler *fh, cls::loc at,
+  cls::diagnostics &ds, cls::loc at,
   const cls::program_source &src,
   size_t bytes_per_addr)
 {
@@ -262,7 +274,7 @@ static cls::k::program_info *parseProgramInfoText(
     cpp_inp = text::load_c_preprocessed(src.path,ss.str());
   } else {
     if (!sys::file_exists(os.cpp_override_path))
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "unable to find C Preprocessor from command line option "
         "for kernel analysis");
     cpp_inp =
@@ -286,7 +298,7 @@ static cls::k::program_info *parseProgramInfoText(
   }
 
   program_info *pi = new program_info();
-  karg_parser kp(cpp_inp, *pi, bytes_per_addr);
+  karg_parser kp(ds, cpp_inp, *pi, bytes_per_addr);
   try {
     kp.parse();
   } catch (const diagnostic &d) {
@@ -297,26 +309,26 @@ static cls::k::program_info *parseProgramInfoText(
     d.str(ss);
     ss << "\n";
     ss << "SEE: debug-out.cl";
-    fh->fatalAt(at,ss.str());
+    ds.fatalAt(at,ss.str());
   }
   return pi;
 }
 
 static program_info *parseProgramInfoBinary(
   const opts &os,
-  fatal_handler *fh, loc at,
+  diagnostics &ds, loc at,
   const std::string &path,
   cl_device_id dev_id)
 {
   // auto bits = sys::read_file_binary(path);
   auto ma = getDeviceMicroArchitecture(dev_id);
   if (isIntelGEN(ma)) {
-    return parseProgramInfoBinaryGEN(os, fh, at, path);
+    return parseProgramInfoBinaryGEN(os, ds, at, path);
   } else {
     // TODO: would love to handle more binary formats
     // PTX won't work because it lacks type information we need unify
     // arg initializers with arguments
-    fh->fatalAt(at,
+    ds.fatalAt(at,
       "parseProgramInfoBinary: "
       "argument info from binaries not supported yet on this device");
     return nullptr;
@@ -325,15 +337,14 @@ static program_info *parseProgramInfoBinary(
 
 program_info *cls::k::parseProgramInfo(
   const opts &os,
-  fatal_handler *fh, loc at,
+  diagnostics &ds, loc at,
   const program_source &src,
   cl_device_id dev_id)
 {
-
   if (src.kind == program_source::BINARY) {
-    return parseProgramInfoBinary(os, fh, at, src.path, dev_id);
+    return parseProgramInfoBinary(os, ds, at, src.path, dev_id);
   } else if (src.kind == program_source::SPIRV) {
-    return parseProgramInfoBinarySPIRV(os, fh, at, src.path);
+    return parseProgramInfoBinarySPIRV(os, ds, at, src.path);
   } else { // TEXT
     // loading from binary gives us a pointer size to sanity check,
     // for here we just trust the OpenCL C runtime compiler to tell the truth
@@ -343,10 +354,10 @@ program_info *cls::k::parseProgramInfo(
     if (getDeviceInfo(
       dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
     {
-      fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+      ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
     bytes_per_addr /= 8;
-    auto *pi = parseProgramInfoText(os, fh, at, src, bytes_per_addr);
+    auto *pi = parseProgramInfoText(os, ds, at, src, bytes_per_addr);
     pi->pointer_size = bytes_per_addr;
     return pi;
   }
@@ -354,21 +365,21 @@ program_info *cls::k::parseProgramInfo(
 
 program_info *cls::k::parseProgramInfoFromAPI(
   const cls::opts &os,
-  const cls::fatal_handler *fh, cls::loc at,
+  cls::diagnostics &ds, cls::loc at,
   cl_program program,
   cl_device_id dev_id)
 {
   cl_uint ks_len = 0;
   auto err = clCreateKernelsInProgram(program, 0, nullptr, &ks_len);
   if (err != CL_SUCCESS) {
-    fh->fatalAt(at,
+    ds.fatalAt(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
       status_to_symbol(err));
   }
   cl_kernel *ks = (cl_kernel*)alloca(sizeof(*ks) * ks_len);
   err = clCreateKernelsInProgram(program, ks_len, ks, nullptr);
   if (err != CL_SUCCESS) {
-    fh->fatalAt(at,
+    ds.fatalAt(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
       status_to_symbol(err));
   }
@@ -380,7 +391,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
   if (getDeviceInfo(
     dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
   {
-    fh->fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+    ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
   }
   bytes_per_addr /= 8;
   pi->pointer_size = bytes_per_addr;
@@ -398,7 +409,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       nullptr,
       &knm_len);
     if (err != CL_SUCCESS) {
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
         status_to_symbol(err));
@@ -415,7 +426,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       knm,
       nullptr);
     if (err != CL_SUCCESS) {
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
         status_to_symbol(err));
@@ -431,7 +442,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       &ki.reqd_word_group_size[0],
       nullptr);
     if (err != CL_SUCCESS) {
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "failed to parse program info program: "
         "clGetKernelWorkGroupInfo(CL_KERNEL_GLOBAL_WORK_SIZE): ",
         status_to_symbol(err));
@@ -445,7 +456,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       &ka_len,
       nullptr);
     if (err != CL_SUCCESS) {
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_NUM_ARGS): ",
         status_to_symbol(err));
@@ -472,7 +483,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
           nullptr,
           &len);
         if (err != CL_SUCCESS) {
-          fh->fatalAt(at,
+          ds.fatalAt(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
             status_to_symbol(err));
@@ -486,7 +497,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
           buf,
           nullptr);
         if (err != CL_SUCCESS) {
-          fh->fatalAt(at,
+          ds.fatalAt(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
             status_to_symbol(err));
@@ -505,14 +516,14 @@ program_info *cls::k::parseProgramInfoFromAPI(
 
       const type *t = lookupBuiltinType(type_name, bytes_per_addr);
       if (t == nullptr) {
-        fh->fatalAt(at,
+        ds.fatalAt(at,
           "failed to parse program info program: "
           "unable to lookup type ", type_name, " from program object");
       }
-      ai.type = *t;
+      ai.type = t;
       for (size_t i = star; i < full_type_name.size(); i++) {
         if (full_type_name[i] == '*')
-          ai.type = pi->pointerTo(ai.type, bytes_per_addr);
+          ai.type = &pi->pointerTo(*ai.type, bytes_per_addr);
       }
 
       err = clGetKernelArgInfo(
@@ -523,7 +534,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.addr_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        fh->fatalAt(at,
+        ds.fatalAt(at,
           "failed to parse program info program object: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ADDRESS_QUALIFIER): ",
           status_to_symbol(err));
@@ -537,7 +548,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.accs_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        fh->fatalAt(at,
+        ds.fatalAt(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ACCESS_QUALIFIER): ",
           status_to_symbol(err));
@@ -551,7 +562,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.type_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        fh->fatalAt(at,
+        ds.fatalAt(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_TYPE_QUALIFIER): ",
           status_to_symbol(err));
@@ -559,7 +570,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
     } // for kernel args
     err = clReleaseKernel(ks[k_ix]);
     if (err != CL_SUCCESS) {
-      fh->fatalAt(at,
+      ds.fatalAt(at,
         "failed to parse program info program: clReleaseKernel(): ",
         status_to_symbol(err));
     }

@@ -6,20 +6,20 @@ using namespace cls;
 
 
 
-#define DEFINE_PRIM_TYPE_VEC(N,IDENT,SYMBOL,CATEGORY,SIZE) \
-  constexpr type_struct TS_ ## IDENT ## N{SYMBOL #N,SIZE,&(T_ ## IDENT),N}; \
-  constexpr type T_ ## IDENT ## N{TS_ ## IDENT ## N}; \
+#define DEFINE_PRIM_TYPE_VEC(N,IDENT,ELEM_TYPE) \
+  constexpr type_vector TV_ ## IDENT ## N{ELEM_TYPE,N}; \
+  constexpr type T_ ## IDENT ## N{TV_ ## IDENT ## N}; \
   const type & cls:: IDENT ## N () {return T_ ## IDENT ## N;}
 
 #define DEFINE_PRIM_TYPE(IDENT,SYMBOL,CATEGORY,SIZE) \
-  constexpr type_num TN_ ## IDENT{type_num{SYMBOL,type_num::CATEGORY,SIZE}}; \
+  constexpr type_num TN_ ## IDENT{SYMBOL,type_num::CATEGORY,SIZE}; \
   constexpr type T_ ## IDENT{TN_ ## IDENT}; \
   const type & cls:: IDENT () {return T_ ## IDENT;} \
-  DEFINE_PRIM_TYPE_VEC(2,IDENT,SYMBOL,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(3,IDENT,SYMBOL,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(4,IDENT,SYMBOL,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(8,IDENT,SYMBOL,CATEGORY,SIZE) \
-  DEFINE_PRIM_TYPE_VEC(16,IDENT,SYMBOL,CATEGORY,SIZE)
+  DEFINE_PRIM_TYPE_VEC( 2,IDENT,TN_ ## IDENT) \
+  DEFINE_PRIM_TYPE_VEC( 3,IDENT,TN_ ## IDENT) \
+  DEFINE_PRIM_TYPE_VEC( 4,IDENT,TN_ ## IDENT) \
+  DEFINE_PRIM_TYPE_VEC( 8,IDENT,TN_ ## IDENT) \
+  DEFINE_PRIM_TYPE_VEC(16,IDENT,TN_ ## IDENT)
 
 DEFINE_PRIM_TYPE(HALF,   "half",   FLOATING, 2);
 DEFINE_PRIM_TYPE(FLOAT,  "float",  FLOATING, 4);
@@ -34,25 +34,34 @@ DEFINE_PRIM_TYPE(UINT,   "uint",   UNSIGNED, 4);
 DEFINE_PRIM_TYPE( LONG,  "long",     SIGNED, 8);
 DEFINE_PRIM_TYPE(ULONG,  "ulong",  UNSIGNED, 8);
 
-constexpr type_builtin TBI_IMAGE1D_32b(type_builtin::IMAGE1D,4);
-constexpr type T_IMAGE1D_32b(TBI_IMAGE1D_32b);
-constexpr type_builtin TBI_IMAGE1D_64b(type_builtin::IMAGE1D,8);
-constexpr type T_IMAGE1D_64b(TBI_IMAGE1D_64b);
+#define MKBUILTIN_TYPES(KEY) \
+  constexpr type_builtin TBI_ ## KEY ## _32b(type_builtin:: KEY, 4); \
+  constexpr type T_ ## KEY ## _32b(TBI_ ## KEY ## _32b); \
+  constexpr type_builtin TBI_ ## KEY ## _64b(type_builtin:: KEY, 8); \
+  constexpr type T_ ## KEY ## _64b(TBI_ ## KEY ## _64b); \
+
+MKBUILTIN_TYPES(IMAGE1D)
+MKBUILTIN_TYPES(IMAGE1D_ARRAY);
+MKBUILTIN_TYPES(IMAGE1D_BUFFER);
 //
-constexpr type_builtin TBI_IMAGE2D_32b(type_builtin::IMAGE2D,4);
-constexpr type T_IMAGE2D_32b(TBI_IMAGE2D_32b);
-constexpr type_builtin TBI_IMAGE2D_64b(type_builtin::IMAGE2D,8);
-constexpr type T_IMAGE2D_64b(TBI_IMAGE2D_64b);
+MKBUILTIN_TYPES(IMAGE2D);
+MKBUILTIN_TYPES(IMAGE2D_ARRAY);
+MKBUILTIN_TYPES(IMAGE2D_ARRAY_DEPTH);
+MKBUILTIN_TYPES(IMAGE2D_ARRAY_MSAA);
+MKBUILTIN_TYPES(IMAGE2D_ARRAY_MSAA_DEPTH);
+MKBUILTIN_TYPES(IMAGE2D_DEPTH);
+MKBUILTIN_TYPES(IMAGE2D_MSAA);
+MKBUILTIN_TYPES(IMAGE2D_MSAA_DEPTH);
 //
-constexpr type_builtin TBI_IMAGE3D_32b(type_builtin::IMAGE3D,4);
-constexpr type T_IMAGE3D_32b(TBI_IMAGE3D_32b);
-constexpr type_builtin TBI_IMAGE3D_64b(type_builtin::IMAGE3D,8);
-constexpr type T_IMAGE3D_64b(TBI_IMAGE3D_64b);
+MKBUILTIN_TYPES(IMAGE3D);
 //
-constexpr type_builtin TBI_SAMPLER_32b(type_builtin::SAMPLER,4);
-constexpr type T_SAMPLER_32b(TBI_SAMPLER_32b);
-constexpr type_builtin TBI_SAMPLER_64b(type_builtin::SAMPLER,8);
-constexpr type T_SAMPLER_64b(TBI_SAMPLER_64b);
+MKBUILTIN_TYPES(SAMPLER);
+MKBUILTIN_TYPES(QUEUE);
+MKBUILTIN_TYPES(NDRANGE);
+MKBUILTIN_TYPES(CLK_EVENT);
+MKBUILTIN_TYPES(RESERVE_ID);
+MKBUILTIN_TYPES(EVENT);
+MKBUILTIN_TYPES(CL_MEM_FENCE_FLAGS);
 
 // TODO: others ...
 
@@ -69,22 +78,33 @@ constexpr bool holds(const std::variant<Types...>& v) noexcept {
 */
 
 std::string type::syntax() const {
-  if (is<type_void>()) {
-    return as<type_void>().syntax();
-  } else if (is<type_num>()) {
-    return as<type_num>().syntax();
+  if (is<type_array>()) {
+    return as<type_array>().syntax();
   } else if (is<type_builtin>()) {
     return as<type_builtin>().syntax();
+  } else if (is<type_num>()) {
+    return as<type_num>().syntax();
   } else if (is<type_struct>()) {
     return as<type_struct>().syntax();
-  } else if (is<type_union>()) {
-    return as<type_union>().syntax();
   } else if (is<type_ptr>()) {
     return as<type_ptr>().syntax();
+  } else if (is<type_union>()) {
+    return as<type_union>().syntax();
+  } else if (is<type_vector>()) {
+    return as<type_vector>().syntax();
+  } else if (is<type_void>()) {
+    return as<type_void>().syntax();
   } else {
     throw "unreachable";
   }
 }
+
+static type T_VOID {};
+
+const type &cls::VOID() {
+  return T_VOID;
+}
+
 // constexpr static type FLOAT{type_num{"float",type_num::FLOATING,4}};
 // constexpr static type_struct ST_FLOAT2{"float2",sizeof(float),&FLOAT,2};
 // constexpr static type FLOAT2{ST_FLOAT2};
@@ -96,7 +116,9 @@ std::string type::syntax() const {
 const type *cls::lookupBuiltinType(std::string name, size_t bytes_per_addr)
 {
   // normalize primitive names (e.g. unsigned int -> uint)
-  if (name == "signed") {
+  if (name == "void") {
+    return &cls::VOID();
+  } else if (name == "signed") {
     name = "int";
   } else if (name == "unsigned") {
     name = "uint";
@@ -149,10 +171,24 @@ const type *cls::lookupBuiltinType(std::string name, size_t bytes_per_addr)
   if (name == (LEXEME)) \
     return bytes_per_addr == 4 ? &T_ ## ID ## _32b : &T_ ## ID ## _64b
 
-  BUILTIN_CASE("image1d_t",IMAGE1D);
-  BUILTIN_CASE("image2d_t",IMAGE2D);
+  BUILTIN_CASE("image1d_t", IMAGE1D);
+  BUILTIN_CASE("image1d_array_t", IMAGE1D_ARRAY);
+  BUILTIN_CASE("image1d_buffer_t", IMAGE1D_BUFFER);
+  BUILTIN_CASE("image2d_t", IMAGE2D);
+  BUILTIN_CASE("image2d_array_t", IMAGE2D_ARRAY);
+  BUILTIN_CASE("image2d_depth_t", IMAGE2D_ARRAY_DEPTH);
+  BUILTIN_CASE("image2d_msaa_t", IMAGE2D_ARRAY_MSAA);
+  BUILTIN_CASE("image2d_array_msaa_depth_t", IMAGE2D_ARRAY_MSAA_DEPTH);
+  BUILTIN_CASE("image2d_depth_t", IMAGE2D_DEPTH);
+  BUILTIN_CASE("image2d_msaa_t", IMAGE2D_MSAA);
+  BUILTIN_CASE("image2d_msaa_depth_t", IMAGE2D_MSAA_DEPTH);
   BUILTIN_CASE("image3d_t",IMAGE3D);
-  BUILTIN_CASE("sampler_t",SAMPLER);
+  BUILTIN_CASE("sampler_t", SAMPLER);
+  BUILTIN_CASE("queue_t", QUEUE);
+  BUILTIN_CASE("clk_event_t", CLK_EVENT);
+  BUILTIN_CASE("reserve_id_t", RESERVE_ID);
+  BUILTIN_CASE("event_t", EVENT);
+  BUILTIN_CASE("l_mem_fence_flags", CL_MEM_FENCE_FLAGS);
 #undef BUILTIN_CASE
 
   return nullptr;
@@ -318,6 +354,17 @@ void cls::formatBufferElement(
       struct_ptr += ts.elements[i]->size();
     }
     os << "}";
+  } else if (t.is<type_vector>()) {
+    const type_vector &ts = t.as<type_vector>();
+    os << "(";
+    const uint8_t *struct_ptr = (const uint8_t *)ptr;
+    for (size_t i = 0; i < ts.length; i++) {
+      if (i > 0)
+        os << ",";
+      formatBufferElement(os, ts.element_type, struct_ptr);
+      struct_ptr += ts.element_type.size();
+    }
+    os << ")";
   } else if (t.is<type_union>()) {
     const type_union &tu = t.as<type_union>();
     os << "{";

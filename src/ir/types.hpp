@@ -7,70 +7,33 @@
 #include <cstdint>
 #include <initializer_list>
 #include <ostream>
+#include <sstream>
 #include <variant>
 
 namespace cls
 {
+  // forward decl for types below
+  struct type;
+
   ///////////////////////////////////////////////////////////////////////////
-  // The void type
-  struct type_void {
-    constexpr size_t    size() const {return 0;}
-    std::string         syntax() const {return "void";}
-    bool operator==(const type_void &) const {return true;}
-    bool operator!=(const type_void &t) const {return !(*this == t);}
+  // int foo[16];
+  struct type_array {
+    const type    *element_type;
+    int64_t        length;
+    //
+    type_array(const type *t, int64_t l)
+      : element_type(t), length(l)
+    {
+    }
+    constexpr type_array(type *t, int64_t l)
+      : element_type(t), length(l)
+    {
+    }
+    size_t size() const;
+    std::string syntax() const;
+    bool operator==(const type_array &t) const;
+    bool operator!=(const type_array &t) const { return !(*this == t); }
   };
-  static constexpr type_void VOID;
-
-  ///////////////////////////////////////////////////////////////////////////
-  // float, int, or unsigned
-  struct type_num {
-    enum skind {
-      UNSIGNED = 0,
-      SIGNED,
-      FLOATING
-    } skind;
-    size_t size_in_bytes;
-    const char *name;
-    constexpr type_num(
-      const char *_name, enum skind _kind, size_t _size_in_bytes)
-      : name(_name), skind(_kind), size_in_bytes(_size_in_bytes) { }
-    constexpr size_t     size() const {return size_in_bytes;}
-    std::string          syntax() const {return name;}
-    bool operator==(const type_num &t) const {return text::streq(name,t.name);}
-    bool operator!=(const type_num &t) const {return !(*this == t);}
-
-    /*
-    template <typename RET,typename FUNC,typename...Ts>
-    RET reify(FUNC f,Ts...ts) const {
-      switch (skind) {
-      case UNSIGNED:
-        switch (size) {
-        case 1: return f<uint8_t>(ts...);
-        case 2: return f<uint16_t>(ts...);
-        case 4: return f<uint32_t>(ts...);
-        case 8: return f<uint64_t>(ts...);
-        }
-        break;
-      case SIGNED:
-        switch (size) {
-        case 1: return f<int8_t>(ts...);
-        case 2: return f<int16_t>(ts...);
-        case 4: return f<int32_t>(ts...);
-        case 8: return f<int64_t>(ts...);
-        }
-        break;
-      case FLOATING:
-        switch (size) {
-        case 2: return f<half>(ts...);
-        case 4: return f<float>(ts...);
-        case 8: return f<double>(ts...);
-        }
-      default: throw "INTERNAL ERROR: corrupt type_num";
-      }
-    } // reify
-    */
-
-  }; // type_num
 
   ///////////////////////////////////////////////////////////////////////////
   // enum foo{BAR,BAZ,QUX}
@@ -118,6 +81,7 @@ namespace cls
       EVENT,                    // event_t
       CL_MEM_FENCE_FLAGS,       // cl_mem_fence_flags
     } skind;
+
     size_t pointer_size;
 
     // TODO: read up on image details
@@ -173,11 +137,84 @@ namespace cls
     bool operator==(const type_builtin &t) const {return skind == t.skind;}
     bool operator!=(const type_builtin &t) const {return !(*this == t);}
   };
+
+  ///////////////////////////////////////////////////////////////////////////
+  // float, int, or unsigned
+  struct type_num {
+    enum skind {
+      UNSIGNED = 0,
+      SIGNED,
+      FLOATING
+    } skind;
+    size_t size_in_bytes;
+    const char *name;
+    constexpr type_num(
+      const char *_name, enum skind _kind, size_t _size_in_bytes)
+      : name(_name), skind(_kind), size_in_bytes(_size_in_bytes) { }
+    constexpr size_t     size() const { return size_in_bytes; }
+    std::string          syntax() const { return name; }
+    bool operator==(const type_num &t) const { return text::streq(name, t.name); }
+    bool operator!=(const type_num &t) const { return !(*this == t); }
+
+    /*
+    template <typename RET,typename FUNC,typename...Ts>
+    RET reify(FUNC f,Ts...ts) const {
+      switch (skind) {
+      case UNSIGNED:
+        switch (size) {
+        case 1: return f<uint8_t>(ts...);
+        case 2: return f<uint16_t>(ts...);
+        case 4: return f<uint32_t>(ts...);
+        case 8: return f<uint64_t>(ts...);
+        }
+        break;
+      case SIGNED:
+        switch (size) {
+        case 1: return f<int8_t>(ts...);
+        case 2: return f<int16_t>(ts...);
+        case 4: return f<int32_t>(ts...);
+        case 8: return f<int64_t>(ts...);
+        }
+        break;
+      case FLOATING:
+        switch (size) {
+        case 2: return f<half>(ts...);
+        case 4: return f<float>(ts...);
+        case 8: return f<double>(ts...);
+        }
+      default: throw "INTERNAL ERROR: corrupt type_num";
+      }
+    } // reify
+    */
+
+  }; // type_num
+
+  ///////////////////////////////////////////////////////////////////////////
+  struct type_ptr {
+    enum {
+      EMPTY_ATTRS = 0,
+      CONST = (1 << 0),
+      RESTRICT = (1 << 1),
+      VOLATILE = (1 << 2),
+    } attrs = EMPTY_ATTRS;
+    const type *element_type;
+    size_t pointer_size = 0;
+
+    constexpr type_ptr(const type_ptr &t)
+      : element_type(t.element_type), pointer_size(t.pointer_size) { }
+    constexpr type_ptr(const type *t, size_t ptr_size)
+      : element_type(t), pointer_size(ptr_size) { }
+
+    constexpr size_t size() const { return pointer_size; }
+    std::string syntax() const;
+    bool operator==(const type_ptr &t) const;
+    bool operator!=(const type_ptr &t) const { return !(*this == t); }
+  };
+
   ///////////////////////////////////////////////////////////////////////////
   // Product types.
   //
   // e.g. struct foo {int x,float y,struct{int z,short w}bar};
-  struct type;
   struct type_struct {
     const char                 *name;
 
@@ -198,11 +235,12 @@ namespace cls
       memcpy(elements_memory, ts.elements_memory, sizeof(elements_memory));
     }
     */
+    // user-defined struct
     type_struct(
       const char *_name,
       bool _packed,
       size_t _alignment,
-      std::vector<const type *> ts)
+      const std::vector<const type *> &ts)
       : packed(_packed), alignment(_alignment)
     {
       char *name_buf = new char[strlen(_name+1)];
@@ -265,8 +303,6 @@ namespace cls
     size_t size() const;
     std::string syntax() const {return name;}
 
-    // e.g. cl_int4
-    bool is_uniform() const;
     bool operator==(const type_struct &t) const {return text::streq(name,t.name);}
     bool operator!=(const type_struct &t) const {return !(*this == t);}
   };
@@ -300,49 +336,63 @@ namespace cls
     bool operator!=(const type_union &t) const {return !(*this == t);}
   };
 
-  struct type_ptr {
-    enum {
-      EMPTY_ATTRS = 0,
-      CONST       = (1 << 0),
-      RESTRICT    = (1 << 1),
-      VOLATILE    = (1 << 2),
-    } attrs = EMPTY_ATTRS;
-    const type *element_type;
-    size_t pointer_size = 0;
+  // e.g. int4, float4
+  struct type_vector {
+    const type_num &element_type;
+    size_t          length;
 
-    constexpr type_ptr(const type_ptr &t)
-      : element_type(t.element_type), pointer_size(t.pointer_size) { }
-    constexpr type_ptr(const type *t, size_t ptr_size)
-      : element_type(t), pointer_size(ptr_size) { }
+    constexpr type_vector(
+      const type_num   &_element_type,
+      size_t            _vector_length)
+      : element_type(_element_type)
+      , length(_vector_length)
+    {
+    }
 
-    constexpr size_t size() const {return pointer_size;}
+    size_t size() const;
     std::string syntax() const;
-    bool operator==(const type_ptr &t) const;
-    bool operator!=(const type_ptr &t) const {return !(*this == t);}
+    bool operator==(const type_vector &t) const;
+    bool operator!=(const type_vector &t) const { return !(*this == t); }
   };
 
+  ///////////////////////////////////////////////////////////////////////////
+  // The void type
+  struct type_void {
+    constexpr size_t    size() const { return 0; }
+    std::string         syntax() const { return "void"; }
+    bool operator==(const type_void &) const { return true; }
+    bool operator!=(const type_void &t) const { return !(*this == t); }
+  };
+  static constexpr type_void TV_VOID;
+
+  ///////////////////////////////////////////////////////////////////////////
+  // Union type
   struct type {
     std::variant<
-        type_void
+        type_array
       , type_num
     //  , type_enum
       , type_builtin
       , type_struct
       , type_union
-      , type_ptr>   var;
+      , type_ptr
+      , type_vector
+      , type_void>   var;
 
-    constexpr type() : var(VOID) { }
+    constexpr type() : var(TV_VOID) { }
 //    constexpr type(const type &t) : var(t.var) { }
 //    constexpr type(const type &) = default;
-    constexpr type(type_num t) : var(t) { }
+              type(type_array t) : var(t) { }
     constexpr type(type_builtin t) : var(t) { }
+    constexpr type(type_num t) : var(t) { }
     constexpr type(type_struct t) : var(t) { }
     constexpr type(type_union t) : var(t) { }
     constexpr type(type_ptr t) : var(t) { }
+    constexpr type(type_vector t) : var(t) { }
 
     constexpr size_t size() const {
-      if (is<type_void>()) {
-        return as<type_void>().size();
+      if (is<type_array>()) {
+        return as<type_array>().size();
       } else if (is<type_num>()) {
         return as<type_num>().size();
       } else if (is<type_builtin>()) {
@@ -353,23 +403,25 @@ namespace cls
         return as<type_union>().size();
       } else if (is<type_ptr>()) {
         return as<type_ptr>().size();
+      } else if (is<type_vector>()) {
+        return as<type_vector>().size();
+      } else if (is<type_void>()) {
+        return as<type_void>().size();
       } else {
         throw "unreachable";
       }
     }
+
     std::string syntax() const;
 
     // template <typename T>
     // operator const T&() const {return std::get<T>(var);}
 
     template <typename T>
-    constexpr bool is() const noexcept {
-      return std::holds_alternative<T>(var);
-    }
+    constexpr bool is() const noexcept {return std::holds_alternative<T>(var);}
+
     template <typename T>
-    constexpr const T &as() const {
-      return std::get<T>(var);
-    }
+    constexpr const T &as() const {return std::get<T>(var);}
   }; // types
 
 
@@ -379,31 +431,22 @@ namespace cls
   static inline bool operator!=(const type &t1,const type &t2) {
     return !(t1 == t2);
   }
+
+  /////////////////////////////////////////////////////////////////////////////
+  inline std::string type_array::syntax() const {
+    std::stringstream ss;
+    ss << element_type->syntax() << "[" << length << "]";
+    return ss.str();
+  }
+  inline size_t type_array::size() const {
+    return element_type->size() * length;
+  }
+  inline bool type_array::operator==(const type_array &t) const {
+    return element_type == t.element_type && length == t.length;
+  }
+  /////////////////////////////////////////////////////////////////////////////
   inline bool type_ptr::operator==(const type_ptr &t) const {
     return *element_type == *t.element_type;
-  }
-  inline bool type_struct::is_uniform() const {
-    const type *t0 = elements[0];
-    if (elements_length == 0 || !t0->is<type_num>())
-      return false;
-    for (size_t i = 1; i < elements_length; i++)
-      if (elements[i] != t0)
-        return false;
-    return true;
-  }
-  inline size_t type_struct::size() const {
-    size_t sum = 0;
-    for (size_t i = 0; i < elements_length; i++)
-      sum += elements[i]->size();
-    return sum;
-    // TODO: align up, obey packing and etc...
-  }
-  inline size_t type_union::size() const {
-    size_t max = 0;
-    for (size_t i = 0; i < elements_length; i++)
-      max = std::max<size_t>(max,elements[i]->size());
-    // TODO: align up
-    return max;
   }
   inline std::string type_ptr::syntax() const {
     std::stringstream ss;
@@ -411,6 +454,37 @@ namespace cls
     ss << " *";
     return ss.str();
   }
+  /////////////////////////////////////////////////////////////////////////////
+  inline size_t type_struct::size() const {
+    size_t sum = 0;
+    for (size_t i = 0; i < elements_length; i++)
+      sum += elements[i]->size();
+    return sum;
+    // TODO: align up, obey packing and etc...
+  }
+  /////////////////////////////////////////////////////////////////////////////
+  inline size_t type_union::size() const {
+    size_t max = 0;
+    for (size_t i = 0; i < elements_length; i++)
+      max = std::max<size_t>(max,elements[i]->size());
+    // TODO: align up?
+    return max;
+  }
+  /////////////////////////////////////////////////////////////////////////////
+  inline std::string type_vector::syntax() const {
+    std::stringstream ss;
+    ss << element_type.syntax() << length;
+    return ss.str();
+  }
+  inline size_t type_vector::size() const {
+    return element_type.size() * length;
+  }
+  inline bool type_vector::operator==(const type_vector &t) const {
+    return element_type == t.element_type && length == t.length;
+  }
+  /////////////////////////////////////////////////////////////////////////////
+
+  const type &VOID();
 
   // generate: constexpr const type& INT(); etc...
  #define MAKE_TYPE_ACCESSORS(IDENT)\

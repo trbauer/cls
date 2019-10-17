@@ -195,14 +195,9 @@ static void fill_buffer_rng(
       }
       break;
     }
-  } else if (t.is<type_struct>()) {
-    const type_struct &ts = t.as<type_struct>();
-    if (ts.is_uniform() && ts.elements[0]->is<type_num>()) {
-      const type_num &tn = ts.elements[0]->as<type_num>();
-      fill_buffer_rng(csi, ec, ab, isr, tn, at);
-    } else {
-      csi.fatalAt(at,"cannot broadcast random for this struct");
-    }
+  } else if (t.is<type_vector>()) {
+    const type_vector &tv = t.as<type_vector>();
+    fill_buffer_rng(csi, ec, ab, isr, tv.element_type, at);
   } else {
     csi.fatalAt(at,"unsupported type for random generator");
   }
@@ -269,14 +264,9 @@ static void fill_buffer_seq(
       }
       break;
     }
-  } else if (t.is<type_struct>()) {
-    const type_struct &ts = t.as<type_struct>();
-    if (ts.is_uniform() && ts.elements[0]->is<type_num>()) {
-      const type_num &tn = ts.elements[0]->as<type_num>();
-      fill_buffer_seq(csi, ec, ab, iss, tn, at);
-    } else {
-      csi.fatalAt(at,"cannot broadcast random for this struct");
-    }
+  } else if (t.is<type_vector>()) {
+    const type_vector &tv = t.as<type_vector>();
+    fill_buffer_seq(csi, ec, ab, iss, tv.element_type, at);
   } else {
     csi.fatalAt(at,"unsupported type for random generator");
   }
@@ -383,7 +373,7 @@ static void saveBuffer(
 
 void compiled_script_impl::execute(dispatch_command &dc)
 {
-  debug(dc.dobj->spec->defined_at, "executing dispatch");
+  debugAt(dc.dobj->spec->defined_at, "executing dispatch");
 
   cl_command_queue queue = dc.dobj->queue;
   cl_kernel kernel = dc.kernel->kernel;
@@ -401,7 +391,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
         const arg_info &ai = std::get<2>(sinfo);
         const loc &at = std::get<3>(sinfo);
 
-        std::cout << ai.type.syntax() << "  " << ai.name << " = " <<
+        std::cout << ai.type->syntax() << "  " << ai.name << " = " <<
           so->str() << "\n";
 
         if (is_image) {
@@ -499,7 +489,7 @@ void compiled_script_impl::execute(
   const void *ref_host_ptr,
   const void *sut_host_ptr)
 {
-  debug(dfc.spec->defined_at, "executing surface diff");
+  debugAt(dfc.spec->defined_at, "executing surface diff");
 
   evaluator::context ec;
   if (dfc.so_ref->size_in_bytes == 0)
@@ -534,7 +524,7 @@ void compiled_script_impl::execute(
 
 void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 {
-  debug(dfc.spec->defined_at, "executing uniform diff");
+  debugAt(dfc.spec->defined_at, "executing uniform diff");
 
   evaluator::context ec;
   if (dfc.so->size_in_bytes == 0)
@@ -548,7 +538,7 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
   }
 
   // given an explicit type we make a broadcast comparison
-  arg_buffer ab_ref(this, dfc.spec->defined_at, elem_type->size());
+  arg_buffer ab_ref(getDiagnostics(), dfc.spec->defined_at, elem_type->size());
   e->evalInto(ec,
     dfc.spec->defined_at,
     (const init_spec_atom *)dfc.spec->ref.value,
@@ -667,17 +657,15 @@ void compiled_script_impl::executeDiffElem(
   //
   if (isFloating(elem_type)) {
     diffElem(-1, elem_type.as<type_num>(), elem_ref, elem_sut);
-  } else if (elem_type.is<type_struct>() &&
-    elem_type.as<type_struct>().is_uniform() &&
-    isFloating(*elem_type.as<type_struct>().elements[0]))
+  } else if (elem_type.is<type_vector>() &&
+    isFloating(elem_type.as<type_vector>().element_type))
   {
-    const type_struct &ts = elem_type.as<type_struct>();
-    const type_num &vec_elem_type = ts.elements[0]->as<type_num>();
-    for (int i = 0; i < (int)ts.elements_length; i++) {
+    const type_vector &tv = elem_type.as<type_vector>();
+    for (int i = 0; i < (int)tv.length; i++) {
       diffElem(i,
-        vec_elem_type,
-        (const uint8_t *)elem_ref + i*vec_elem_type.size(),
-        (const uint8_t *)elem_sut + i*vec_elem_type.size());
+        tv.element_type,
+        (const uint8_t *)elem_ref + i*tv.element_type.size(),
+        (const uint8_t *)elem_sut + i*tv.element_type.size());
     }
   } else if (memcmp(
     elem_ref,
@@ -690,7 +678,7 @@ void compiled_script_impl::executeDiffElem(
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 {
-  debug(prc.spec->defined_at, "executing print");
+  debugAt(prc.spec->defined_at, "executing print");
 
   evaluator::context ec;
   if (prc.so && !prc.so->dispatch_uses.empty())
@@ -717,7 +705,7 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 
 void compiled_script_impl::execute(save_command &svc, const void *host_ptr)
 {
-  debug(svc.spec->defined_at, "executing save");
+  debugAt(svc.spec->defined_at, "executing save");
 
   std::ofstream of(svc.spec->file,std::ios::binary);
   if (!of.good()) {
@@ -730,7 +718,7 @@ void compiled_script_impl::execute(save_command &svc, const void *host_ptr)
   of.flush();
 }
 
-void cl_fatal_handler::withBufferMapRead(
+void cl_interface::withBufferMapRead(
   const loc &at,
   const surface_object *so,
   buffer_reader apply)
@@ -759,7 +747,7 @@ void cl_fatal_handler::withBufferMapRead(
       nullptr);
 }
 
-void cl_fatal_handler::withBufferMapWrite(
+void cl_interface::withBufferMapWrite(
   const loc &at,
   surface_object *so,
   buffer_writer apply)
@@ -788,7 +776,7 @@ void cl_fatal_handler::withBufferMapWrite(
       nullptr);
 }
 
-void cl_fatal_handler::withImageMapRead(
+void cl_interface::withImageMapRead(
   const loc &at,
   const surface_object *so,
   image_reader apply)
@@ -824,7 +812,7 @@ void cl_fatal_handler::withImageMapRead(
       nullptr);
 }
 
-void cl_fatal_handler::withImageMapWrite(
+void cl_interface::withImageMapWrite(
   const loc &at,
   const surface_object *so,
   image_writer apply)
@@ -868,7 +856,8 @@ void compiled_script_impl::init_surfaces()
     if (so->dummy_object)
       continue; // only used for a diff command
 
-    debug(so->spec->defined_at, "initializing surface");
+    debugAt(so->spec->defined_at, "initializing surface");
+
     auto t_start = std::chrono::high_resolution_clock::now();
 
     dispatch_command *dc = nullptr;
@@ -877,8 +866,8 @@ void compiled_script_impl::init_surfaces()
       const surface_object::use &u = so->dispatch_uses.front();
       dc = std::get<0>(u);
       const arg_info &ai = std::get<2>(u);
-      if (ai.type.is<type_ptr>()) {
-        elem_type = ai.type.as<type_ptr>().element_type;
+      if (ai.type->is<type_ptr>()) {
+        elem_type = ai.type->as<type_ptr>().element_type;
       }
     } else if (!so->dummy_object) { // no valid uses found
       fatalAt(so->spec->defined_at,"no uses of this surface found");
@@ -920,7 +909,8 @@ void compiled_script_impl::init_surface(
   const type *elem_type,
   void *host_ptr)
 {
-  arg_buffer ab(this, so.spec->defined_at, host_ptr, so.size_in_bytes);
+  arg_buffer ab(
+    getDiagnostics(), so.spec->defined_at, host_ptr, so.size_in_bytes);
   switch (so.spec->root->skind) {
   case init_spec::IS_FIL: {
     const init_spec_file *isf = (const init_spec_file *)so.spec->root;
@@ -950,7 +940,7 @@ void compiled_script_impl::init_surface(
     ab.curr += file_size; // fake the advance
     break;
   }
-  case init_spec::IS_RND: {
+  case init_spec::IS_RND:
     if (elem_type == nullptr) {
       fatalAt(so.spec->defined_at, "unable to infer element type for rng init");
     } else if (elem_type->is<type_num>()) {
@@ -963,24 +953,20 @@ void compiled_script_impl::init_surface(
         (const init_spec_rng *)so.spec->root,
         *elem_type,
         so.spec->defined_at);
-    } else if (
-      elem_type->is<type_struct>() &&
-      elem_type->as<type_struct>().is_uniform())
-    {
+    } else if (elem_type->is<type_vector>()) {
       fill_buffer_rng(
         *this,
         ec,
         ab,
         (const init_spec_rng *)so.spec->root,
-        *elem_type->as<type_struct>().elements[0],
+        elem_type->as<type_vector>().element_type,
         so.spec->defined_at);
     } else {
       fatalAt(so.spec->defined_at,
-        "random inits can only apply to numeric element types");
+        "random inits can only apply to numeric and vector element types");
     }
     break;
-  }
-  case init_spec::IS_SEQ: {
+  case init_spec::IS_SEQ:
     if (elem_type == nullptr) {
       fatalAt(so.spec->defined_at, "unable to infer element type for seq init");
     } else if (elem_type->is<type_num>()) {
@@ -998,7 +984,6 @@ void compiled_script_impl::init_surface(
         "sequential inits can only apply to numeric element types");
     }
     break;
-  }
   ////////////////////////////////////////
   // special handling for int since we permit 0 to broadcast
   // to structure types etc...
@@ -1054,8 +1039,8 @@ void compiled_script_impl::init_surface(
 void compiled_script::execute(int itr)
 {
   compiled_script_impl *csi = (compiled_script_impl *)impl;
-  csi->os.debug() << "compiled_script::execute starting iteration "
-    << itr << "\n";
+  csi->debugAt(cls::NO_LOC,
+    "compiled_script::execute starting iteration ", itr);
 
   csi->init_surfaces();
 
@@ -1063,6 +1048,7 @@ void compiled_script::execute(int itr)
     switch (si.skind) {
     case script_instruction::DISPATCH: {
       dispatch_command *dc = si.dsc;
+      // TODO: use diagnostics::verbose(...)
       csi->os.verbose() << "EXECUTING  => " << dc->spec->spec::str() << "\n";
       csi->os.verbose() << "              " << dc->str() << "\n";
       csi->execute(*dc);

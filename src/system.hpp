@@ -110,8 +110,10 @@ namespace sys
   std::vector<std::string>  list_directory_full_paths(const std::string &path);
   uint64_t           file_size(const std::string &path);
   //
-  std::string        drop_extension(std::string file);
-  std::string        take_extension(std::string file);
+  std::string        drop_extension(std::string file); // foo/bar.txt -> foo/bar
+  std::string        take_extension(std::string file); // foo/bar.txt -> .txt
+  std::string        take_file(std::string path); // a/foo/bar.txt -> bar.txt
+  // replace_extension(foo,"txt") => a/foo.xxx -> a/foo.txt
   std::string        replace_extension(std::string file, std::string ext);
   // if not found, then returns ""
   // if found, then it always ends with a / or backslash
@@ -132,7 +134,7 @@ namespace sys
   std::string        read_file_text(std::string fname);
   std::string        char_file_to_str(const bits &cs);
 
-  void               write_bin_file(std::string fname, const void *buf, size_t buflen);
+  void               write_bin_file(std::string f, const void *b, size_t blen);
 
   /////////////////////////////////////////////////////////////////////////////
   // DYNAMIC LINKING

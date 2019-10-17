@@ -5,7 +5,8 @@
 #include "../fatal.hpp"
 
 #define YY_DECL \
-  cls::lexemes::lexeme yylex (yyscan_t yyscanner, unsigned &inp_off, unsigned &strlit_off)
+  cls::lexemes::lexeme yylex(\
+    yyscan_t yyscanner, unsigned &inp_off, unsigned &strlit_off)
 #ifndef YY_NO_UNISTD_H
 #define YY_NO_UNISTD_H
 #endif
@@ -59,7 +60,9 @@ namespace cls {
     val = std::stoul(str,nullptr,base);
   }
 
-  class parser : public cls::fatal_handler {
+  class parser {
+    cls::diagnostics   &m_diagnostics;
+    const std::string  &m_input;
     std::vector<token>  m_tokens;
     size_t              m_offset;
     token               m_eof;
@@ -90,8 +93,12 @@ namespace cls {
       return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
     }
   public:
-    parser(const std::string &input, bool omit_newlines = false)
-      : fatal_handler(input)
+    parser(
+      cls::diagnostics &diags,
+      const std::string &input,
+      bool omit_newlines = false)
+      : m_diagnostics(diags)
+      , m_input(input)
       , m_offset(0)
       , m_eof(lexemes::END_OF_FILE, 0, 0, 0, 0)
     {
@@ -153,14 +160,12 @@ namespace cls {
     parser& operator=(parser const&) = delete;
     parser() = delete;
 
-    template <typename...Ts>
-    void fatal(Ts... ts) const {
-      fatalAt(nextLoc(),ts...);
-    }
-    template <typename...Ts>
-    void warning(Ts... ts) const {
-      warningAt(nextLoc(),ts...);
-    }
+    // generate fatalAt, warningAt, ...
+    DIAGNOSTIC_MIXIN_MEMBERS(m_diagnostics);
+    /// fatal = fatalAt(nextLoc(), ...)
+    DIAGNOSTIC_MIXIN_MEMBERS_WITH_IMLICIT_LOC(nextLoc())
+
+    const std::string &input() const {return m_input;}
 
     bool endOfFile() const {
       return m_tokens[m_offset].lexeme == END_OF_FILE;
@@ -335,7 +340,12 @@ namespace cls {
       }
       double x = 0.0;
       try {
-        x = std::stod(tokenString());
+        auto str = tokenString();
+        char sfx = str.empty() ? 0 : str[str.size()-1];
+        if (sfx == 'f' || sfx == 'F')
+          x = std::stof(str.substr(0,str.size()-1));
+        else
+          x = std::stod(str);
       } catch (std::invalid_argument &) {
         fatal("expected ",what);
       } catch (std::out_of_range &) {

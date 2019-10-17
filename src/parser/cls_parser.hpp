@@ -18,7 +18,7 @@ namespace cls
     const std::string &input,
     const std::string &filename,
     cls::script &s,
-    warning_list &wl);
+    diagnostics &ds);
 }
 
 #endif

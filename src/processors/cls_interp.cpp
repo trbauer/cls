@@ -15,8 +15,10 @@
 
 using namespace cls;
 
-compiled_script_impl::compiled_script_impl(const opts &_os,const script &_s)
-  : interp_fatal_handler(_os,_s.source)
+compiled_script_impl::compiled_script_impl(
+  diagnostics &_ds, const opts &_os, const script &_s)
+  : cl_interface(_ds, _s.source)
+  , os(_os)
   , s(_s)
   , e(new evaluator(this)) { }
 
@@ -38,7 +40,10 @@ surface_object *compiled_script_impl::define_surface(
 }
 
 evaluator::evaluator(compiled_script_impl *_csi)
-  : interp_fatal_handler(_csi->os,_csi->input()), csi(_csi)
+  : cl_interface(
+    _csi->getDiagnostics(),
+    _csi->getDiagnostics().input())
+  , csi(_csi)
 {
 }
 
@@ -81,12 +86,12 @@ val evaluator::eval(
     const init_spec_bex *be = ((const init_spec_bex *)e);
     val vl = eval(ec, be->e_l),
         vr = eval(ec, be->e_r);
-    return be->e_op.apply(this,be->defined_at,vl,vr);
+    return be->e_op.apply(getDiagnostics(),be->defined_at,vl,vr);
   } // binary expression
   case init_spec::IS_UEX: {
     const init_spec_uex *ue = ((const init_spec_uex *)e);
     val v = eval(ec,ue->e);
-    return ue->e_op.apply(this, ue->defined_at, v);
+    return ue->e_op.apply(getDiagnostics(), ue->defined_at, v);
   } // end case IS_UEX:
   case init_spec::IS_BIV: {
     auto computeDim =
@@ -146,18 +151,16 @@ void evaluator::setKernelArgImmediate(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting immediate argument for ",
-      ai.type.syntax()," ",ai.name);
-  }
+  debugAt(ris.defined_at, "setting immediate argument for ",
+    ai.type->syntax()," ",ai.name);
 
     // non-surface
   context ec(dc, &ss);
   const init_spec *is = ris;
 
-  arg_buffer ab(this, ris.defined_at, ai.type.size());
+  arg_buffer ab(getDiagnostics(), ris.defined_at, ai.type->size());
 
-  evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, ai.type);
+  evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, *ai.type);
 
   if (ab.num_left() != 0) {
     internalAt(ris.defined_at, "failed to set full argument");
@@ -171,9 +174,9 @@ void evaluator::setKernelArgImmediate(
       ab.size(),
       (const void *)ab.ptr());
 
-  if (os.verbosity >= 2) {
-    std::cout << " ==> ARG " << ai.type.syntax() << " "  << ai.name << " = ";
-    format(std::cout, ab.base, ab.capacity, ai.type);
+  if (isDebug()) {
+    std::cout << " ==> ARG " << ai.type->syntax() << " "  << ai.name << " = ";
+    format(std::cout, ab.base, ab.capacity, *ai.type);
     std::cout << "\n";
   }
 }
@@ -203,20 +206,18 @@ void evaluator::setKernelArgBuffer(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting memory object argument for ",
-      ai.type.syntax()," ",ai.name);
-  }
+  debugAt(ris.defined_at,
+    "setting memory object argument for ", ai.type->syntax(), " ", ai.name);
 
   if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at, "expected surface initializer");
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type.is<type_ptr>()) {
+  if (!ai.type->is<type_ptr>()) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
-  const type &elem_type = *ai.type.as<type_ptr>().element_type;
+  const type &elem_type = *ai.type->as<type_ptr>().element_type;
   size_t buffer_size = 0;
   if (ism->dimension) {
     evaluator::context ec(dc);
@@ -257,7 +258,7 @@ void evaluator::setKernelArgBuffer(
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
   //
-  dc.surfaces.emplace_back(so, *ai.type.as<type_ptr>().element_type, ai, at);
+  dc.surfaces.emplace_back(so, *ai.type->as<type_ptr>().element_type, ai, at);
   //
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
@@ -267,9 +268,9 @@ void evaluator::setKernelArgBuffer(
       arg_index,
       sizeof(cl_mem),
       (const void *)&so->memobj);
-  if (os.verbosity >= 2) {
+  if (isDebug()) {
     std::cout << " ==> ARG " <<
-      ai.type.syntax() << " "  << ai.name << " = " << so->str() << "\n";
+      ai.type->syntax() << " "  << ai.name << " = " << so->str() << "\n";
   }
 }
 
@@ -573,20 +574,18 @@ void evaluator::setKernelArgImage(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting memory object argument for ",
-      ai.type.syntax()," ",ai.name);
-  }
+  debugAt(ris.defined_at, "setting memory object argument for ",
+    ai.type->syntax()," ",ai.name);
 
   if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at, "expected image surface initializer");
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type.is<type_builtin>()) {
+  if (!ai.type->is<type_builtin>()) {
     fatalAt(ism->defined_at, "image requires image type (e.g. image2d_t)");
   }
-  const type_builtin &tbi = ai.type.as<type_builtin>();
+  const type_builtin &tbi = ai.type->as<type_builtin>();
 
   cl_image_format img_fmt{0};
   cl_image_desc img_desc{0};
@@ -606,24 +605,56 @@ void evaluator::setKernelArgImage(
 
   // TODO: merge with with bytesPerChannel (channelDataTypeInfo)
   switch (isi->ch_data_type) {
-  case init_spec_image::U8:    img_fmt.image_channel_data_type = CL_UNSIGNED_INT8; break;
-  case init_spec_image::U16:   img_fmt.image_channel_data_type = CL_UNSIGNED_INT16; break;
-  case init_spec_image::U32:   img_fmt.image_channel_data_type = CL_UNSIGNED_INT32; break;
-  case init_spec_image::S8:    img_fmt.image_channel_data_type = CL_SIGNED_INT8; break;
-  case init_spec_image::S16:   img_fmt.image_channel_data_type = CL_SIGNED_INT16; break;
-  case init_spec_image::S32:   img_fmt.image_channel_data_type = CL_SIGNED_INT32; break;
+  case init_spec_image::U8:
+    img_fmt.image_channel_data_type = CL_UNSIGNED_INT8;
+    break;
+  case init_spec_image::U16:
+    img_fmt.image_channel_data_type = CL_UNSIGNED_INT16;
+    break;
+  case init_spec_image::U32:
+    img_fmt.image_channel_data_type = CL_UNSIGNED_INT32;
+    break;
+  case init_spec_image::S8:
+    img_fmt.image_channel_data_type = CL_SIGNED_INT8;
+    break;
+  case init_spec_image::S16:
+    img_fmt.image_channel_data_type = CL_SIGNED_INT16;
+    break;
+  case init_spec_image::S32:
+    img_fmt.image_channel_data_type = CL_SIGNED_INT32;
+    break;
   //
-  case init_spec_image::SN8:    img_fmt.image_channel_data_type = CL_SNORM_INT8; break;
-  case init_spec_image::SN16:   img_fmt.image_channel_data_type = CL_SNORM_INT16; break;
-  case init_spec_image::UN8:    img_fmt.image_channel_data_type = CL_UNORM_INT8; break;
-  case init_spec_image::UN16:   img_fmt.image_channel_data_type = CL_UNORM_INT16; break;
-  case init_spec_image::UN565:  img_fmt.image_channel_data_type = CL_UNORM_SHORT_565; break;
-  case init_spec_image::UN555:  img_fmt.image_channel_data_type = CL_UNORM_SHORT_555; break;
-  case init_spec_image::UN101010:   img_fmt.image_channel_data_type = CL_UNORM_INT_101010; break;
-  case init_spec_image::UN101010_2:   img_fmt.image_channel_data_type = CL_UNORM_INT_101010_2; break;
+  case init_spec_image::SN8:
+    img_fmt.image_channel_data_type = CL_SNORM_INT8;
+    break;
+  case init_spec_image::SN16:
+    img_fmt.image_channel_data_type = CL_SNORM_INT16;
+    break;
+  case init_spec_image::UN8:
+    img_fmt.image_channel_data_type = CL_UNORM_INT8;
+    break;
+  case init_spec_image::UN16:
+    img_fmt.image_channel_data_type = CL_UNORM_INT16;
+    break;
+  case init_spec_image::UN565:
+    img_fmt.image_channel_data_type = CL_UNORM_SHORT_565;
+    break;
+  case init_spec_image::UN555:
+    img_fmt.image_channel_data_type = CL_UNORM_SHORT_555;
+    break;
+  case init_spec_image::UN101010:
+    img_fmt.image_channel_data_type = CL_UNORM_INT_101010;
+    break;
+  case init_spec_image::UN101010_2:
+    img_fmt.image_channel_data_type = CL_UNORM_INT_101010_2;
+    break;
   //
-  case init_spec_image::F16:   img_fmt.image_channel_data_type = CL_HALF_FLOAT; break;
-  case init_spec_image::F32:   img_fmt.image_channel_data_type = CL_FLOAT; break;
+  case init_spec_image::F16:
+    img_fmt.image_channel_data_type = CL_HALF_FLOAT;
+    break;
+  case init_spec_image::F32:
+    img_fmt.image_channel_data_type = CL_FLOAT;
+    break;
   default: fatalAt(ism->defined_at, "invalid channel data type");
   }
   size_t bytes_per_channel =
@@ -886,7 +917,7 @@ void evaluator::setKernelArgImage(
     so->image_init_bytes = image_arg_data;
   }
   //
-  dc.surfaces.emplace_back(so, ai.type.as<type_builtin>(), ai, at);
+  dc.surfaces.emplace_back(so, ai.type->as<type_builtin>(), ai, at);
   //
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
@@ -952,10 +983,8 @@ void evaluator::setKernelArgSLM(
   const refable<init_spec> &ris,
   const arg_info &ai)
 {
-  if (os.verbosity >= 2) {
-    debug(ris.defined_at, "setting SLM size for ",
-      ai.type.syntax()," ",ai.name);
-  }
+  debugAt(ris.defined_at, "setting SLM size for ",
+    ai.type->syntax()," ",ai.name);
 
   const init_spec *is = ris;
   // Special treatment of local * arguments
@@ -965,7 +994,7 @@ void evaluator::setKernelArgSLM(
   //
   //  SPECIFY: do we allow the alternative?
   //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
-  if (!ai.type.is<type_ptr>()) {
+  if (!ai.type->is<type_ptr>()) {
     fatalAt(
       ris.defined_at,
       "kernel argument in local address space must be pointer type");
@@ -974,7 +1003,7 @@ void evaluator::setKernelArgSLM(
       ris.defined_at,
       "local pointer requires size in bytes");
   } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
-  const type_ptr &tp = ai.type.as<type_ptr>();
+  const type_ptr &tp = ai.type->as<type_ptr>();
   evaluator::context ec(dc);
   auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
   size_t local_bytes = (size_t)v.u64;
@@ -986,8 +1015,9 @@ void evaluator::setKernelArgSLM(
       local_bytes,
       nullptr);
   ss << "SLM[" << local_bytes << " B]";
-  if (os.verbosity >= 2) {
-    std::cout << " ==> ARG local " << ai.type.syntax() << " " << ai.name << " = " << local_bytes << " B\n";
+  if (isDebug()) {
+    std::cout << " ==> ARG local " << ai.type->syntax() << " " <<
+      ai.name << " = " << local_bytes << " B\n";
   }
 }
 
@@ -1000,10 +1030,12 @@ void evaluator::evalInto(
 {
   if (t.is<type_num>()) {
     evalInto(ec, at, is, ab, t.as<type_num>());
-  } else if (t.is<type_struct>()) {
-    evalInto(ec, at, is, ab, t.as<type_struct>());
   } else if (t.is<type_ptr>()) {
     evalInto(ec, at, is, ab, t.as<type_ptr>());
+  } else if (t.is<type_struct>()) {
+    evalInto(ec, at, is, ab, t.as<type_struct>());
+  } else if (t.is<type_vector>()) {
+    evalInto(ec, at, is, ab, t.as<type_vector>());
   } else {
     fatalAt(is->defined_at,"unsupported argument type");
   }
@@ -1066,8 +1098,9 @@ void evaluator::evalIntoT(
     ec.evaluated(v.as<T>());
     break;
   }
-  case init_spec::IS_SYM: fatalAt(at,"unbound symbol");
-  case init_spec::IS_REC: fatalAt(at,"vector initializer passed to scalar");
+  case init_spec::IS_SYM: fatalAt(at, "unbound symbol");
+  case init_spec::IS_REC: fatalAt(at, "record initializer passed to scalar");
+  case init_spec::IS_VEC: fatalAt(at, "vector initializer passed to scalar");
   case init_spec::IS_FIL:
   case init_spec::IS_RND:
   default: internalAt(at,"unreachable");
@@ -1086,6 +1119,7 @@ void evaluator::evalInto(
     if (isr->children.size() != ts.elements_length) {
       fatalAt(at, "structure initializer has wrong number of elements");
     }
+    ec.evaluated(ts.name);
     ec.evaluated("{");
     for (size_t i = 0; i < ts.elements_length; i++) {
       if (i > 0)
@@ -1095,9 +1129,37 @@ void evaluator::evalInto(
     ec.evaluated("}");
   } else {
     // TODO: we could support things like broadcast, random etc...
-    fatalAt(at,"structure argument requires structure initializer");
+    fatalAt(at, "struct argument requires structure initializer");
   }
 }
+
+void evaluator::evalInto(
+  context &ec,
+  const loc &at,
+  const init_spec_atom *is,
+  arg_buffer &ab,
+  const type_vector &tv)
+{
+  if (is->skind == init_spec::IS_VEC) {
+    const init_spec_vector *isv = (const init_spec_vector *)is;
+    if (isv->children.size() != tv.length) {
+      fatalAt(at, "vector initializer has wrong number of elements");
+    }
+    std::stringstream ss;
+    ss << "(" << tv.element_type.syntax() << ")(";
+    ec.evaluated(ss.str());
+    for (size_t i = 0; i < tv.length; i++) {
+      if (i > 0)
+        ec.evaluated(",");
+      evalInto(ec, at, isv->children[i], ab, tv.element_type);
+    }
+    ec.evaluated(")");
+  } else {
+    // TODO: we could support things like broadcast, random etc...
+    fatalAt(at, "vector argument requires vector initializer");
+  }
+}
+
 
 void evaluator::evalInto(
   context &ec,

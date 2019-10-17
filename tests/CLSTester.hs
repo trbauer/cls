@@ -21,7 +21,7 @@ data Opts =
     oVerbosity :: !Int
   , oFailFast :: !Bool
   , oDeviceIndex :: !Int
-  , oResults :: !(IORef (Int,Int))
+  , oResults :: !(IORef (Int,Int,Int))
   , oClsExe :: !FilePath
   }
 oVerbose :: Opts -> Bool
@@ -30,13 +30,15 @@ oDebug :: Opts -> Bool
 oDebug = (>1) . oVerbosity
 
 mkDftOpts :: IO Opts
-mkDftOpts = do
-  ior <- newIORef (0,0)
+mkDftOpts = mkOptsDev 0
+mkOptsDev :: Int -> IO Opts
+mkOptsDev d = do
+  ior <- newIORef (0,0,0)
   return $
     Opts {
       oVerbosity = 0
     , oFailFast = True
-    , oDeviceIndex = 0
+    , oDeviceIndex = d
     , oResults = ior
     , oClsExe = cls64_exe
     }
@@ -75,6 +77,9 @@ help = do
     "  runSlmDynamicTest\n" ++
     "  runSlmStaticTest\n" ++
     "  runImageTests\n" ++
+    "  ========== INTEL ONLY ========\n" ++
+    "  runIntelBinaryTests\n" ++
+    "  runIntelSpirTests\n" ++
     ""
 
 preCheck :: IO ()
@@ -131,10 +136,13 @@ run as = do
 
 putStrLnWarning :: String -> IO ()
 putStrLnWarning s = putStrX SCA.Yellow (s ++ "\n")
-putStrGreen :: String -> IO ()
-putStrGreen = putStrX SCA.Green
+--
 putStrRed :: String -> IO ()
 putStrRed = putStrX SCA.Red
+putStrGreen :: String -> IO ()
+putStrGreen = putStrX SCA.Green
+putStrYellow :: String -> IO ()
+putStrYellow = putStrX SCA.Yellow
 putStrX c s = do
   SCA.setSGR [SCA.SetColor SCA.Foreground SCA.Vivid c]
   putStr s
@@ -254,6 +262,10 @@ runWithOpts os = run_tests >> print_summary >> exit
           -- IMAGE
           runImageTests os
 
+          -- binary and SPIR support
+          runIntelBinaryTests os
+          runIntelSpirTests os
+
           --
           -- TODO: random<> init
           -- TODO:   IMAGE FILE INITIALIZER
@@ -270,12 +282,17 @@ runWithOpts os = run_tests >> print_summary >> exit
         print_summary :: IO ()
         print_summary = do
           putStrLn "==============================================="
-          (total,passed) <- readIORef (oResults os)
-          putStrLn $ "passed " ++ show passed ++ " of " ++ show total
+          (total,passed,skipped) <- readIORef (oResults os)
+          if total == passed then
+              putStrGreen ("passed all " ++ show passed ++ " tests\n")
+            else if passed + skipped == total then
+              putStrYellow ("passed " ++ show passed ++ " (skipped " ++ show skipped ++ ")\n")
+            else
+              putStrRed ("passed " ++ show passed ++ " of " ++ show total ++ "\n")
 
         exit :: IO ()
         exit = do
-          (total,passed) <- readIORef (oResults os)
+          (total,passed,skipped) <- readIORef (oResults os)
           if total == passed then exitSuccess
             else exitFailure
 
@@ -298,7 +315,7 @@ runDimensionTests os = do
       runOne dims expect_gs expect_ls = do
         let mkDiffStatement sym ds0
               | null ds0 = ""
-              | otherwise = "diff({" ++ intercalate "," (map show ds_padded) ++ "}," ++ sym ++ ")\n"
+              | otherwise = "diff((int4)(" ++ intercalate "," (map show ds_padded) ++ ")," ++ sym ++ ")\n"
               where ds_padded = ds0 ++ replicate (3 - length ds0) 1 ++ [0] -- e.g. [256] -> [256,1,1,0]
         let script :: String
             script =
@@ -340,9 +357,22 @@ runDimensionTests os = do
 -- tests evaluators (kernel arg evaluates)
 runInitAtomTests :: Opts -> IO ()
 runInitAtomTests os = do
+  let runArgTestImm :: ShowNum a => Opts -> String -> String -> a -> IO ()
+      runArgTestImm os ty arg_expr expect_value = do
+        runArgTest
+          os
+          ("imm. arg: " ++ arg_expr)
+          ty
+          arg_expr
+          (showNum expect_value)
+
   let sintImmTest arg_expr val_expr = runArgTestImm os "int" arg_expr (val_expr :: Int64)
   let uintImmTest arg_expr val_expr = runArgTestImm os "uint" arg_expr (val_expr :: Word64)
   let floatImmTest arg_expr val_expr = runArgTestImm os "float" arg_expr (val_expr :: Float)
+      vectorImmTest :: String -> String -> String -> IO ()
+      -- -D EXPECT=(int2)(1,2) fails, so to expand in CPP correctly
+      -- so use runArgTestF
+      vectorImmTest ty arg_expr val_expr = runArgTestVec os ("imm. arg: " ++ arg_expr) ty arg_expr val_expr
   --
   -- floatImmTest "1.0/0.0"             (1.0/0.0)
   floatImmTest "23.1"                 23.1
@@ -366,6 +396,13 @@ runInitAtomTests os = do
   sintImmTest "0xF1|0x8F"            (0xF1.|.0x8F) -- 0xFF
   sintImmTest "0xFFFF^0xAAAA"        (0xFFFF`xor`0xAAAA)
   sintImmTest "~0xAAAA&0xFFFF"       (complement 0xAAAA .&. 0xFFFF) -- 0x5555
+  --
+  uintImmTest "~0xAAAA&0xFFFF"       (complement 0xAAAA .&. 0xFFFF) -- 0x5555
+  --
+  vectorImmTest "int2"    "(int2)(1+2,2)"          "(int2)(3,2)"
+  vectorImmTest "int2"    "(int2)(1+2,1)"          "(int2)(3,1)"
+  vectorImmTest "float2"  "(float2)M_PI"           "(float2)(M_PI,M_PI+0.0f)" -- ensure LPAREN IDENTIFIER RPAREN works
+  vectorImmTest "float2"  "(float2)(1.0f+2,4.0f)"  "(float2)(3, 4.0f)" -- conversion
 
 
 class ShowNum n where
@@ -383,14 +420,6 @@ instance ShowNum Word32 where
 instance ShowNum Float where
   showNum = show
 
-runArgTestImm :: ShowNum a => Opts -> String -> String -> a -> IO ()
-runArgTestImm os ty arg_expr expect_value = do
-  runArgTest
-    os
-    ("imm. arg: " ++ arg_expr)
-    ty
-    arg_expr
-    (showNum expect_value)
 
 runArgTest :: Opts -> String -> String -> String -> String -> IO ()
 runArgTest os arg_desc arg_type arg_expr show_expect_value = do
@@ -398,10 +427,44 @@ runArgTest os arg_desc arg_type arg_expr show_expect_value = do
       script =
         "let R=0:w\n" ++
         "let V=0:w\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]`test<1>(R," ++ arg_expr ++ ",V)\n" ++
+        "#" ++ show (oDeviceIndex os) ++
+          "`tests/args.cl[-DT=" ++ arg_type ++ " -DEXPECT=" ++ show_expect_value ++ "]" ++
+          "`test<1>(R," ++ arg_expr ++ ",V)\n" ++
         "diff<" ++ arg_type ++ ">(" ++ show_expect_value ++ ",V)\n"
         -- "diff<" ++ arg_type ++ ">(0,R)\n"
   runScript os arg_desc (mShouldExit 0) script
+
+-- runArgTest with "-D EXPECT=(int2)(1,2)" fails, so to expand in CPP correctly
+-- so use runArgTestF
+runArgTestVec :: Opts -> String -> String -> String -> String -> IO ()
+runArgTestVec os arg_desc arg_type arg_expr show_expect_value = do
+  let source :: String
+      source =
+        "kernel void test(\n"++
+        "  global int *error,\n"++
+        "  " ++ arg_type ++ " arg,\n"++
+        "  global " ++ arg_type ++ " *val)\n"++
+        "{\n"++
+        "  val[0] = arg;\n"++
+        "  if (any(arg != " ++ show_expect_value ++ ")) {\n"++
+        "    error[0] = 1;\n"++
+        "  }\n"++
+        "}\n"
+
+      temp_cl_file = "last.cl"
+
+      script :: String
+      script =
+        "let R=0:w\n" ++
+        "let V=0:w\n" ++
+        "#" ++ show (oDeviceIndex os) ++"`" ++ temp_cl_file ++ "`test<1>(R," ++ arg_expr ++ ",V)\n" ++
+        "diff<" ++ arg_type ++ ">(" ++ show_expect_value ++ ",V)\n"
+        -- "diff<" ++ arg_type ++ ">(0,R)\n"
+  writeFile "last.cl" source
+  --
+  runScript os arg_desc (mShouldExit 0) script
+  --
+  removeFile temp_cl_file
 
 
 -------------------------------------------------------------------------------
@@ -523,15 +586,15 @@ runPrintCommandTests os = do
   -----------------------------------------------------------------------------
   let script_v :: String
       script_v =
-        "let B={1,2}:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint2]`add<8>(B,{1,2})\n" ++
+        "let B=(uint2)(1,2):rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint2]`add<8>(B,(uint2)(1,2))\n" ++
         "print(B)\n" ++
         "print<int2,4>(B)\n" ++
         ""
   let has_lines_v = mHasAllLines $
-        "00000:  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}  {0x00000002,0x00000004}\n" ++
-        "00000:  {           2,           4}  {           2,           4}  {           2,           4}  {           2,           4}\n" ++
-        "00020:  {           2,           4}  {           2,           4}  {           2,           4}  {           2,           4}\n" ++
+        "00000:  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)\n" ++
+        "00000:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
+        "00020:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
         ""
   runScript os "print command test (int2)" (mShouldExit 0 .&&. has_lines_v) script_v
 
@@ -603,7 +666,7 @@ runInitConstWithDim os = do
         -- first call writes to the first half only
         "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,3)\n" ++
         -- second call writes to the second half only
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int2]`add<8>(A,{1,2})\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int2]`add<8>(A,(int2)(1,2))\n" ++
         "print<int,8>(A)\n" ++
         "\n"
   let buffer_matches = mHasAllLines $
@@ -776,61 +839,7 @@ runSyntaxErrorTestCLS os = do
     (mShouldExit 1)
     script
 
--------------------------------------------------------------------------------
---
-runProgramBinariesTest :: Opts -> IO ()
-runProgramBinariesTest os = do
-  dev_out <- readProcess (oClsExe os) ["-l"] ""
-  let dev_info_line = filter (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isPrefixOf`) (lines dev_out)
 
-  when (null dev_info_line) $
-    die "runProgramBinariesTest: failed to infer devices -l"
-
-  let nv_tokens = map (map toUpper) ["GeForce","GTX","RTX","NVidia"]
-
-      non_nv_tokens = map (map toUpper) ["Intel"]
-
-      dev_upper = map toUpper (head dev_info_line)
-
-      is_nv =
-        any (`isInfixOf`dev_upper) nv_tokens &&
-        all (not . (`isInfixOf`dev_upper)) non_nv_tokens
-      bin_ext
-        | is_nv = ".ptx"
-        | otherwise = ".bin"
-
-  let script_sv =
-        "let A=0:rw\n" ++
-        -- don't set the -T
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-D T=float]`add<8>(A,2)\n" ++
-        "print<float,4>(A)\n" ++
-        ""
-  --
-  let program_binary = "add" ++ bin_ext
-  removeIfExists program_binary
-  --
-  runScriptWith
-    (oClsExe os)
-    ["-B"]
-    os
-    ("dump program binaries (" ++ program_binary ++ ")")
-    (mShouldExit 0 .&&. mFileExists program_binary)
-    script_sv
-  --
-  --
-  let script_ld =
-        "let A=seq(0):rw\n" ++
-        -- don't set the -T
-        "#" ++ show (oDeviceIndex os) ++ "`" ++ program_binary ++ "`add<8>(A,1)\n" ++
-        "diff(seq(1):r,A)\n" ++
-        ""
-  --
-  runScript os
-    ("load from program binary (" ++ program_binary ++ ")")
-    (mShouldExit 0)
-    script_ld
-  --
-  removeIfExists program_binary
 
 -------------------------------------------------------------------------------
 --
@@ -924,6 +933,103 @@ runContextIdentifierNegativeTest os = do
   runScript os "queue identifiers negative test" passed script
 
 
+
+-------------------------------------------------------------------------------
+--
+runIntelBinaryTests :: Opts -> IO ()
+runIntelBinaryTests os = do
+  -- ...
+  -- DEVICE[1]: Intel(R) HD Graphics 530                         GPU     OpenCL C 2.0
+  -- DEVICE[2]: Intel(R) Core(TM) i5-6600K CPU @ 3.50GHz         CPU     OpenCL C 2.0
+  dev_out <- readProcess (oClsExe os) ["-l="++show (oDeviceIndex os)] ""
+
+  let intel_hd = "HD Graphics" -- 530, 520, 630 etc..
+      bin_ext = ".bin"
+
+  -- create a binary from this device and its driver
+  let script_sv =
+        "let A=0:rw\n" ++
+        -- don't set the -T
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-D T=float]`add<8>(A,2)\n" ++
+        "print<float,4>(A)\n" ++
+        ""
+  --
+      program_binary = "add" ++ bin_ext
+
+      save_binary_tag = ("dump program binaries (" ++ program_binary ++ ")")
+      load_binary_tag = ("load from program binary (" ++ program_binary ++ ")")
+
+  if not (intel_hd `isInfixOf` dev_out) then do
+      skipTest os save_binary_tag "Intel GEN only"
+      skipTest os load_binary_tag "Intel GEN only"
+    else do
+      removeIfExists program_binary
+      --
+      runScriptWith
+        (oClsExe os)
+        ["-B"]
+        os
+        save_binary_tag
+        (mShouldExit 0 .&&. mFileExists program_binary)
+        script_sv
+      --
+      --
+      let script_ld =
+            "let A=seq(0):rw\n" ++
+            -- don't set the -T
+            "#" ++ show (oDeviceIndex os) ++ "`" ++ program_binary ++ "`add<8>(A,1)\n" ++
+            "diff(seq(1):r,A)\n" ++
+            ""
+      --
+      runScript
+        os
+        load_binary_tag
+        (mShouldExit 0)
+        script_ld
+      --
+      removeIfExists program_binary
+
+
+-------------------------------------------------------------------------------
+--
+runIntelSpirTests :: Opts -> IO ()
+runIntelSpirTests os = do
+  -- search for cl_khr_spir
+  dev_out <- readProcess (oClsExe os) ["-l="++show (oDeviceIndex os),"-v"] ""
+  let dev_has_cl_khr_spirv = any ("cl_khr_spir"`isInfixOf`) (lines dev_out)
+  let simple_int = "load simple SPIRV program int"
+      simple_float2 = "load simple SPIRV program float2"
+      -- complex_test_tag = "load complex SPIRV program"
+  if not dev_has_cl_khr_spirv then do
+      skipTest os simple_int "cl_khr_spir not supported on this device"
+      skipTest os simple_float2 "cl_khr_spir not supported on this device"
+    else do
+      let script_int =
+            "let A=0:w\n" ++
+            "#" ++ show (oDeviceIndex os) ++ "`tests/add_int.spv`add<16>(A,2)\n" ++
+            "diff(2,A)\n" ++
+            ""
+      runScript
+        os
+        simple_int
+        (mShouldExit 0)
+        script_int
+
+      let script_float2 =
+            "let A=0:w\n" ++
+            "#" ++ show (oDeviceIndex os) ++ "`tests/add_float2.spv`add<16>(A,(float2)(1,2))\n" ++
+            "diff((float2)(1,2),A)\n" ++
+            ""
+      runScript
+        os
+        simple_float2
+        (mShouldExit 0)
+        script_float2
+
+
+
+
+
 -------------------------------------------------------------------------------
 --
 removeIfExists :: FilePath -> IO ()
@@ -936,9 +1042,18 @@ runScript = runScriptExtra []
 runScriptExtra :: [String] -> Opts -> String -> Matcher -> String -> IO ()
 runScriptExtra extra_args os = runScriptWith (oClsExe os) extra_args os
 
+skipTest :: Opts -> String -> String -> IO ()
+skipTest os tag why = do
+  emitTestLabel tag
+  putStrYellow ("  SKIPPED (" ++ why ++ ")\n")
+  modifyIORef (oResults os) $ \(total,passed,skipped) -> (total + 1, passed, skipped + 1)
+
+emitTestLabel :: String -> IO ()
+emitTestLabel tag = putStr $ printf "%-64s" (tag ++ ":  ")
+
 runScriptWith :: FilePath -> [String] -> Opts -> String -> Matcher -> String -> IO ()
 runScriptWith exe extra_opts os tag match script = do
-  putStr $ printf "%-64s" (tag ++ ":  ")
+  emitTestLabel tag
   let args = default_arguments ++ ["-e",script] ++ extra_opts
   (ec,out,err) <- readProcessWithExitCode exe args ""
   r <- match ec out err
@@ -960,20 +1075,20 @@ runScriptWith exe extra_opts os tag match script = do
 
   case r of
     Nothing -> do
-      putStrGreen $ "  PASSED\n"
+      putStrGreen "  PASSED\n"
       when (oDebug os) $
         emitOutput
-      modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed + 1)
+      modifyIORef (oResults os) $ \(total,passed,skipped) -> (total + 1,passed + 1,skipped)
     Just msg -> do
       putStrRed "  FAILED\n"
-      putStrLn $ msg
+      putStrRed $ msg ++ "\n"
       emitOutput
       hFlush stdout
       let failed_cls = "failed.cls"
       writeFile failed_cls script
       when (oFailFast os) $
         die $ "test failed (run " ++ fmtArgList args ++ " " ++ failed_cls ++ ")"
-      modifyIORef (oResults os) $ \(total,passed) -> (total + 1,passed)
+      modifyIORef (oResults os) $ \(total,passed,skipped) -> (total + 1,passed,skipped)
 
 
 

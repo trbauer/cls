@@ -33,7 +33,7 @@ struct device_object {
   size_t             pointer_size; // in bytes
 
   device_object(
-    fatal_handler *fh, const device_spec *_spec, cl_device_id dev_id)
+    diagnostics &ds, const device_spec *_spec, cl_device_id dev_id)
     : spec(_spec), device(dev_id)
   {
     std::stringstream ss;
@@ -46,7 +46,7 @@ struct device_object {
       CL_DEVICE_ADDRESS_BITS,
       bytes_per_addr) != CL_SUCCESS)
     {
-      fh->fatalAt(
+      ds.fatalAt(
         _spec->defined_at,
         "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
@@ -241,9 +241,20 @@ using buffer_writer = std::function<void(void *)>;
 using image_reader = std::function<void(size_t, size_t,const void *)>;
 using image_writer = std::function<void(size_t, size_t,void *)>;
 
-// e.g. CL_COMMAND(spec->defined_at,clEnqueueNDRange,...)
-struct cl_fatal_handler : fatal_handler {
-  cl_fatal_handler(const std::string &src) : fatal_handler(src) { }
+// Can issue OpenCL commands and automatically react the error values
+// with the appopriate panic
+//     e.g. CL_COMMAND(spec->defined_at, clEnqueueNDRange, ...);
+struct cl_interface {
+  diagnostics &m_diags;
+  DIAGNOSTIC_MIXIN_MEMBERS(m_diags);
+
+  cl_interface(
+    diagnostics &ds,
+    const std::string &src)
+    : m_diags(ds) { }
+
+  diagnostics &getDiagnostics() {return m_diags;}
+
 
 #define CL_SYM_STR(X) #X
 #define CL_COMMAND(LOC,CL_FUNCTION,...) \
@@ -284,11 +295,18 @@ struct cl_fatal_handler : fatal_handler {
 }; // cl_fatal_handler
 
 
+// TODO: remove
+#if 0
 struct interp_fatal_handler : cl_fatal_handler {
   const opts &os;
 
-  interp_fatal_handler(const opts &_os, const std::string &src)
-    : cl_fatal_handler(src), os(_os) { }
+  interp_fatal_handler(
+    diagnostics &ds,
+    const opts &_os,
+    const std::string &src)
+    : cl_fatal_handler(ds, src)
+    , os(_os)
+  { }
 
   template <typename...Ts>
   void debug(loc loc, Ts... ts) {
@@ -299,9 +317,10 @@ struct interp_fatal_handler : cl_fatal_handler {
   }
   template <typename...Ts>
   void debug(const spec *spec, Ts... ts) {
-    debug(spec->defined_at,ts...);
+    debug(spec->defined_at, ts...);
   }
 };
+#endif
 
 // uniform diff
 // e.g. diff<int>(44,S);
@@ -372,22 +391,26 @@ struct script_instruction {
 
 // A buffer that we can write values to for kernel arguments.
 // It is also used as the host side backing store to setup buffers.
-struct arg_buffer : fatal_handler {
+struct arg_buffer {
+  diagnostics            diags;
   loc                    at;
+  DIAGNOSTIC_MIXIN_MEMBERS(diags);
+  DIAGNOSTIC_MIXIN_MEMBERS_WITH_IMLICIT_LOC(at);
+
   size_t                 capacity;
   uint8_t               *base, *curr;
   bool                   owns_memory;
 
-  arg_buffer(const fatal_handler *_fh, loc _at, size_t _len)
-    : fatal_handler(_fh->input()), at(_at), capacity(_len)
+  arg_buffer(diagnostics &_ds, loc _at, size_t _len)
+    : diags(_ds), at(_at), capacity(_len)
   {
     curr = base = new uint8_t[capacity];
     owns_memory = true;
     memset(curr, 0, capacity);
   }
   // e.g. writing to a mapped buffer
-  arg_buffer(const fatal_handler *_fh, loc _at, void *ptr, size_t cap)
-    : fatal_handler(_fh->input())
+  arg_buffer(diagnostics &_ds, loc _at, void *ptr, size_t cap)
+    : diags(_ds)
     , at(_at)
     , base((uint8_t *)ptr)
     , capacity(cap)
@@ -405,17 +428,20 @@ struct arg_buffer : fatal_handler {
   const uint8_t *ptr() const {return base;}
   size_t         num_left() const {return capacity - size();}
   size_t         size() const {return (curr - base);}
+
+  // caller takes ownership over buffer
   uint8_t       *take_ownership() {
     uint8_t *t = base;
     base = nullptr;
     owns_memory = false;
-    return t;}
+    return t;
+  }
 
   template <typename T>
   void write(const T &t) {write(&t,sizeof(t));}
   void write(const void *src, size_t len) {
     if (len > num_left()) {
-      internalAt(at,"INTERNAL ERROR: buffer overflow");
+      internal("INTERNAL ERROR: buffer overflow");
     }
     memcpy(curr, src, len);
     curr += len;
@@ -433,7 +459,7 @@ struct arg_buffer : fatal_handler {
   }
   void read(void *val, size_t len) {
     if (len > num_left()) {
-      internalAt(at,"INTERNAL ERROR: buffer underflow");
+      internal("INTERNAL ERROR: buffer underflow");
     }
     memcpy(val, curr, len);
     curr += len;
@@ -441,7 +467,7 @@ struct arg_buffer : fatal_handler {
 }; // arg_buffer
 
 
-struct evaluator : interp_fatal_handler {
+struct evaluator : cl_interface {
   struct context {
     size_t     sizeof_pointer; // in bytes
     const ndr &global_size;
@@ -611,11 +637,18 @@ struct evaluator : interp_fatal_handler {
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
+    const type_vector &tv);
+  void evalInto(
+    context &ec,
+    const loc &arg_loc,
+    const init_spec_atom *e,
+    arg_buffer &ab,
     const type_ptr &tp); // for SVM?
 }; // evaluator
 
 using device_key = std::tuple<cl_device_id,std::string>;
-struct compiled_script_impl : interp_fatal_handler {
+struct compiled_script_impl: cl_interface {
+  const opts                                             &os;
   const script                                           &s;
   struct evaluator                                       *e;
 
@@ -629,7 +662,7 @@ struct compiled_script_impl : interp_fatal_handler {
 
   std::vector<script_instruction>                         instructions;
 
-  compiled_script_impl(const opts &_os,const script &_s);
+  compiled_script_impl(diagnostics &ds, const opts &os, const script &_s);
 
   surface_object *define_surface(
     const init_spec_mem *_spec,

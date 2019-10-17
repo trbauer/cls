@@ -31,7 +31,7 @@ const char *cls::to_symbol(cls::lexemes::lexeme l)
     CLS_LEXEME_TOKEN(AT);     // @
     CLS_LEXEME_TOKEN(HASH);   // #
     CLS_LEXEME_TOKEN(EQ);     // =
-    CLS_LEXEME_TOKEN(QUESTION); // =
+    CLS_LEXEME_TOKEN(QUESTION); // ?
     CLS_LEXEME_TOKEN(DOLLAR); // $
 
     CLS_LEXEME_TOKEN(MUL);    // *

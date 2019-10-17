@@ -26,7 +26,10 @@ namespace cls
   };
 
   // compiles programs
-  compiled_script compile(const cls::opts &os, const cls::script &s);
+  compiled_script compile(
+    const cls::opts &os,
+    const cls::script &s,
+    diagnostics &ds);
 } // namespace cls
 
 #endif

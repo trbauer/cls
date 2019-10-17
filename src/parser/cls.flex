@@ -107,8 +107,8 @@ If extra context needed:
 [0-9]+                 return cls::lexemes::INTLIT10;
 0[xX][0-9A-Fa-f]+      return cls::lexemes::INTLIT16;
 
-[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?  return cls::lexemes::FLTLIT;
-[0-9]+[eE][-+]?[0-9]+  return cls::lexemes::FLTLIT;
+[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?[fF]? return cls::lexemes::FLTLIT;
+[0-9]+[eE][-+]?[0-9]+[fF]             return cls::lexemes::FLTLIT;
 
 \n                     { return cls::lexemes::NEWLINE; }
 [ \t\r]+               { inp_off += (unsigned)yyget_leng(yyscanner); } /* whitespace */;

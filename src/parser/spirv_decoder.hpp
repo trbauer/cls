@@ -14,7 +14,7 @@ namespace cls
 
   cls::k::program_info *parseProgramInfoBinarySPIRV(
     const opts &os,
-    fatal_handler *fh, loc at,
+    diagnostics &ds, loc at,
     const std::string &path);
 }
 

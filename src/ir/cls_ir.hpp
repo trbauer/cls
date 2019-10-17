@@ -161,6 +161,7 @@ namespace cls
       IS_FLT,  // "1.2", "1.2:rw"
       IS_SZO,  // sizeof(...)
       IS_REC,  // {c1, c2, ...} children hold c1, c2, ... (includes vectors)
+      IS_VEC,  // (float4)(c1,c2,...)
       IS_BIV,  // built-in variable
       IS_SYM,  // a symbol (a reference to a let binding)
       IS_BEX, IS_UEX, // an expression (binary or unary)
@@ -192,6 +193,7 @@ namespace cls
       case IS_FLT:
       case IS_SZO:
       case IS_REC:
+      case IS_VEC:
       case IS_BIV:
       case IS_BEX:
       case IS_UEX:
@@ -263,9 +265,18 @@ namespace cls
   };
 
   // e.g. {1,2,4,8}
-  struct init_spec_record : init_spec_atom {
+  struct init_spec_record: init_spec_atom {
     std::vector<init_spec_atom *> children;
     init_spec_record(loc at) : init_spec_atom(at, IS_REC) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
+  // e.g. (int4)(1,2,4,8)
+  struct init_spec_vector: init_spec_atom {
+    const type *type;
+    std::vector<init_spec_atom *> children;
+    init_spec_vector(loc at, const cls::type *t)
+      : init_spec_atom(at, IS_VEC), type(t) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 
@@ -312,7 +323,7 @@ namespace cls
       int                      precedence; // precedence == 0 implies a function symbol
       enum {N,R,L}             assoc = N;
       // std::function<val(fatal_handler *,const val&,const val&)> apply;
-      val (*apply)(fatal_handler *,const loc&,const val&,const val&);
+      val (*apply)(diagnostics &,const loc&,const val&,const val&);
     };
     const op_spec &e_op;
     const init_spec_atom *e_l, *e_r;
@@ -331,7 +342,7 @@ namespace cls
     struct op_spec {
       const char     *symbol;
       int             precedence;
-      val (*apply)(fatal_handler *,const loc&,const val&);
+      val (*apply)(diagnostics &,const loc&,const val&);
     };
     const op_spec &e_op;
     init_spec_atom *e;

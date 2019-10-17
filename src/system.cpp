@@ -257,6 +257,21 @@ std::string sys::take_extension(std::string file)
   auto dot_ix = file.rfind('.');
   return file.substr(dot_ix);
 }
+
+std::string sys::take_file(std::string path)
+{
+  // a/foo/bar.txt -> bar.txt
+  if (path.empty())
+    return path;
+  int off = (int)path.size();
+  while (off > 0) {
+    if (path[off-1] == '/' || path[off-1] == '\'')
+      break;
+    off--;
+  }
+  return path.substr(off);
+}
+
 std::string sys::replace_extension(std::string file, std::string new_ext)
 {
   auto dot_ix = file.rfind('.');

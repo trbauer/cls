@@ -11,7 +11,7 @@
 namespace cls {
 
   class decoder {
-    fatal_handler        &fh;
+    diagnostics          &diags;
     loc                   at;
     const uint8_t        *bits;
     size_t                bits_length;
@@ -20,15 +20,15 @@ namespace cls {
 
   public:
     decoder(
-      fatal_handler &_fh,
+      diagnostics &_diags,
       loc _at,
       const uint8_t *_bits,
       size_t _bits_length)
-      : fh(_fh), at(_at), bits(_bits), bits_length(_bits_length) { }
+      : diags(_diags), at(_at), bits(_bits), bits_length(_bits_length) { }
 
     ///////////////////////////////////////////////////////////////////////////
     // for chaining
-    fatal_handler &get_handler() const {return fh;}
+    diagnostics &get_handler() const {return diags;}
     loc get_at() const {return at;}
     const uint8_t *get_bits() const {return bits;}
     size_t get_bits_length() const {return bits_length;}
@@ -39,14 +39,16 @@ namespace cls {
 
     ///////////////////////////////////////////////////////////////////////////
     template <typename...Ts>
+    [[noreturn]]
     void fatal(Ts...ts) const {fatalAt(off, ts...);}
     template <typename...Ts>
+    [[noreturn]]
     void fatalAt(size_t off, Ts...ts) const {
       std::stringstream ss;
       if (off != (size_t)-1)
         ss << "at binary offset 0x" << text::fmtHex(off) << ": ";
       text::format_to(ss, ts...);
-      fh.fatalAt(at, ss.str());
+      diags.fatalAt(at, ss.str());
     }
 
     template <typename...Ts>
@@ -54,7 +56,7 @@ namespace cls {
       std::stringstream ss;
       ss << "at binary offset 0x" << text::fmtHex(off) << ": ";
       text::format_to(ss, ts...);
-      fh.warningAt(at, ss.str());
+      diags.warningAt(at, ss.str());
     }
 
     void skip(size_t len) {

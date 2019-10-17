@@ -50,14 +50,14 @@ void diagnostic::str(std::ostream &os) const {
   formatMessageWithContextImpl(
     os,
     at,
-    &text::ANSI_RED,
+    level == ERROR ? &text::ANSI_RED : &text::ANSI_YELLOW,
     input,
     message);
 }
 
-void diagnostic::exit_with_error() const {
+void diagnostic::emit_and_exit_with_error() const {
   str(std::cerr);
-  if (internal_error) {
+  if (level == INTERNAL) {
     exit(EXIT_INTERNAL_ERROR);
   } else {
     exit(EXIT_FAILURE);
