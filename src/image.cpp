@@ -462,7 +462,7 @@ void image::save_bmp(const char *file_name) const
   size_t img_data_bytes;
   void *img_data = create_bmp_image_data(*this, img_data_bytes);
   file.write((const char *)img_data, img_data_bytes);
-  delete[] img_data;
+  delete[] ((uint8_t*)img_data);
 }
 
 image *image::load_bmp(const char *file_name, bool fatal_if_error)

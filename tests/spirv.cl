@@ -68,15 +68,18 @@ kernel void buffers(
   const global int * restrict xx,
   volatile global int *yy,
   local int *zz,
+#if CL_VERSION_2_0
+//  int *generic,
+#endif
   constant int *www)
 {
 }
 
 // TODO: need read_write (CL2.0)
 kernel void images(
-  read_only  image2d_t        i2d
-  write_only image1d_buffer_t i1db
-#if CL_VERSION_1_2
+  read_only  image2d_t        i2d,
+  write_only image1d_buffer_t i1db,
+#if CL_VERSION_2_0
   read_write image3d_t        i3d,
 #endif
   /* read_only */ image1d_array_t i1da // implicitly read_only

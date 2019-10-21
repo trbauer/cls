@@ -59,7 +59,7 @@ struct image {
   ~image();
 
   // assignment for ownership semantics
-  image& operator=(image& rhs) { assign(rhs); return *this; }
+  image &operator=(const image &rhs) { assign(rhs); return *this; }
 
   void assign(
     const void *imgbits,

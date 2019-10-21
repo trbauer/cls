@@ -1,10 +1,17 @@
 @REM ocloc.bat calls ocloc.exe which comes from the Intel NEO Compute Runtime
 @REM C.f. https://github.com/intel/compute-runtime
-call ocloc.bat -file tests/spirv.cl -device skl
+call ocloc.bat -file tests/spirv.cl -device skl -options -cl-std=CL2.0
 @del spirv_Gen9core.bin
 @del spirv_Gen9core.gen
 @move /Y spirv_Gen9core.spv tests/spirv.spv
 @spirv-dis --offsets --raw-id tests/spirv.spv > tests/spirv.spvtxt
+
+call ocloc.bat -file tests/types.cl -device skl
+@del types_Gen9core.bin
+@del types_Gen9core.gen
+@move /Y types_Gen9core.spv tests/types.spv
+@spirv-dis --offsets --raw-id tests/types.spv > tests/types.spvtxt
+
 
 call ocloc.bat -file tests/add.cl -device skl -options "-DT=int"
 @del add_Gen9core.bin
