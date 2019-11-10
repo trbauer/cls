@@ -8,7 +8,7 @@ project(cls)
 # option(INCLUDE_LodePNG "includes png support via LodePNG" True)
 #
 #####################################################
-set(VERSION_STRING "0.9.7")
+set(VERSION_STRING "0.9.8")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   set(TARGET_MODIFIER "32")
@@ -47,7 +47,7 @@ endif()
 set(LODE_PNG_SRC )
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/lodepng/lodepng.cpp" AND
     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/lodepng/lodepng.h")
-  message("== Including LodePNG for PNG support in deps/lodepng")
+  message("== Including LodePNG for PNG support from deps/lodepng")
   set(USE_LODE_PNG 1)
   add_definitions("-DUSE_LODE_PNG")
   set(LODE_PNG_SRC "deps/lodepng/lodepng.h" "deps/lodepng/lodepng.cpp")
@@ -125,25 +125,28 @@ endif()
 # Cmake or the compiler sniffs out headers from SDKs or the system and causes
 # cross-version chaos.  I tried prepending inlcudes without success.
 #
-set(USE_INTEL_SDK WIN32)
 #
 # FIXME: I would love a better solution to this.
 #
-if (USE_INTEL_SDK)
-  set(OpenCL_INCLUDE_DIRS "C:\\Intel\\OpenCL\\sdk\\include")
+if (WIN32)
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk")
+    message(FATAL_ERROR
+       "deps/oclsdk/* not found; download Intel OpenCL SDK and copy in inlcude and libs under this")
+  endif()
+  set(OpenCL_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/include")
   if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    set(OpenCL_LIBRARIES "C:\\Intel\\OpenCL\\sdk\\lib\\x86\\OpenCL.lib")
+    set(OpenCL_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/lib/x86/OpenCL.lib")
   else()
-    set(OpenCL_LIBRARIES "C:\\Intel\\OpenCL\\sdk\\lib\\x64\\OpenCL.lib")
+    set(OpenCL_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/lib/x64/OpenCL.lib")
   endif()
   #
   if (NOT EXISTS "${OpenCL_LIBRARIES}")
     message(FATAL_ERROR
-        "${OpenCL_LIBRARIES}: OpenCL library not found: Install the Intel OpenCL SDK")
+        "${OpenCL_LIBRARIES}: OpenCL library not found; setup deps/oclsdk")
   endif()
   if (NOT EXISTS "${OpenCL_INCLUDE_DIRS}")
     message(FATAL_ERROR
-        "${OpenCL_INCLUDE_DIRS}: OpenCL include directory: Install the Intel OpenCL SDK")
+        "${OpenCL_INCLUDE_DIRS}: OpenCL include directory; setup deps/oclsdk")
   endif()
 else()
   find_package(OpenCL REQUIRED)
