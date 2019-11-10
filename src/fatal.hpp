@@ -65,7 +65,11 @@ namespace cls
       , input(inp)
     { }
 
+    // emits the diagnostic to an output stream
     void          str(std::ostream &os) const;
+    // allows us to override the input
+    void          str(std::ostream &os, const std::string &inp) const;
+    // returns a new string
     std::string   str() const;
 
     // default handler emits to std::cerr and exits with EXIT_INTERNAL_ERROR

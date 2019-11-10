@@ -11,6 +11,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 using namespace cls::k;
 using namespace cls;
@@ -88,6 +89,7 @@ struct karg_parser : cls::parser
 {
   program_info  &pi;
   size_t         bytes_per_addr;
+  std::unordered_map<std::string,const cls::type *> typedefs;
 
   karg_parser(
     diagnostics &ds,
@@ -109,14 +111,61 @@ struct karg_parser : cls::parser
   // in [CPP(foo.cl,-D... )] => cpp-foo.cl
   // kernel void foo(...........)
   //                 ^^^^
+  //
+  // also handle simple typedefs
+  // typedef int s32;
   void parse() {
     while (!endOfFile()) {
+      if (lookingAtIdentEq("typedef")) {
+        skip();
+        parseTypedef();
+      }
+
       if (lookingAtIdentEq("__kernel") || lookingAtIdentEq("kernel")) {
         parseKernel();
       } else {
         skip();
       }
     }
+  }
+
+  // look up a typedef'd or built-in type
+  const cls::type *findType(std::string type_name) const {
+    auto itr = typedefs.find(type_name);
+    if (itr != typedefs.end())
+      return itr->second;
+    return lookupBuiltinType(type_name, bytes_per_addr);
+  }
+
+  //
+  // typedef int s32;
+  //         ^ we start here
+  //
+  // We don't handle more complicated stuff
+  //   typedef int* myintptr_t;
+  //   typedef int (*round_function)(float x);
+  void parseTypedef() {
+    if (!lookingAtIdent()) {
+      return; // something too hard
+    }
+    auto id = consumeIdent();
+    if (id == "struct" || id == "union" || id == "class") {
+      // TODO: handle structures and unions
+      // typedef struct {int x, y;} point_t;
+      return;
+    }
+    const type *existing = findType(id);
+    if (existing == nullptr) { // unknown type
+      return;
+    }
+    if (!lookingAtIdent()) {
+      return;
+    }
+    auto eq = consumeIdent();
+    if (!lookingAt(SEMI)) {
+      return;
+    }
+    typedefs[eq] = existing;
   }
 
   void parseKernel() {
@@ -203,7 +252,7 @@ struct karg_parser : cls::parser
         type_name += consumeIdent("type");
       }
     }
-    auto t = lookupBuiltinType(type_name,bytes_per_addr);
+    auto t = findType(type_name);
     if (t == nullptr) {
       fatalAt(type_loc,"unrecognized type");
     }
@@ -291,7 +340,7 @@ static cls::k::program_info *parseProgramInfoText(
     // std::ofstream of(ppc_path.string());
     std::string ppc_path = ".";
     ppc_path += sys::path_separator;
-    ppc_path += sys::replace_extension(src.path, ".ppcl");
+    ppc_path += sys::replace_extension(src.path, ".pp.cl");
     std::ofstream of(ppc_path);
     os.verbose() << "dumping preprocessed " << ppc_path << "\n";
     of << cpp_inp;
@@ -305,8 +354,9 @@ static cls::k::program_info *parseProgramInfoText(
     std::ofstream fs("debug-out.cl");
     fs << cpp_inp;
 
+    // create a dummy diagnostic that obeys that uses our input
     std::stringstream ss;
-    d.str(ss);
+    d.str(ss, cpp_inp);
     ss << "\n";
     ss << "SEE: debug-out.cl";
     ds.fatalAt(at,ss.str());

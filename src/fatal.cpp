@@ -46,15 +46,18 @@ void cls::formatMessageWithContextImpl(
   }
 }
 
+
 void diagnostic::str(std::ostream &os) const {
+  str(os, input);
+}
+void diagnostic::str(std::ostream &os, const std::string &inp) const {
   formatMessageWithContextImpl(
     os,
     at,
     level == ERROR ? &text::ANSI_RED : &text::ANSI_YELLOW,
-    input,
+    inp,
     message);
 }
-
 void diagnostic::emit_and_exit_with_error() const {
   str(std::cerr);
   if (level == INTERNAL) {
