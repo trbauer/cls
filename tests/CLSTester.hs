@@ -44,9 +44,9 @@ mkOptsDev d = do
     }
 
 cls64_exe :: FilePath
-cls64_exe = "builds/vs2017-64/Debug/cls64.exe"
+cls64_exe = "builds/vs2019-64/Debug/cls64.exe"
 cls32_exe :: FilePath
-cls32_exe = "builds/vs2017-32/Debug/cls32.exe"
+cls32_exe = "builds/vs2019-32/Debug/cls32.exe"
 
 help = do
   putStr $

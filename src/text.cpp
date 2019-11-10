@@ -417,17 +417,30 @@ static std::string findGnuCppExe()
 #ifdef _WIN32
 static std::string findMsvcExe()
 {
-  // VS2017 has a versioned toolchain in the link
-  const char *msvc_2017_root =
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Tools\\MSVC\\";
-  // C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
+  // VS2017 and VS2019 have a versioned toolchain in the link
+  // Try for VS2019
+  const char *msvc_2019_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Tools\\MSVC\\";
+  // C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
   //                                                                                ^^^^^^^^^^^
-  if (sys::directory_exists(msvc_2017_root)) {
-    for (auto &p : sys::list_directory_full_paths(msvc_2017_root)) {
-      p += "\\bin\\HostX86\\x86\\cl.exe";
-      RETURN_IF_EXISTS(p);
+  if (sys::directory_exists(msvc_2019_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2019_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
     }
   }
+  //
+  // Try VS2017
+  const char *msvc_2017_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2017_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2017_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
+    }
+  }
+  //
+  // Try older VS versions
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\BIN\\cl.exe");
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 12.0\\VC\\BIN\\cl.exe");
   // VS2012 requires .bat setup script (missing DLL otherwise)
