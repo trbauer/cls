@@ -1,1 +1,1 @@
-@builds\vs2017-64\Debug\cls64.exe %*
+@builds\vs2019-64\Debug\cls64.exe %*

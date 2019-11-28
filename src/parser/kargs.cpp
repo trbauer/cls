@@ -176,8 +176,11 @@ struct karg_parser : cls::parser
 
     consumeIdentEq("void","void");
     k.name = consumeIdent("kernel name");
+    skipPreprocessorLineDirectives();
     consume(LPAREN);
+    skipPreprocessorLineDirectives();
     while (!lookingAt(RPAREN)) {
+      skipPreprocessorLineDirectives();
       parseArg(k);
       if (!consumeIf(COMMA)) {
         break;
@@ -202,6 +205,19 @@ struct karg_parser : cls::parser
       }
     }
     return qs;
+  }
+
+  void skipPreprocessorLineDirectives() {
+    // e.g. #line 1082 "convolution_gpu_bfyx_f16_1x1_264.cl"
+    auto loc = nextLoc();
+    if (loc.column == 1 && lookingAt(HASH)) {
+      skip();
+      auto loc2 = nextLoc();
+      while (!endOfFile() && loc2.line == loc.line) {
+        skip();
+        loc2 = nextLoc();
+      }
+    }
   }
 
   void parseArg(kernel_info &k) {
