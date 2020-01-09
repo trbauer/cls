@@ -460,7 +460,10 @@ struct cls_parser: parser
     } else if (lookingAtFloat()) {
       return new init_spec_float(at, consumeFloat());
     } else if (lookingAtInt()) {
-      return new init_spec_int(at, consumeIntegral<int64_t>());
+      // we parse imm's as unsigned to enable u64 values, the cast will
+      // preserve the bit patterns
+      int64_t imm = (int64_t)consumeIntegral<uint64_t>();
+      return new init_spec_int(at, imm);
     } else if (lookingAtIdent()) {
       // e.g. "X" or "g.x" or "pow(...)"
       auto id = tokenString();
@@ -943,11 +946,20 @@ struct cls_parser: parser
   {
     if (lookingAt(SUB) || lookingAt(TILDE)) {
       auto loc = nextLoc();
-      const auto &op =
-        lookingAt(SUB) ?
+      bool isSub = lookingAt(SUB);
+      const auto &op = isSub ?
         *init_spec_uex::lookup_op("-") :
         *init_spec_uex::lookup_op("~");
+
       skip();
+      //
+      // NOTE: we deal with 9223372036854775808 within atom as a second
+      // try parse as uint64_t
+      //
+      // if (isSub && lookingAtIdentEq("9223372036854775808")) {
+        // given "-9223372036854775808", we can't parse the atom
+        // as 9223372036854775808 (out of bounds for int64_t)
+      // }
       init_spec_atom *e = parseInitAtomUnr();
       return new init_spec_uex(loc, op, e);
     } else {

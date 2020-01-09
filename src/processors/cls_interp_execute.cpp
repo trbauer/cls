@@ -115,7 +115,7 @@ static void fill_buffer_rng_loop_int(
     v_hi = e->evalTo<T>(ec, isr->e_hi);
   }
   if (v_lo.as<T>() > v_hi.as<T>()) {
-    e->fatalAt(isr->defined_at,"low bound > high bound");
+    e->fatalAt(isr->defined_at, "low bound > high bound");
   }
   std::uniform_int_distribution<R> dist(v_lo.as<T>(),v_hi.as<T>());
   size_t total_elems = ab.capacity / sizeof(T);

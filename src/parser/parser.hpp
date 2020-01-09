@@ -313,21 +313,20 @@ namespace cls {
     }
 
     template <typename T>
-    T consumeIntegral(const char *what = "int") {
+    T consumeIntegral(const char *what = "int") noexcept {
       T x = 0;
       try {
         if (!lookingAtInt()) {
-          fatal("expected ",what);
+          fatal("expected ", what);
         }
         int base =
           lookingAt(INTLIT10) ? 10 :
           lookingAt(INTLIT16) ? 16 :
           lookingAt(INTLIT02) ? 2 :
-          0; // lookingAtInt() => 0 unreachable
-        // x = parseIntegralBody<T>(tokenString(), base);
+          0; // lookingAtInt() => unreachable; use 0
         parseIntegralBody<T>(tokenString(), base, x);
       } catch (std::invalid_argument &) {
-        fatal("expected ",what);
+        fatal("expected ", what);
       } catch (std::out_of_range &) {
         fatal("literal out of range");
       }

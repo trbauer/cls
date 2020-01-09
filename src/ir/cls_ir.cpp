@@ -709,6 +709,7 @@ UNR_OP_FLOAT(ceil)
 UNR_OP_FLOAT(floor)
 UNR_OP_FLOAT(trunc)
 UNR_OP_FLOAT(round)
+
 static val apply_llround(diagnostics &, const loc &, const val &v) {
   if (v.is_float()) {
     return std::llround(v.as<double>());

@@ -169,6 +169,7 @@ static void emitDeviceInfo(
   const char *units = nullptr)
 {
   T value;
+
   auto err = clGetDeviceInfo(dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
     os <<
@@ -526,7 +527,6 @@ void listDeviceInfoForDevice(
   cl_platform_id plt_id = nullptr;
   auto plt_res =
     clGetDeviceInfo(dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
-
 
 #if defined(__GNUC__) && __GNUC__>=6
 #pragma GCC diagnostic ignored "-Wignored-attributes"

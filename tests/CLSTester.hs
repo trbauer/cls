@@ -31,6 +31,8 @@ oDebug = (>1) . oVerbosity
 
 mkDftOpts :: IO Opts
 mkDftOpts = mkOptsDev 0
+mkDftOpts1 :: IO Opts
+mkDftOpts1 = mkOptsDev 1
 mkOptsDev :: Int -> IO Opts
 mkOptsDev d = do
   ior <- newIORef (0,0,0)
@@ -533,7 +535,7 @@ runDiffSurfaceTestMatchVar os = do
         "let C=seq(121):r\n" ++ -- 121-128
         "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(A,1)\n" ++
         "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=int]`add<8>(B,-1)\n" ++
-        "diff(A,A)\n" ++ -- identity compare
+        "diff(A,A)\n" ++ -- identity compare (ILLEGAL because it double maps A, which is non-deterministic)
         "diff(A,B)\n" ++ -- transitive compare
         "diff(C,A)\n" ++ -- immediate reference value (indirect)
         ""
@@ -1055,6 +1057,10 @@ runScriptWith :: FilePath -> [String] -> Opts -> String -> Matcher -> String -> 
 runScriptWith exe extra_opts os tag match script = do
   emitTestLabel tag
   let args = default_arguments ++ ["-e",script] ++ extra_opts
+  when (oVerbosity os > 1) $
+    writeFile "verbose.cls" $
+      "-- " ++ show args ++ "\n" ++
+      script
   (ec,out,err) <- readProcessWithExitCode exe args ""
   r <- match ec out err
   let fmtArgList [] = "" -- drop -e arg
