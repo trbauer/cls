@@ -75,11 +75,11 @@ format_opts::color_span format_opts::str_lit(std::string s) const {
 template <typename S>
 static void fmt(std::ostream &os, format_opts fopts, const S *s) {
   if (s) {
-    s->str(os,fopts);
+    s->str(os, fopts);
   } else {
     os << fopts.error("<nullptr>");
   }
-};
+}
 
 void spec::str(std::ostream &os, format_opts fopts) const {
   switch (skind) {
@@ -525,7 +525,14 @@ void init_spec_uex::str(std::ostream &os, format_opts fopts) const
     fmt(os, fopts, e);
     os << ")";
   } else {
-    os << e_op.symbol;
+    // given "-9223372036854775808", this will parse as
+    // uint64_t 9223372036854775808 and then casting to
+    // -9223372036854775808, giving --9223372036854775808
+    if (*e_op.symbol != '-' || e->skind != IS_INT ||
+      ((const init_spec_int *)e)->value != -9223372036854775808LL)
+    {
+      os << e_op.symbol;
+    }
     fmt(os, fopts, e);
   }
 }

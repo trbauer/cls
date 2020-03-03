@@ -535,6 +535,7 @@ namespace cls
       : spec(ps->defined_at,spec::KERNEL_SPEC), program(ps) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
+
   struct ndr {
     size_t num_dims;
     size_t dims[3];

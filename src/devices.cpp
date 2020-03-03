@@ -135,7 +135,7 @@ cl_device_id getDeviceByName(
 bool getDeviceByIndex(const cls::opts &os, int dev_ix, cl_device_id &dev_id)
 {
   auto ds = getDeviceIds();
-  if (dev_ix >= ds.size())
+  if (dev_ix >= (int)ds.size())
     return false;
   dev_id = ds[dev_ix];
   return true;
