@@ -16,14 +16,6 @@
 #include "system.hpp"
 #include "text.hpp"
 
-#if CLS_HOST_POINTER_SIZE == 32
-#define EXE_NAME "cls32"
-#elif CLS_HOST_POINTER_SIZE == 64
-#define EXE_NAME "cls64"
-#else
-#error "invalid value for CLS_HOST_POINTER_SIZE"
-#endif
-
 enum class units
 {
   UNITS_US = 0,
@@ -41,10 +33,10 @@ int main(int argc, const char **argv)
 {
   cls::opts os;
   opts::CmdlineSpec<cls::opts> cmdspec(
-    "CL Script " VERSION_STRING " (" __DATE__ ")",
-    EXE_NAME,
-    "  % " EXE_NAME " -e \"matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\"\n"
-    "  % " EXE_NAME " script.cls\n"
+    "CL Script " CLS_VERSION_STRING " (" __DATE__ ")",
+    CLS_EXE,
+    "  % " CLS_EXE " -e \"matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\"\n"
+    "  % " CLS_EXE " script.cls\n"
   );
   cmdspec.defineArg(
     "FILE","a cls script file",

@@ -7,8 +7,62 @@ project(cls)
 # https://stackoverflow.com/questions/6787371/how-do-i-specify-build-options-for-cmake-based-projects
 # option(INCLUDE_LodePNG "includes png support via LodePNG" True)
 #
+###############################################################################
+
+################################################################################
+# Build the version string based on repository information.
+# If that is absent (e.g. you don't  have git installed or git fails
+# for some other reason, then we generate an invalid string so the user
+# can at least build the system.
+#
+# This defines ${CLS_VERSION_STRING} as something like
+#   "1.69-3610b3a" or "1.69-3610b3a*" (suffixed with *)
+#
+# * The initial "1" is an arbitrary major version which gets incremented during
+#   major breaking changes (e.g. radical syntax changes)
+#
+# * The next ".69" is a revision index, which is the count of commits
+#   in the current branch.
+#
+# * The suffix "3610b3a" is the git short hash.
+#
+# * The final optional "*" indicates that there there are outstanding changes
+#   to the repository.
+#
+set (CLS_MAJOR_VERSION "1")
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    RESULT_VARIABLE CLS_GIT_SUCCEEDED
+    OUTPUT_VARIABLE CLS_GIT_SHORT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+if (CLS_GIT_SUCCEEDED EQUAL 0)
+  execute_process(
+      COMMAND git diff-index --quiet HEAD
+      RESULT_VARIABLE CLS_GIT_IS_DIRTY
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  )
+  # git rev-list --count --all HEAD gives all branches
+  execute_process(
+      COMMAND git rev-list --count HEAD
+      OUTPUT_VARIABLE CLS_GIT_REV_INDEX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  )
+  if (CLS_GIT_IS_DIRTY EQUAL 0)
+    set (CLS_GIT_IS_DIRTY_SUFFIX "")
+  else ()
+    set (CLS_GIT_IS_DIRTY_SUFFIX "*")
+  endif()
+  set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.${CLS_GIT_REV_INDEX}-${CLS_GIT_SHORT_HASH}${CLS_GIT_IS_DIRTY_SUFFIX}")
+else()
+  set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.unknown-version")
+endif()
+
 #####################################################
-set(VERSION_STRING "0.9.8")
+
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   set(TARGET_MODIFIER "32")
@@ -33,13 +87,16 @@ endif()
 #  set(MSVC_GENERATOR 1)
 # endif()
 
-add_definitions(-DVERSION_STRING="${VERSION_STRING}")
+add_definitions(-DCLS_VERSION_STRING="${CLS_VERSION_STRING}")
+add_definitions(-DCLS_EXE="${CLS_EXE}")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   add_definitions(-DCLS_HOST_POINTER_SIZE=32)
 elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
   add_definitions(-DCLS_HOST_POINTER_SIZE=64)
 endif()
+
+
 
 ###############################################################################
 # include LodePNG if it's present
