@@ -633,13 +633,26 @@ void listDeviceInfoForDevice(
         ANSI_RESET;
     } else {
       std::cout << " " << std::setw(4);
-      switch (dev_type) {
-      case CL_DEVICE_TYPE_CPU: std::cout << "CPU"; break;
-      case CL_DEVICE_TYPE_GPU: std::cout << "GPU"; break;
-      case CL_DEVICE_TYPE_ACCELERATOR: std::cout << "ACCELERATOR"; break;
-      case CL_DEVICE_TYPE_DEFAULT: std::cout << "DEFAULT"; break;
-      default: std::cout << "0x" << std::hex << dev_type << "?"; break;
+      std::stringstream ss;
+      cl_device_type bits = dev_type;
+      auto checkBit = [&](cl_device_type bit, const char *what) {
+        if (bit & bits) {
+          if (ss.tellp() > 0)
+            ss << "|";
+          ss << what;
+        }
+        bits &= ~bit;
+      };
+      checkBit(CL_DEVICE_TYPE_CPU, "CPU");
+      checkBit(CL_DEVICE_TYPE_GPU, "GPU");
+      checkBit(CL_DEVICE_TYPE_ACCELERATOR, "ACCELERATOR");
+      checkBit(CL_DEVICE_TYPE_DEFAULT, "DEFAULT");
+      if (bits != 0) {
+        if (ss.tellp() > 0)
+          ss << "|";
+        ss << "0x" << std::setfill('0') << std::hex << dev_type << "?";
       }
+      std::cout << ss.str();
     }
     std::cout <<
       "    " <<

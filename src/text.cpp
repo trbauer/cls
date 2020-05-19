@@ -113,28 +113,33 @@ std::vector<std::string> text::to_words(const std::string &str)
   return ws;
 }
 
+void text::prefix_lines_to(
+  std::ostream &os,
+  const std::string &pfx,
+  const std::string &str)
+{
+  if (str.empty())
+    return;
+  os << pfx;
+  for (size_t i = 0; i < str.size(); i++) {
+    if (str[i] == '\n') {
+      os << '\n';
+      if (i == str.size() - 1) {
+        return;
+      }
+      os << pfx;
+    } else {
+      os << str[i];
+    }
+  }
+}
 
 std::string text::prefix_lines(
   const std::string &pfx,
   const std::string &str)
 {
   std::stringstream ss;
-  if (str.empty())
-    return "";
-
-  ss << pfx;
-  for (size_t i = 0; i < str.length(); i++) {
-    if (str[i] == '\n') {
-      ss << std::endl;
-      if (i == str.length() - 1) {
-        return ss.str();
-      }
-      ss << pfx;
-    }
-    else {
-      ss << str[i];
-    }
-  }
+  prefix_lines_to(ss, pfx, str);
   return ss.str();
 }
 
@@ -144,7 +149,7 @@ void text::printf_to(std::ostream &os, const char *patt, va_list va)
   va_list va_tmp;
 
   va_copy(va_tmp, va);
-  size_t elen = _vscprintf(patt, va_tmp) + 1;
+  size_t elen = (size_t)_vscprintf(patt, va_tmp) + 1;
   va_end(va_tmp);
 
   char *ebuf = (char *)_alloca(elen);

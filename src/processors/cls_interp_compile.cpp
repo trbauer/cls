@@ -593,6 +593,13 @@ static void CL_CALLBACK dispatchContextNotify(
   void *user_data)
 {
   device_object *dobj = (device_object *)user_data;
+  if (!dobj) {
+    std::cerr << "DRIVER ERROR: driver failed to pass user environment to "
+      "context callback\n";
+    if (errinfo)
+      std::cerr << errinfo;
+    return;
+  }
   dobj->contextNotify(errinfo, private_info, cb, user_data);
 }
 
@@ -666,11 +673,12 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   auto dev_key = device_key(dev_id, ds->instance);
   auto itr = csi->devices.find(dev_key);
   if (itr != csi->devices.find_end()) {
-    return *itr->second;
+    return **itr->second;
   }
 
-  device_object &dobj =
-    csi->devices.emplace_back(dev_key, getDiagnostics(), ds, dev_id);
+  device_object *dobj =
+    new device_object(getDiagnostics(), ds, dev_id);
+  csi->devices.emplace_back(dev_key, dobj);
   cl_context context;
   // const cl_context_properties props{...};
   CL_COMMAND_CREATE(context, ds->defined_at,
@@ -679,25 +687,25 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
       1,
       &dev_id,
       dispatchContextNotify,
-      (void *)&dobj);
-  dobj.context = context;
+      (void *)dobj);
+  dobj->context = context;
   if (os.verbosity >= 2) {
     std::string dev_nm;
-    getDeviceInfo(dobj.device, CL_DEVICE_NAME, dev_nm);
+    getDeviceInfo(dobj->device, CL_DEVICE_NAME, dev_nm);
     debugAt(ds->defined_at, "created context on ", dev_nm);
   }
 
   cl_command_queue cq;
-  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj.context, cq);
+  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj->context, cq);
   if (cl_err != CL_SUCCESS) {
     fatalAt(
       ds->defined_at,
       "clCreateCommandQueue: failed to create command queue for device "
       "(", status_to_symbol(cl_err), ")");
   }
-  dobj.queue = cq;
+  dobj->queue = cq;
   // test((*dobj.context)(),cq);
-  return dobj;
+  return *dobj;
 }
 
 
@@ -761,8 +769,12 @@ void script_compiler::compile()
       diffs_command *dfsc = si.dfsc;
       // sut surface
       dfsc->so_sut = &csi->surfaces.get(dfsc->spec->sut.value);
+      if (dfsc->so_sut == nullptr) {
+        fatalAt(dfsc->spec->defined_at,
+          "surface not allocated (are they used in a dispatch?)");
+      }
       debugAt(
-        dfsc->spec->defined_at, "bound (SUT) surface to ",dfsc->so_sut->str());
+        dfsc->spec->defined_at, "bound (SUT) surface to ", dfsc->so_sut->str());
 
       // bind the element type if it's not explicitly set
       if (!dfsc->element_type) {

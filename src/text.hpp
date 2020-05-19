@@ -142,6 +142,7 @@ namespace text
                 to_words(const std::string &str);
 
   std::string   prefix_lines(const std::string &pfx, const std::string &str);
+  void          prefix_lines_to(std::ostream &os, const std::string &pfx, const std::string &str);
   void          printf_to(std::ostream &os, const char *patt, va_list va);
   void          printf_to(std::ostream &os, const char *patt, ...);
   std::string   printf(const char *patt, ...);

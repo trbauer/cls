@@ -64,9 +64,7 @@ struct device_object {
     const void *private_info, size_t cb,
     void *user_data)
   {
-    if (errinfo) {
-      std::cout << text::prefix_lines(callback_prefix, errinfo);
-    }
+    text::prefix_lines_to(std::cout, callback_prefix, errinfo);
   }
 };
 struct program_object {
@@ -76,7 +74,7 @@ struct program_object {
   cls::k::program_info   *program_info = nullptr;
   program_object(const program_spec *_spec, device_object *_device)
     : spec(_spec), device(_device) { }
-  program_object() {delete program_info;}
+  // ~program_object() {delete program_info;}
 };
 struct kernel_object {
   const kernel_spec     *spec;
@@ -131,6 +129,7 @@ struct surface_object {
     , memobj_index(_memobj_index)
     , queue(_queue)
   { }
+
   std::string str() const {
     std::stringstream ss;
     ss << "0x" << std::hex << std::uppercase << memobj <<
@@ -655,7 +654,7 @@ struct compiled_script_impl: cl_interface {
 
   mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
   // mapped_objects<const device_spec*,device_object>        devices;
-  mapped_objects<device_key,device_object>                devices;
+  mapped_objects<device_key,device_object*>               devices;
   mapped_objects<const program_spec*,program_object>      programs;
   mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
@@ -664,6 +663,11 @@ struct compiled_script_impl: cl_interface {
   std::vector<script_instruction>                         instructions;
 
   compiled_script_impl(diagnostics &ds, const opts &os, const script &_s);
+  ~compiled_script_impl() {
+    for (auto d : devices) {
+      delete *d;
+    }
+  }
 
   surface_object *define_surface(
     const init_spec_mem *_spec,
