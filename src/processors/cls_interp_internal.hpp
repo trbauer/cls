@@ -472,6 +472,7 @@ struct evaluator : cl_interface {
     size_t     sizeof_pointer; // in bytes
     const ndr &global_size;
     const ndr &local_size;
+
     context(
       size_t sizeof_ptr,
       const ndr &gs, const ndr &ls,

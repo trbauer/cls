@@ -1038,6 +1038,22 @@ struct cls_parser: parser
     return parseInitAtomBitwiseOR();
   }
 
+  // starts
+  //  p128...
+  //  ^
+  // ends
+  //  p128...
+  //     ^
+  // and returns 128
+  static int read_columns(const std::string &s, size_t &i) {
+    int cols = 0;
+    while (i + 1 < s.size() && ::isdigit(s[i + 1])) {
+      cols = 10*cols + s[i + 1] - '0';
+      i++;
+    }
+    return cols;
+  }
+
   init_spec *parseInit()
   {
     auto l = nextLoc();
@@ -1109,25 +1125,11 @@ struct cls_parser: parser
           //          they are certainly nice for debugging
         case 'P':
           m->print_pre = true;
-          if (i + 1 < s.size() && ::isdigit(s[i+1])) {
-            i++;
-            m->print_pre_elems_per_row = 0;
-            if (i < s.size() && ::isdigit(s[i])) {
-              m->print_pre_elems_per_row =
-                10 * m->print_pre_elems_per_row + s[i] - '0';
-            }
-          }
+          m->print_pre_elems_per_row = read_columns(s, i);
           break;
         case 'p':
           m->print_post = true;
-          if (i + 1 < s.size() && ::isdigit(s[i+1])) {
-            i++;
-            m->print_post_elems_per_row = 0;
-            if (i < s.size() && ::isdigit(s[i])) {
-              m->print_post_elems_per_row =
-                10 * m->print_post_elems_per_row + s[i] - '0';
-            }
-          }
+          m->print_post_elems_per_row = read_columns(s, i);
           break;
         case 'S':
           m->save_post = true;

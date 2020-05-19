@@ -285,7 +285,7 @@ namespace cls
     std::string identifier;
     init_spec_symbol(loc at, std::string _identifier) :
       init_spec_atom(at, IS_SYM), identifier(_identifier) { }
-    void str(std::ostream &os, format_opts fopts) const {fopts.let_var(identifier);}
+    void str(std::ostream &os, format_opts fopts) const;
   };
 
   // sizeof(int2) or sizeof(BUF)

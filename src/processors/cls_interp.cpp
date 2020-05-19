@@ -90,7 +90,7 @@ val evaluator::eval(
   } // binary expression
   case init_spec::IS_UEX: {
     const init_spec_uex *ue = ((const init_spec_uex *)e);
-    val v = eval(ec,ue->e);
+    val v = eval(ec, ue->e);
     return ue->e_op.apply(getDiagnostics(), ue->defined_at, v);
   } // end case IS_UEX:
   case init_spec::IS_BIV: {
@@ -109,30 +109,46 @@ val evaluator::eval(
     case init_spec_builtin::BIV_LX: return computeDim(ec.local_size,  0);
     case init_spec_builtin::BIV_LY: return computeDim(ec.local_size,  1);
     case init_spec_builtin::BIV_LZ: return computeDim(ec.local_size,  2);
-    default: fatalAt(e->defined_at,"unsupported built-in variable");
+    default: fatalAt(e->defined_at, "unsupported built-in variable");
     }
     break;
   }
-  default: fatalAt(e->defined_at,"unsupported primitive expression"); break;
+  case init_spec::IS_SYM: {
+    if (csi) {
+      init_spec_symbol *iss = (init_spec_symbol *)e;
+      std::map<std::string,cls::let_spec*> m = csi->s.let_bindings;
+      auto itr = m.find(iss->identifier);
+      if (itr != m.end()) {
+        let_spec *ls = itr->second;
+        if (ls->value->skind == spec::INIT_SPEC) {
+          init_spec *is = (init_spec *)ls->value;
+          if (is->is_atom())
+            return eval(ec, (init_spec_atom *)is);
+        }
+      }
+    }
+    [[fallthrough]];
+  }
+  default: fatalAt(e->defined_at, "unsupported primitive expression"); break;
   }
   return val((uint64_t)0); // unreachable
 }
 
-val evaluator::evalI(context &ec,const init_spec_atom *e)
+val evaluator::evalI(context &ec, const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_int())
-    fatalAt(e->defined_at,"argument must be integral");
+    fatalAt(e->defined_at, "argument must be integral");
   return v;
 }
-val evaluator::evalF(context &ec,const init_spec_atom *e)
+val evaluator::evalF(context &ec, const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (!v.is_float())
-    fatalAt(e->defined_at,"argument must be floating point");
+    fatalAt(e->defined_at, "argument must be floating point");
   return v;
 }
-val evaluator::evalToF(context &ec,const init_spec_atom *e)
+val evaluator::evalToF(context &ec, const init_spec_atom *e)
 {
   val v = eval(ec, e);
   if (v.is_signed()) {

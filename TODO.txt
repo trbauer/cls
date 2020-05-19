@@ -1,9 +1,21 @@
-SEE; https://github.com/trbauer/cls/issues/
+SEE: https://github.com/trbauer/cls/issues/
 
 
 TODO:
+* FEATURE:
+   - parser context help
+     if problem in memattr
+      ..:rX...
+          ^
+      try -h=syntax:meminit
+
 * TEST:
    - kargs.cpp OpenCL C parsing error (does the diagnostic make sense?)
+* FEATURE:
+   - buffer slicing and reducing
+      foo[:24] up to 24
+      foo[24] is 24
+      foo[24:] is 24 and on
 * FEATURE:
    - parsing structures from C
    - add tests for structs

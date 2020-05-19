@@ -60,16 +60,16 @@ std::string spec::name() const
 }
 
 format_opts::color_span format_opts::error(std::string s) const {
-  return make_colored(*this,text::ANSI_DRED.esc,s);
+  return make_colored(*this, text::ANSI_DRED.esc, s);
 }
 format_opts::color_span format_opts::keyword(std::string s) const {
-  return make_colored(*this,text::ANSI_BLUE.esc,s);
+  return make_colored(*this, text::ANSI_BLUE.esc, s);
 }
 format_opts::color_span format_opts::let_var(std::string s) const {
-  return make_colored(*this,text::ANSI_DYELLOW.esc,s);
+  return make_colored(*this, text::ANSI_DYELLOW.esc, s);
 }
 format_opts::color_span format_opts::str_lit(std::string s) const {
-  return make_colored(*this,text::ANSI_DCYAN.esc,s);
+  return make_colored(*this, text::ANSI_DCYAN.esc, s);
 }
 
 template <typename S>
@@ -261,6 +261,10 @@ void init_spec_vector::str(std::ostream &os, format_opts fopts) const {
     c->str(os, fopts);
   }
   os << ")";
+}
+
+void init_spec_symbol::str(std::ostream &os, format_opts fopts) const {
+  os << fopts.let_var(identifier);
 }
 
 void init_spec_sizeof::str(std::ostream &os, format_opts fopts) const {
@@ -902,7 +906,7 @@ size_t ndr::product() const {
 }
 
 void dispatch_spec::str(std::ostream &os, format_opts fopts) const {
-  kernel.str(os,fopts);
+  kernel.str(os, fopts);
   os << "<";
   for (size_t i = 0; i < global_size.size(); i++) {
     if (i > 0)

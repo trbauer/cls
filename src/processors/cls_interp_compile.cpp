@@ -336,14 +336,14 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     fatalAt(at, "file not found");
   }
   bool is_bin =
-    strsfx(".bin",ps->path) ||
-    strsfx(".ptx",ps->path) ||
-    strsfx(".obj",ps->path);
+    strsfx(".bin", ps->path) ||
+    strsfx(".ptx", ps->path) ||
+    strsfx(".obj", ps->path);
   bool is_spv =
     strsfx(".spv", ps->path);
   bool is_clc =
-    strsfx(".cl",ps->path) ||
-    strsfx(".clc",ps->path);
+    strsfx(".cl", ps->path) ||
+    strsfx(".clc", ps->path);
   if (!is_bin && !is_spv && !is_clc) {
     // look at the file contents
     auto bs = sys::read_file_binary(ps->path);
@@ -447,12 +447,19 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     if (os.save_binaries) {
       std::string bin_ext;
       if (vend == vendor::NVIDIA)
-        bin_ext = "ptx";
+        bin_ext = ".ptx";
       else // Intel is ELF; I don't know what others do.
-        bin_ext = "bin";
+        bin_ext = ".bin";
       // foo/bar.cl -> bar.bin
-      auto bin_path =
-        sys::replace_extension(sys::take_file(ps->path), bin_ext);
+      std::stringstream ss;
+      ss << sys::drop_extension(sys::take_file(ps->path));
+      static int kernel_index = 0;
+      int my_index = kernel_index++;
+      if (my_index > 0) {
+        ss << my_index;
+      }
+      ss << bin_ext;
+      auto bin_path = ss.str();
 
       size_t bits_len = 0;
       CL_COMMAND(ps->defined_at,
@@ -467,15 +474,15 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         clGetProgramInfo,
           po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
 
-      //      int err_x = 0;
-      //    CL_COMMAND_CREATE(po.program, ps->defined_at,
-      //      clCreateProgramWithBinary,
-      //        ctx,
-      //        1,
-      //        &dev,
-      //        &bits_len,
-      //        (const unsigned char **)&bits,
-      //        &err_x);
+      // int err_x = 0;
+      // CL_COMMAND_CREATE(po.program, ps->defined_at,
+      //   clCreateProgramWithBinary,
+      //     ctx,
+      //     1,
+      //     &dev,
+      //     &bits_len,
+      //     (const unsigned char **)&bits,
+      //     &err_x);
 
       os.verbose() << "dumping binary " << bin_path << "\n";
       sys::write_bin_file(bin_path, bits, bits_len);
@@ -907,10 +914,10 @@ void script_compiler::compileDispatch(const dispatch_spec *ds)
     evaluator::context ec(dc);
     // ec holds const references, but that isn't seeing the updates
     // so we rebuild it ec within each loop
-    val v = e.evalTo<size_t>(ec,expr);
+    val v = e.evalTo<size_t>(ec, expr);
     //
     if (v.s64 < 0) {
-      fatalAt(expr->defined_at,"negative dimension");
+      fatalAt(expr->defined_at, "negative dimension");
     }
     //
     return (size_t)v.u64;
