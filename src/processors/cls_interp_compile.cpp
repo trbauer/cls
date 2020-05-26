@@ -902,7 +902,7 @@ void script_compiler::compile()
           "memory object used across cl_context's (c.f. lines " <<
             dobj->spec->defined_at.line << " and " <<
             dc->dobj->spec->defined_at.line << ")";
-        fatalAt(so->spec->defined_at, ss.str());
+        fatalAt(so->init->defined_at, ss.str());
       }
     }
   }
@@ -1035,7 +1035,7 @@ const type *script_compiler::inferSurfaceElementType(
   const loc &at, surface_object *so)
 {
   if (so->dispatch_uses.empty()) {
-    fatalAt(so->spec->defined_at,
+    fatalAt(so->init->defined_at,
       "memory object never used in a dispatch (so we can't infer it's type)");
   }
   dispatch_command *dc = std::get<0>(so->dispatch_uses.front());
@@ -1048,7 +1048,7 @@ const type *script_compiler::inferSurfaceElementType(
     const arg_info &ai = ais[arg_index];
     const refable<init_spec> &ris = dc->spec->arguments[arg_index];
     const init_spec *is = ris;
-    if (is == so->spec) {
+    if (is == so->init) {
       if (!ai.type->is<type_ptr>()) {
         // TODO: I am not sure if this check is needed
         //       We could skip the error and try another dispatch command

@@ -5,21 +5,25 @@
 #include <ostream>
 
 
-float           half_bits_to_float(uint16_t);
-uint16_t        float_to_half_bits(float);
+float     half_bits_to_float(uint16_t);
+uint16_t  float_to_half_bits(float);
+
 
 
 // we don't use a typedef because we want a unique type for templates
 // and whatnot
+//
+// TODO: make constexpr; having trouble because helpers as constexpr
+// (e.g. half_bits_to_float) don't appear to make it across the link
 struct half {
   uint16_t bits;
 
-  half() {}
-  half(float f);
+  constexpr half() : bits(0) {}
+  half(float f) : bits(float_to_half_bits(f)) { }
   half(double f) : half((float)f) { }
   half(int64_t i) : half((double)i) { }
   half(uint64_t i) : half((double)i) { }
-  operator float() const;
+  operator float() const {return half_bits_to_float(bits);}
   operator double() const {return (float)*this;}
 
   explicit operator int() const{return (int)half_bits_to_float(bits);}
@@ -37,20 +41,12 @@ struct half {
   bool operator>(const half &rhs) const {return !(*this <= rhs);}
   bool operator>=(const half &rhs) const {return !(*this < rhs);}
 };
-static_assert(sizeof(half) == sizeof(uint16_t),"wrong size for cls::half");
+static_assert(sizeof(half) == sizeof(uint16_t), "wrong size for cls::half");
 
-// TODO: make a quick test to verify these
-static float           half_to_float(half h) {return half_bits_to_float(h.bits);}
-static half            float_to_half(float x) {half h; h.bits = float_to_half_bits(x); return h;}
-
-
-inline half::half(float f) : bits(float_to_half_bits(f)) { }
-//  inline half::operator double() const {return (double)half_bits_to_float(bits);}
-inline half::operator float() const {return half_bits_to_float(bits);}
 
 static std::ostream &operator <<(std::ostream &os, const half &h) {
   // os << "0x" << std::hex << h.bits;
-  os << half_to_float(h);
+  os << (float)h;
   return os;
 }
 

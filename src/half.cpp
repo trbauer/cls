@@ -1,6 +1,14 @@
 #include "half.hpp"
 
+constexpr static inline uint32_t float_to_bits(float f) {
+  union{float f; uint32_t i;} u{f};
+  return u.i;
+}
 
+constexpr static inline float float_from_bits(uint32_t f) {
+  union{uint32_t i; float f;} u{f};
+  return u.f;
+}
 
 static const uint32_t F32_SIGN_BIT  = 0x80000000;
 static const uint32_t F32_EXP_MASK  = 0x7F800000;
@@ -14,22 +22,10 @@ static const uint16_t F16_QNAN_BIT  = 0x0200;
 static const int F16_MANTISSA_BITS = 10;
 
 
-static uint32_t float_to_bits(float f) {
-  union{float f; uint32_t i;} u;
-  u.f = f;
-  return u.i;
-}
-
-static float float_from_bits(uint32_t f) {
-  union{float f; uint32_t i;} u;
-  u.i = f;
-  return u.f;
-}
-
 float half_bits_to_float(uint16_t h)
 {
   uint16_t u16 = h;
-  static const int MANTISSA_DIFFERENCE = // 23 - 10
+  const int MANTISSA_DIFFERENCE = // 23 - 10
      F32_MANTISSA_BITS - F16_MANTISSA_BITS;
   const int F32_F16_BIAS_DIFFERENCE = 127 - 15;
 
@@ -37,7 +33,7 @@ float half_bits_to_float(uint16_t h)
   uint32_t e16 = (u16 & F16_EXP_MASK) >> F16_MANTISSA_BITS;
   uint32_t m16 = u16 & F16_MANT_MASK;
 
-  uint32_t m32, e32;
+  uint32_t m32 = 0, e32 = 0;
   if (e16 != 0 && e16 < (F16_EXP_MASK >> F16_MANTISSA_BITS)) { // e16 < 0x1F
     //  normal number
     e32 = e16 + F32_F16_BIAS_DIFFERENCE;
@@ -78,8 +74,8 @@ uint16_t float_to_half_bits(float f)
   uint32_t m32 = F32_MANT_MASK & f32;
   uint32_t e32 = (F32_EXP_MASK & f32) >> F32_MANTISSA_BITS;
 
-  uint32_t m16;
-  uint32_t e16;
+  uint32_t m16 = 0;
+  uint32_t e16 = 0;
 
   if (e32 == (F32_EXP_MASK >> F32_MANTISSA_BITS)) {
     // NaN or Infinity

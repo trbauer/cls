@@ -94,7 +94,7 @@ struct surface_object {
     SO_IMAGE
   }                         skind;
 
-  const init_spec_mem      *spec;
+  const init_spec_mem      *init;
   size_t                    size_in_bytes;
   cl_mem                    memobj = nullptr;
   int                       memobj_index;
@@ -123,7 +123,7 @@ struct surface_object {
     int _memobj_index,
     cl_command_queue _queue)
     : skind(_kind)
-    , spec(_spec)
+    , init(_spec)
     , size_in_bytes(_size_in_bytes)
     , memobj(_mem)
     , memobj_index(_memobj_index)
@@ -508,7 +508,7 @@ struct evaluator : cl_interface {
   template <typename T>
   val evalToI(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
-    if (v.is_float())
+    if (v.is_floating())
       fatalAt(e->defined_at,"cannot implicitly convert float to int");
     if (v.is_signed()) {
       if ((T)v.s64 < std::numeric_limits<T>::min() ||

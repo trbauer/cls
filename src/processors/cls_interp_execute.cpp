@@ -32,7 +32,7 @@ init_times compiled_script::get_init_times() const
   init_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const surface_object *so : csi->surfaces)
-    ts.emplace_back(so->spec,so->init_times);
+    ts.emplace_back(so->init,so->init_times);
   return ts;
 }
 
@@ -382,10 +382,10 @@ void compiled_script_impl::execute(dispatch_command &dc)
   auto printSurfaces = [&] (bool is_pre) {
     for (const auto &sinfo : dc.surfaces) {
       const surface_object *so = std::get<0>(sinfo);
-      if (is_pre && so->spec->print_pre ||
-        !is_pre && (so->spec->print_post || so->spec->save_post))
+      if (is_pre && so->init->print_pre ||
+        !is_pre && (so->init->print_post || so->init->save_post))
       {
-        bool is_print = is_pre && so->spec->print_pre || so->spec->print_post;
+        bool is_print = is_pre && so->init->print_pre || so->init->print_post;
         bool is_image = so->skind == surface_object::SO_IMAGE;
         const type &t = std::get<1>(sinfo);
         const arg_info &ai = std::get<2>(sinfo);
@@ -420,8 +420,8 @@ void compiled_script_impl::execute(dispatch_command &dc)
             [&] (const void *host_ptr) {
               if (is_print) {
                 int elems_per_row = is_pre ?
-                  so->spec->print_pre_elems_per_row :
-                  so->spec->print_post_elems_per_row;
+                  so->init->print_pre_elems_per_row :
+                  so->init->print_post_elems_per_row;
                 formatBuffer(
                   std::cout,
                   host_ptr,
@@ -625,8 +625,8 @@ void compiled_script_impl::executeDiffElem(
     double elem_val_sut = 0.0, elem_val_ref = 0.0;
     switch (elem_type.size()) {
     case 2:
-      elem_val_sut = half_to_float(*((const half *)elem_sut));
-      elem_val_ref = half_to_float(*((const half *)elem_ref));
+      elem_val_sut = (float)(*((const half *)elem_sut));
+      elem_val_ref = (float)(*((const half *)elem_ref));
       break;
     case 4:
       elem_val_sut = *((const float *)elem_sut);
@@ -856,7 +856,7 @@ void compiled_script_impl::init_surfaces()
     if (so->dummy_object)
       continue; // only used for a diff command
 
-    debugAt(so->spec->defined_at, "initializing surface");
+    debugAt(so->init->defined_at, "initializing surface");
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
@@ -870,12 +870,20 @@ void compiled_script_impl::init_surfaces()
         elem_type = ai.type->as<type_ptr>().element_type;
       }
     } else if (!so->dummy_object) { // no valid uses found
-      fatalAt(so->spec->defined_at,"no uses of this surface found");
+      fatalAt(so->init->defined_at,"no uses of this surface found");
     }
 
-    if (so->skind == surface_object::SO_BUFFER) {
+    bool canUndef =
+      so->init->root->skind == init_spec_atom::IS_UND &&
+      !so->init->print_post &&
+      !so->init->print_pre &&
+      !so->init->save_post;
+    if (canUndef) {
+      debugAt(so->init->defined_at,
+        "skipping initialization (no save or printing needed)");
+    } else if (so->skind == surface_object::SO_BUFFER) {
       withBufferMapWrite(
-        so->spec->defined_at,
+        so->init->defined_at,
         so,
         [&] (void *host_ptr) {
           evaluator::context ec(*dc);
@@ -883,7 +891,7 @@ void compiled_script_impl::init_surfaces()
         });
     } else if (so->skind == surface_object::SO_IMAGE) {
       withImageMapWrite(
-        so->spec->defined_at,
+        so->init->defined_at,
         so,
         [&] (size_t, size_t, void *host_ptr) {
           if (so->image_init_bytes) {
@@ -893,7 +901,7 @@ void compiled_script_impl::init_surfaces()
           }
         });
     } else {
-      internalAt(so->spec->defined_at, "invalid surface kind");
+      internalAt(so->init->defined_at, "invalid surface kind");
     }
 
     auto t_duration =
@@ -910,10 +918,13 @@ void compiled_script_impl::init_surface(
   void *host_ptr)
 {
   arg_buffer ab(
-    getDiagnostics(), so.spec->defined_at, host_ptr, so.size_in_bytes);
-  switch (so.spec->root->skind) {
+    getDiagnostics(), so.init->defined_at, host_ptr, so.size_in_bytes);
+  switch (so.init->root->skind) {
+  case init_spec::IS_UND:
+    // for undef we don't need to do anything to the surface
+    break;
   case init_spec::IS_FIL: {
-    const init_spec_file *isf = (const init_spec_file *)so.spec->root;
+    const init_spec_file *isf = (const init_spec_file *)so.init->root;
     if (isf->flavor != init_spec_file::BIN) {
       fatalAt(isf->defined_at,"only binary files supported at the moment");
     }
@@ -924,7 +935,7 @@ void compiled_script_impl::init_surface(
     fs.seekg(0, fs.end);
     size_t file_size = (size_t)fs.tellg();
     if (file_size != so.size_in_bytes) {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "file size doesn't match buffer (",
         file_size,
         " != ",
@@ -934,7 +945,7 @@ void compiled_script_impl::init_surface(
     fs.seekg(0, fs.beg);
     fs.read((char *)host_ptr,file_size);
     if (!fs) {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "failed to read all binary input from file");
     }
     ab.curr += file_size; // fake the advance
@@ -942,7 +953,7 @@ void compiled_script_impl::init_surface(
   }
   case init_spec::IS_RND:
     if (elem_type == nullptr) {
-      fatalAt(so.spec->defined_at, "unable to infer element type for rng init");
+      fatalAt(so.init->defined_at, "unable to infer element type for rng init");
     } else if (elem_type->is<type_num>()) {
       // generator_state &gs =
       //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
@@ -950,25 +961,25 @@ void compiled_script_impl::init_surface(
         *this,
         ec,
         ab,
-        (const init_spec_rng *)so.spec->root,
+        (const init_spec_rng *)so.init->root,
         *elem_type,
-        so.spec->defined_at);
+        so.init->defined_at);
     } else if (elem_type->is<type_vector>()) {
       fill_buffer_rng(
         *this,
         ec,
         ab,
-        (const init_spec_rng *)so.spec->root,
+        (const init_spec_rng *)so.init->root,
         elem_type->as<type_vector>().element_type,
-        so.spec->defined_at);
+        so.init->defined_at);
     } else {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "random inits can only apply to numeric and vector element types");
     }
     break;
   case init_spec::IS_SEQ:
     if (elem_type == nullptr) {
-      fatalAt(so.spec->defined_at, "unable to infer element type for seq init");
+      fatalAt(so.init->defined_at, "unable to infer element type for seq init");
     } else if (elem_type->is<type_num>()) {
       // generator_state &gs =
       //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
@@ -976,11 +987,11 @@ void compiled_script_impl::init_surface(
         *this,
         ec,
         ab,
-        (const init_spec_seq *)so.spec->root,
+        (const init_spec_seq *)so.init->root,
         *elem_type,
-        so.spec->defined_at);
+        so.init->defined_at);
     } else {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "sequential inits can only apply to numeric element types");
     }
     break;
@@ -988,7 +999,7 @@ void compiled_script_impl::init_surface(
   // special handling for int since we permit 0 to broadcast
   // to structure types etc...
   case init_spec::IS_INT: {
-    int64_t ival = ((const init_spec_int *)so.spec->root)->value;
+    int64_t ival = ((const init_spec_int *)so.init->root)->value;
     if (ival == 0) {
       // special handling for 0 initializer
       // all element types accept 0
@@ -1003,35 +1014,36 @@ void compiled_script_impl::init_surface(
   // but either way it needs evaluation
   default: {
     if (elem_type == nullptr) {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "unable to infer element type for scalar init");
     }
     size_t elem_size = elem_type->size();
     if (elem_size == 0) {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "cannot populate a buffer of zero byte type (e.g. void*)");
     } else if (ab.num_left() % elem_size != 0) {
-      fatalAt(so.spec->defined_at,
+      fatalAt(so.init->defined_at,
         "surface size is not a multiple of element size");
     }
     // stamp out the first element and copy it as many times as needed
     e->evalInto(ec,
-      so.spec->defined_at,
-      (const init_spec_atom *)so.spec->root,
+      so.init->defined_at,
+      (const init_spec_atom *)so.init->root,
       ab,
       *elem_type);
     if (ab.size() != elem_size) {
-      internalAt(so.spec->defined_at,
+      internalAt(so.init->defined_at,
         "surface initializer generated wrong element size");
     }
     while (ab.num_left() > 0) {
-      ab.write(ab.base,elem_size);
+      ab.write(ab.base, elem_size);
     }
     break;
   } // default
   } // switch
-  if (ab.num_left() != 0) {
-    internalAt(so.spec->defined_at,
+
+  if (so.init->root->skind != init_spec::IS_UND && ab.num_left() != 0) {
+    internalAt(so.init->defined_at,
       "wrong number of elements written by surface initializer");
   }
 }

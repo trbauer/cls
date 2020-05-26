@@ -11,6 +11,15 @@
 
 using namespace cls;
 
+#define RESET "\033[0m"
+//
+#define SLIT_OPEN "\033[1;36m"
+#define SLIT(X) SLIT_OPEN X RESET
+//
+#define SVAR_OPEN "\033[2;36m"
+#define SVAR(X) SVAR_OPEN "<" X ">" RESET
+
+
 ///////////////////////////////////////////////////////////////////////////////////
 std::string cls::CLS_SYNTAX_ALL() {
   std::stringstream ss;
@@ -166,7 +175,8 @@ std::string cls::CLS_SYN_ST()
 
 std::string cls::CLS_SYN_PEX()
 {
-  return
+  std::stringstream ss;
+  ss <<
     "************* SCALAR EXPRESSIONS *************\n"
     SVAR("Expr") " is a usual C-style expression\n"
     "   - most C operators as well as some many built-in C++ STL functions are allowed\n"
@@ -174,11 +184,11 @@ std::string cls::CLS_SYN_PEX()
     "   - " SVAR("IntLitEx") " is an integer; e.g. " SLIT("32") " or " SLIT("0x20") "\n"
     "\n"
     "   - " SVAR("StrLitEx") " is a string literal in either single or double quotes);\n"
-    "      e.g. " SLIT("\"foo\"") " or " SLIT("'foo'") " are identical\n"
+    "        e.g. " SLIT("\"foo\"") " or " SLIT("'foo'") " are identical\n"
     "\n"
     "   - the usual arithmetic operators are supported including:\n"
-    "     bitwise logical, bit shifting, additive, multiplicative (incl. mod (" SLIT("%") "),\n"
-    "     negation (" SLIT("-") "), and bitwise complement (" SLIT("~") ")\n"
+    "       bitwise logical, bit shifting, additive, multiplicative (incl. mod (" SLIT("%") "),\n"
+    "       negation (" SLIT("-") "), and bitwise complement (" SLIT("~") ")\n"
     "\n"
     "   - vector types are represented via normal OpenCL-C syntax.\n"
     "       e.g. " SLIT("(float2)(1,4*5)") "\n"
@@ -187,20 +197,50 @@ std::string cls::CLS_SYN_PEX()
     "       e.g. " SLIT("{sqrt(3.1459), {3,4*5}}") "\n"
     "\n"
     "   - kernel arguments expressions may also reference some built-in variables\n"
-    "     defined as the NDRange size\n"
-    "     " SLIT("g.x") ", " SLIT("g.y") ", and " SLIT("g.z") " reference global dimensions\n"
-    "     " SLIT("l.x") ", " SLIT("l.y") ", and " SLIT("l.z") " reference local dimensions\n"
+    "       defined as the NDRange size\n"
+    "       " SLIT("g.x") ", " SLIT("g.y") ", and " SLIT("g.z") " reference global dimensions\n"
+    "       " SLIT("l.x") ", " SLIT("l.y") ", and " SLIT("l.z") " reference local dimensions\n"
     "\n"
     "   - " SLIT("undef") " means to use an undefined value; this can be useful for surface\n"
     "      initializers to be a don't care value\n"
     "\n"
     "   - type conversions and coercions attempt to mimic most C/C++ rules\n"
-    "     at least: " SLIT("float(..)") ", " SLIT("int(..)") ", "
+    "       at least: " SLIT("float(..)") ", " SLIT("int(..)") ", "
     SLIT("signed(..)") ", " SLIT("unsigned(..)") " are supported\n"
     "      e.g. " SLIT("unsigned(M_PI)") " evaluates to 3\n"
-    "     we also permit type conversions; e.g. " SLIT("unsigned(x)") "\n"
-    "     some OpenCL builtin constants are also defined (e.g. M_PI)\n"
+    "\n"
+    "   - some OpenCL builtin constants are also defined (e.g. M_PI)\n"
     "     https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/mathConstants.html\n"
+    "\n";
+  bool first = true;
+  const auto syms = builtin_symbols();
+  ss <<
+    "  - some built-in constants are the following:\n";
+  ss <<
+    "      ";
+  size_t col = 6;
+  for (size_t i = 0, len = syms.size(); i < len; i++) {
+    if (i > 0) {
+      ss << ",";
+      col += 1;
+      if (col > 70) {
+        ss << "\n"
+          "      ";
+        col = 6;
+      } else {
+        ss << " ";
+      }
+    }
+    if (i == len - 1)
+      ss << "or ";
+    ss << SLIT_OPEN << syms[i] << RESET;
+    col += syms[i].size();
+  }
+  ss << "\n";
+
+
+
+  ss <<
     "\n"
     "   - some unary C++ STL functions are supported:\n"
     "      " SLIT("abs") ", " SLIT("fabs") ", " SLIT("sqrt") ", " SLIT("cbrt") ",\n"
@@ -230,6 +270,7 @@ std::string cls::CLS_SYN_PEX()
     "       e.g. " SLIT("int(max(pi*pi,2*e*e)") "\n"
     "\n"
     ;
+  return ss.str();
 }
 
 std::string cls::CLS_SYN_SEX()
@@ -284,7 +325,8 @@ std::string cls::CLS_SYN_SEX()
     "\n"
     SVAR("ConstExpr")   " = " SVAR("Expr") "\n"
     "  initializes a memory object with each element to a constant value;\n"
-    "  built-in dispatch variable sizes are permitted in the expression (e.g. " SLIT("g.x") " uses " SLIT("get_global_size(0)") ")\n"
+    "  built-in dispatch variable sizes are permitted in the expression "
+        "(e.g. " SLIT("g.x") " uses " SLIT("get_global_size(0)") ")\n"
     "\n"
     SVAR("SeqExpr")   " = "
     SLIT("seq(") SLIT(")")
@@ -306,7 +348,8 @@ std::string cls::CLS_SYN_SEX()
     "  one argument sets the high bound and uses zero as the low bound\n"
     "  two argument sets the bounds as low and high bounds\n"
     "\n"
-    SVAR("FileExpr")  " = " SVAR("FileBinExpr") " | " SVAR("FileTxtExpr") " | " SVAR("FileTxtColExpr") "\n"
+    SVAR("FileExpr")  " = " SVAR("FileBinExpr") " | " SVAR("FileTxtExpr")
+          " | " SVAR("FileTxtColExpr") "\n"
     "  initializes a memory object's contents from a binary or text file\n"
     "  " SVAR("FileBinExpr") " = " SLIT("file<bin>(") SLIT("STR") SLIT(")") "\n"
   ///////////////////////////////////////////////////////////////////////////////////
@@ -550,297 +593,16 @@ struct cls_parser: parser
         //    F<...>(....)
         // then match by template arguments
         if (id == "sizeof") {
-          bool has_parens = consumeIf(LPAREN);
-          if (!lookingAtIdent())
-            fatal("expected type name");
-          loc nm_at = nextLoc();
-          std::string sizeof_arg = tokenString();
-          skip();
-          if (has_parens)
-            consume(RPAREN);
-          at.extend_to(nextLoc());
-          // manual dereference memobject
-          auto itr = s.let_bindings.find(sizeof_arg);
-          if (itr == s.let_bindings.end()) {
-            // assume it's a type
-            return new init_spec_sizeof(at, sizeof_arg);
-          } else {
-            let_spec *ls = itr->second;
-            spec *rs = ls->value;
-            if (rs->skind != spec::INIT_SPEC)
-              fatal("symbol refers to non-memory object");
-            init_spec *is = (init_spec *)rs;
-            if (is->skind != init_spec::IS_MEM)
-              fatal("symbol refers to non-memory object");
-            return new init_spec_sizeof(at,
-              refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
-          }
+          return parseInitAtomPrimSizeof(at);
         } else if (id == "random") {
-          auto func = new init_spec_rng(at);
-          int64_t seed = 0;
-          bool has_seed = false;
-          if (consumeIf(LANGLE)) {
-            if (!lookingAt(RANGLE)) {
-              seed = consumeIntegral<int64_t>("seed (int)");
-              has_seed = true;
-            }
-            consume(RANGLE);
-          }
-          if (consumeIf(LPAREN)) {
-            if (!lookingAt(RPAREN)) {
-              auto *arg1 = parseInitAtom();
-              if (consumeIf(COMMA)) {
-                auto *arg2 = parseInitAtom();
-                func->e_lo = arg1;
-                func->e_hi = arg2;
-              } else {
-                func->e_hi = arg1;
-              }
-            }
-            consume(RPAREN);
-          }
-          if (has_seed)
-            func->set_seed(seed);
-          func->defined_at.extend_to(nextLoc());
-          return func;
+          return parseInitAtomPrimRandom(at);
         } else if (id == "file") {
-          //
-          // file('foo.bin'):r                 // binary
-          // file<bin>('foo.bin'):r            // binary
-          //
-          // file<text>('foo.txt'):r           // all tokens using sep = ' '
-          // file<text,','>('foo.txt'):r       // all tokens using sep = ','
-          //
-          //
-          // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
-          // file<text_col,0>('foo.txt'):r     // same as above
-          // file<text_col,1,','>('foo.txt'):r // col 1 use , as separator
-          auto flv = init_spec_file::BIN;
-          int col = 0;
-          std::string sep = " ";
-          if (consumeIf(LANGLE)) {
-            if (!lookingAt(RANGLE)) {
-              auto fmt_loc = nextLoc();
-              auto flv_str = consumeIdent("data format (identifier)");
-              if (flv_str == "bin") {
-                flv = init_spec_file::BIN;
-              } else if (flv_str == "text") {
-                flv = init_spec_file::TXT;
-                if (consumeIf(COMMA)) {
-                  if (!lookingAt(STRLIT)) {
-                    fatal("expected separator string (literal)");
-                  }
-                  sep = tokenStringLiteral();
-                  skip();
-                }
-              } else if (flv_str == "text_col") {
-                flv = init_spec_file::TXT_COL;
-                if (consumeIf(COMMA)) {
-                  col = consumeIntegral<int>("column index (int)");
-                  if (consumeIf(COMMA)) {
-                    if (!lookingAt(STRLIT)) {
-                      fatal("expected separator string (literal)");
-                    }
-                    sep = tokenStringLiteral();
-                    skip();
-                  }
-                }
-              } else {
-                fatalAt(fmt_loc, "unsupported file flavor; should be: bin, text, ...");
-              }
-            }
-            consume(RANGLE);
-          }
-          skip();
-          if (!lookingAt(STRLIT)) {
-            fatalAt(at, "expected file path (string literal)");
-          }
-          auto s = tokenStringLiteral();
-          skip();
-          consume(RPAREN);
-          at.extend_to(nextLoc());
-          return new init_spec_file(at, s, flv, col, sep);
+          return parseInitAtomPrimFile(at);
         } else if (id == "image") {
-          consume(LANGLE);
-          auto ord = init_spec_image::RGB;
-          if (consumeIfIdentEq("i") ||
-            consumeIfIdentEq("CL_INTENSITY"))
-          {
-            ord = init_spec_image::I;
-          } else if (consumeIfIdentEq("l") ||
-            consumeIfIdentEq("CL_LUMINANCE"))
-          {
-            ord = init_spec_image::L;
-          } else if (consumeIfIdentEq("r") ||
-            consumeIfIdentEq("CL_R"))
-          {
-            ord = init_spec_image::R;
-          } else if (consumeIfIdentEq("rx") ||
-            consumeIfIdentEq("CL_Rx"))
-          {
-            ord = init_spec_image::Rx;
-          } else if (consumeIfIdentEq("rg") ||
-            consumeIfIdentEq("CL_RG"))
-          {
-            ord = init_spec_image::RG;
-          } else if (consumeIfIdentEq("rgx") ||
-            consumeIfIdentEq("CL_RGx"))
-          {
-            ord = init_spec_image::RGx;
-          } else if (consumeIfIdentEq("rgb") ||
-            consumeIfIdentEq("CL_RGB"))
-          {
-            ord = init_spec_image::RGB;
-          } else if (consumeIfIdentEq("rgbx") ||
-            consumeIfIdentEq("CL_RGBx"))
-          {
-            ord = init_spec_image::RGBx;
-          } else if (consumeIfIdentEq("rgba") ||
-            consumeIfIdentEq("CL_RGBA"))
-          {
-            ord = init_spec_image::RGBA;
-          } else if (consumeIfIdentEq("argb") ||
-            consumeIfIdentEq("CL_ARGB"))
-          {
-            ord = init_spec_image::ARGB;
-          } else if (consumeIfIdentEq("bgra") ||
-            consumeIfIdentEq("CL_BGRA"))
-          {
-            ord = init_spec_image::BGRA;
-
-          } else if (consumeIfIdentEq("srgb") ||
-            consumeIfIdentEq("CL_sRGB"))
-          {
-            ord = init_spec_image::sRGB;
-          } else if (consumeIfIdentEq("srgbx") ||
-            consumeIfIdentEq("CL_sRGBx"))
-          {
-            ord = init_spec_image::sRGBx;
-          } else if (consumeIfIdentEq("srgba") ||
-            consumeIfIdentEq("CL_sRGBA"))
-          {
-            ord = init_spec_image::sRGBA;
-          } else if (consumeIfIdentEq("sbgra") ||
-            consumeIfIdentEq("CL_sBGRA"))
-          {
-            ord = init_spec_image::sBGRA;
-          } else {
-            fatal("unrecognized channel order (try r, rg, rgb, rgba, ...)");
-          }
-          consume(COMMA);
-          auto ty = init_spec_image::U8;
-          ///////////////////////////////////////////////////////////////////////
-          if (consumeIfIdentEq("un8") ||
-            consumeIfIdentEq("CL_UNORM_INT8"))
-          {
-            ty = init_spec_image::UN8;
-          } else if (consumeIfIdentEq("un16") ||
-            consumeIfIdentEq("CL_UNORM_INT16"))
-          {
-            ty = init_spec_image::UN16;
-          } else if (consumeIfIdentEq("un24") ||
-            consumeIfIdentEq("CL_UNORM_INT24"))
-          {
-            ty = init_spec_image::UN24;
-          } else if (consumeIfIdentEq("un565") ||
-            consumeIfIdentEq("CL_UNORM_SHORT_565"))
-          {
-            ty = init_spec_image::UN565;
-          } else if (consumeIfIdentEq("un555") ||
-            consumeIfIdentEq("CL_UNORM_SHORT_555"))
-          {
-            ty = init_spec_image::UN555;
-          } else if (consumeIfIdentEq("un101010") ||
-            consumeIfIdentEq("CL_UNORM_INT_101010"))
-          {
-            ty = init_spec_image::UN101010;
-          } else if (consumeIfIdentEq("un101010_2") ||
-            consumeIfIdentEq("CL_UNORM_INT_101010_2"))
-          {
-            ty = init_spec_image::UN101010_2;
-            ///////////////////////////////////////////////////////////////////////
-          } else if (consumeIfIdentEq("sn8") ||
-            consumeIfIdentEq("CL_SNORM_INT8"))
-          {
-            ty = init_spec_image::SN8;
-          } else if (consumeIfIdentEq("sn16") ||
-            consumeIfIdentEq("CL_SNORM_INT16"))
-          {
-            ty = init_spec_image::SN16;
-            ///////////////////////////////////////////////////////////////////////
-          } else if (consumeIfIdentEq("u8") ||
-            consumeIfIdentEq("CL_UNSIGNED_INT8"))
-          {
-            ty = init_spec_image::U8;
-          } else if (consumeIfIdentEq("u16") ||
-            consumeIfIdentEq("CL_UNSIGNED_INT16"))
-          {
-            ty = init_spec_image::U16;
-          } else if (consumeIfIdentEq("u32") ||
-            consumeIfIdentEq("CL_UNSIGNED_INT32"))
-          {
-            ty = init_spec_image::U32;
-            ///////////////////////////////////////////////////////////////////////
-          } else if (consumeIfIdentEq("s8") ||
-            consumeIfIdentEq("CL_SIGNED_INT8"))
-          {
-            ty = init_spec_image::S8;
-          } else if (consumeIfIdentEq("s16") ||
-            consumeIfIdentEq("CL_SIGNED_INT16"))
-          {
-            ty = init_spec_image::S16;
-          } else if (consumeIfIdentEq("s32") ||
-            consumeIfIdentEq("CL_SIGNED_INT32"))
-          {
-            ty = init_spec_image::S32;
-            ///////////////////////////////////////////////////////////////////////
-          } else if (consumeIfIdentEq("f32") ||
-            consumeIfIdentEq("CL_FLOAT"))
-          {
-            ty = init_spec_image::F32;
-          } else if (consumeIfIdentEq("f16") ||
-            consumeIfIdentEq("CL_HALF_FLOAT"))
-          {
-            ty = init_spec_image::F16;
-            ///////////////////////////////////////////////////////////////////////
-          } else {
-            fatal(
-              "unrecognized image format (try: u8, u16, ..., f32, f16 ,...)");
-          }
-
-          init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
-          init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
-          if (consumeIf(COMMA)) {
-            // image dimension:
-            // W (RP)
-            // W (RP) x H (SP)
-            // W (RP) x H (SP) x D
-            // the spacing makes this hard
-            std::vector<init_spec_atom *> dims;
-            std::vector<init_spec_atom *> pitches;
-            parseImageDimensionExpressions(dims, pitches);
-            //
-            width = dims[0];
-            height = dims.size() >= 2 ? dims[1] : nullptr;
-            depth = dims.size() >= 3 ? dims[2] : nullptr;
-            row_pitch = pitches[0];
-            slice_pitch = pitches.size() >= 2 ? pitches[1] : nullptr;
-          }
-          consume(RANGLE);
-          std::string file;
-          if (consumeIf(LPAREN)) {
-            if (!lookingAt(STRLIT)) {
-              fatalAt(at, "expected file path (string literal)");
-            }
-            file = tokenStringLiteral(); skip();
-            consume(RPAREN);
-          }
-          at.extend_to(nextLoc());
-          return new init_spec_image(
-            at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
+          return parseInitAtomPrimImage(at);
         } else {
           ///////////////////////////////////////////////////
-          // generic function
+          // generic function syntax (could be seq still)
           std::vector<init_spec_atom *> args;
           consume(LPAREN);
           while (!lookingAt(RPAREN)) {
@@ -892,95 +654,27 @@ struct cls_parser: parser
             return isbe;
           } else {
             fatalAt(at, "undefined function");
+            return nullptr;
           }
-          // fallback
-          return nullptr; // unreachable
         } // end else not random
+      } else if (id == "undef") {
+        return new init_spec_undef(at);
       } else {
-        // https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/mathConstants.html
-        if (id == "MAXFLOAT")
-          return new init_spec_float(at, std::numeric_limits<float>::max());
-        else if (id == "HUGE_VALF")
-          return new init_spec_float(at, HUGE_VALF);
-        else if (id == "NAN")
-          return new init_spec_float(at, std::numeric_limits<float>::quiet_NaN());
-        //
-        else if (id == "HUGE_VAL")
-          return new init_spec_float(at, HUGE_VAL);
-        //
-        else if (id == "M_E")
-          return new init_spec_float(at, M_E);
-        else if (id == "M_LOG2E")
-          return new init_spec_float(at, M_LOG2E);
-        else if (id == "M_LOG10E")
-          return new init_spec_float(at, M_LOG10E);
-        else if (id == "M_LN2")
-          return new init_spec_float(at, M_LN2);
-        else if (id == "M_LN10")
-          return new init_spec_float(at, M_LN10);
-        else if (id == "M_PI")
-          return new init_spec_float(at, M_PI);
-        else if (id == "M_PI_2")
-          return new init_spec_float(at, M_PI_2);
-        else if (id == "M_PI_4")
-          return new init_spec_float(at, M_PI_4);
-        else if (id == "M_1_PI")
-          return new init_spec_float(at, M_1_PI);
-        else if (id == "M_2_PI")
-          return new init_spec_float(at, M_2_PI); // 2/pi
-        else if (id == "M_2_SQRTPI")
-          return new init_spec_float(at, M_2_SQRTPI); // 2/sqrt(pi)
-        else if (id == "M_SQRT2")
-          return new init_spec_float(at, M_SQRT2);
-        else if (id == "M_SQRT1_2")
-          return new init_spec_float(at, M_SQRT1_2);
-        // some other symbol (may target a LET binding)
-        return new init_spec_symbol(at, id);
+        return parseInitAtomPrimSymbol(at, id);
       }
     } else if (consumeIf(LBRACE)) {
-      // {...}
-      auto re = new init_spec_record(at);
-      if (!lookingAt(RBRACE)) {
-        re->children.push_back(parseInitAtom());
-        while (consumeIf(COMMA))
-          re->children.push_back(parseInitAtom());
-      }
-      consume(RBRACE);
-      re->defined_at.extend_to(nextLoc());
-      return re;
+      return parseInitAtomPrimStruct(at);
     } else if (consumeIf(LPAREN)) {
       // grouping expression or vector value
-      const type *et;
-      if (lookingAtSeq(IDENT,RPAREN) &&
-        (et = lookupBuiltinType(tokenString(), 8)))
+      if (lookingAtSeq(IDENT, RPAREN))
       {
-        // vector initializer
-        if (!et->is<type_vector>()) {
-          fatal("vector initializer type is not vector");
-        }
-        auto *vi = new init_spec_vector(at, et);
-        skip();
-        consume(RPAREN);
-        //   vector:    (float4)(1,2,3,4)
-        //   broadcast: (float4)(3.14f)
-        if (lookingAt(LPAREN)) {
-          consume(LPAREN);
-          vi->children.push_back(parseInitAtom());
-          while (consumeIf(COMMA))
-            vi->children.push_back(parseInitAtom());
-          consume(RPAREN);
-          if (vi->children.size() == 1) {
-            // broadcast
-            for (int i = 0; i < (int)et->as<type_vector>().length; i++)
-              vi->children.push_back(vi->children[i]);
-          }
+        const type *et = lookupBuiltinType(tokenString(), 8);
+        if (et == nullptr || !et->is<type_vector>()) {
+          fatal("not a vector type");
+          return nullptr;
         } else {
-          // broadcast: (float4)3.14f
-          auto *e = parseInitAtom();
-          for (int i = 0; i < (int)et->as<type_vector>().length; i++)
-            vi->children.push_back(e);
+          return parseInitAtomPrimVector(at, et);
         }
-        return vi;
       } else {
         // grouping expression (E)
         init_spec_atom *e = parseInitAtom();
@@ -992,6 +686,361 @@ struct cls_parser: parser
       return nullptr;
     }
   }
+  init_spec_atom *parseInitAtomPrimSizeof(loc at)
+  {
+    bool has_parens = consumeIf(LPAREN);
+    if (!lookingAtIdent())
+      fatal("expected type name");
+    loc nm_at = nextLoc();
+    std::string sizeof_arg = tokenString();
+    skip();
+    if (has_parens)
+      consume(RPAREN);
+    at.extend_to(nextLoc());
+    // manual dereference memobject
+    auto itr = s.let_bindings.find(sizeof_arg);
+    if (itr == s.let_bindings.end()) {
+      // assume it's a type
+      return new init_spec_sizeof(at, sizeof_arg);
+    } else {
+      let_spec *ls = itr->second;
+      spec *rs = ls->value;
+      if (rs->skind != spec::INIT_SPEC)
+        fatal("symbol refers to non-memory object");
+      init_spec *is = (init_spec *)rs;
+      if (is->skind != init_spec::IS_MEM)
+        fatal("symbol refers to non-memory object");
+      return new init_spec_sizeof(at,
+        refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
+    }
+  }
+  init_spec_atom *parseInitAtomPrimFile(loc at)
+  {
+    //
+    // file('foo.bin'):r                 // binary
+    // file<bin>('foo.bin'):r            // binary
+    //
+    // file<text>('foo.txt'):r           // all tokens using sep = ' '
+    // file<text,','>('foo.txt'):r       // all tokens using sep = ','
+    //
+    //
+    // file<text_col>('foo.txt'):r       // use column 0 with ' ' delimiter
+    // file<text_col,0>('foo.txt'):r     // same as above
+    // file<text_col,1,','>('foo.txt'):r // col 1 use , as separator
+    auto flv = init_spec_file::BIN;
+    int col = 0;
+    std::string sep = " ";
+    if (consumeIf(LANGLE)) {
+      if (!lookingAt(RANGLE)) {
+        auto fmt_loc = nextLoc();
+        auto flv_str = consumeIdent("data format (identifier)");
+        if (flv_str == "bin") {
+          flv = init_spec_file::BIN;
+        } else if (flv_str == "text") {
+          flv = init_spec_file::TXT;
+          if (consumeIf(COMMA)) {
+            if (!lookingAt(STRLIT)) {
+              fatal("expected separator string (literal)");
+            }
+            sep = tokenStringLiteral();
+            skip();
+          }
+        } else if (flv_str == "text_col") {
+          flv = init_spec_file::TXT_COL;
+          if (consumeIf(COMMA)) {
+            col = consumeIntegral<int>("column index (int)");
+            if (consumeIf(COMMA)) {
+              if (!lookingAt(STRLIT)) {
+                fatal("expected separator string (literal)");
+              }
+              sep = tokenStringLiteral();
+              skip();
+            }
+          }
+        } else {
+          fatalAt(fmt_loc, "unsupported file flavor; should be: bin, text, ...");
+        }
+      }
+      consume(RANGLE);
+    }
+    skip();
+    if (!lookingAt(STRLIT)) {
+      fatalAt(at, "expected file path (string literal)");
+    }
+    auto s = tokenStringLiteral();
+    skip();
+    consume(RPAREN);
+    at.extend_to(nextLoc());
+    return new init_spec_file(at, s, flv, col, sep);
+  }
+  init_spec_atom *parseInitAtomPrimRandom(loc at)
+  {
+    auto func = new init_spec_rng(at);
+    int64_t seed = 0;
+    bool has_seed = false;
+    if (consumeIf(LANGLE)) {
+      if (!lookingAt(RANGLE)) {
+        seed = consumeIntegral<int64_t>("seed (int)");
+        has_seed = true;
+      }
+      consume(RANGLE);
+    }
+    if (consumeIf(LPAREN)) {
+      if (!lookingAt(RPAREN)) {
+        auto *arg1 = parseInitAtom();
+        if (consumeIf(COMMA)) {
+          auto *arg2 = parseInitAtom();
+          func->e_lo = arg1;
+          func->e_hi = arg2;
+        } else {
+          func->e_hi = arg1;
+        }
+      }
+      consume(RPAREN);
+    }
+    if (has_seed)
+      func->set_seed(seed);
+    func->defined_at.extend_to(nextLoc());
+    return func;
+  }
+  init_spec_atom *parseInitAtomPrimImage(loc at)
+  {
+    consume(LANGLE);
+    auto ord = init_spec_image::RGB;
+    if (consumeIfIdentEq("i") ||
+      consumeIfIdentEq("CL_INTENSITY"))
+    {
+      ord = init_spec_image::I;
+    } else if (consumeIfIdentEq("l") ||
+      consumeIfIdentEq("CL_LUMINANCE"))
+    {
+      ord = init_spec_image::L;
+    } else if (consumeIfIdentEq("r") ||
+      consumeIfIdentEq("CL_R"))
+    {
+      ord = init_spec_image::R;
+    } else if (consumeIfIdentEq("rx") ||
+      consumeIfIdentEq("CL_Rx"))
+    {
+      ord = init_spec_image::Rx;
+    } else if (consumeIfIdentEq("rg") ||
+      consumeIfIdentEq("CL_RG"))
+    {
+      ord = init_spec_image::RG;
+    } else if (consumeIfIdentEq("rgx") ||
+      consumeIfIdentEq("CL_RGx"))
+    {
+      ord = init_spec_image::RGx;
+    } else if (consumeIfIdentEq("rgb") ||
+      consumeIfIdentEq("CL_RGB"))
+    {
+      ord = init_spec_image::RGB;
+    } else if (consumeIfIdentEq("rgbx") ||
+      consumeIfIdentEq("CL_RGBx"))
+    {
+      ord = init_spec_image::RGBx;
+    } else if (consumeIfIdentEq("rgba") ||
+      consumeIfIdentEq("CL_RGBA"))
+    {
+      ord = init_spec_image::RGBA;
+    } else if (consumeIfIdentEq("argb") ||
+      consumeIfIdentEq("CL_ARGB"))
+    {
+      ord = init_spec_image::ARGB;
+    } else if (consumeIfIdentEq("bgra") ||
+      consumeIfIdentEq("CL_BGRA"))
+    {
+      ord = init_spec_image::BGRA;
+
+    } else if (consumeIfIdentEq("srgb") ||
+      consumeIfIdentEq("CL_sRGB"))
+    {
+      ord = init_spec_image::sRGB;
+    } else if (consumeIfIdentEq("srgbx") ||
+      consumeIfIdentEq("CL_sRGBx"))
+    {
+      ord = init_spec_image::sRGBx;
+    } else if (consumeIfIdentEq("srgba") ||
+      consumeIfIdentEq("CL_sRGBA"))
+    {
+      ord = init_spec_image::sRGBA;
+    } else if (consumeIfIdentEq("sbgra") ||
+      consumeIfIdentEq("CL_sBGRA"))
+    {
+      ord = init_spec_image::sBGRA;
+    } else {
+      fatal("unrecognized channel order (try r, rg, rgb, rgba, ...)");
+    }
+    consume(COMMA);
+    auto ty = init_spec_image::U8;
+    ///////////////////////////////////////////////////////////////////////
+    if (consumeIfIdentEq("un8") ||
+      consumeIfIdentEq("CL_UNORM_INT8"))
+    {
+      ty = init_spec_image::UN8;
+    } else if (consumeIfIdentEq("un16") ||
+      consumeIfIdentEq("CL_UNORM_INT16"))
+    {
+      ty = init_spec_image::UN16;
+    } else if (consumeIfIdentEq("un24") ||
+      consumeIfIdentEq("CL_UNORM_INT24"))
+    {
+      ty = init_spec_image::UN24;
+    } else if (consumeIfIdentEq("un565") ||
+      consumeIfIdentEq("CL_UNORM_SHORT_565"))
+    {
+      ty = init_spec_image::UN565;
+    } else if (consumeIfIdentEq("un555") ||
+      consumeIfIdentEq("CL_UNORM_SHORT_555"))
+    {
+      ty = init_spec_image::UN555;
+    } else if (consumeIfIdentEq("un101010") ||
+      consumeIfIdentEq("CL_UNORM_INT_101010"))
+    {
+      ty = init_spec_image::UN101010;
+    } else if (consumeIfIdentEq("un101010_2") ||
+      consumeIfIdentEq("CL_UNORM_INT_101010_2"))
+    {
+      ty = init_spec_image::UN101010_2;
+      ///////////////////////////////////////////////////////////////////////
+    } else if (consumeIfIdentEq("sn8") ||
+      consumeIfIdentEq("CL_SNORM_INT8"))
+    {
+      ty = init_spec_image::SN8;
+    } else if (consumeIfIdentEq("sn16") ||
+      consumeIfIdentEq("CL_SNORM_INT16"))
+    {
+      ty = init_spec_image::SN16;
+      ///////////////////////////////////////////////////////////////////////
+    } else if (consumeIfIdentEq("u8") ||
+      consumeIfIdentEq("CL_UNSIGNED_INT8"))
+    {
+      ty = init_spec_image::U8;
+    } else if (consumeIfIdentEq("u16") ||
+      consumeIfIdentEq("CL_UNSIGNED_INT16"))
+    {
+      ty = init_spec_image::U16;
+    } else if (consumeIfIdentEq("u32") ||
+      consumeIfIdentEq("CL_UNSIGNED_INT32"))
+    {
+      ty = init_spec_image::U32;
+      ///////////////////////////////////////////////////////////////////////
+    } else if (consumeIfIdentEq("s8") ||
+      consumeIfIdentEq("CL_SIGNED_INT8"))
+    {
+      ty = init_spec_image::S8;
+    } else if (consumeIfIdentEq("s16") ||
+      consumeIfIdentEq("CL_SIGNED_INT16"))
+    {
+      ty = init_spec_image::S16;
+    } else if (consumeIfIdentEq("s32") ||
+      consumeIfIdentEq("CL_SIGNED_INT32"))
+    {
+      ty = init_spec_image::S32;
+      ///////////////////////////////////////////////////////////////////////
+    } else if (consumeIfIdentEq("f32") ||
+      consumeIfIdentEq("CL_FLOAT"))
+    {
+      ty = init_spec_image::F32;
+    } else if (consumeIfIdentEq("f16") ||
+      consumeIfIdentEq("CL_HALF_FLOAT"))
+    {
+      ty = init_spec_image::F16;
+      ///////////////////////////////////////////////////////////////////////
+    } else {
+      fatal(
+        "unrecognized image format (try: u8, u16, ..., f32, f16 ,...)");
+    }
+
+    init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
+    init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
+    if (consumeIf(COMMA)) {
+      // image dimension:
+      // W (RP)
+      // W (RP) x H (SP)
+      // W (RP) x H (SP) x D
+      // the spacing makes this hard
+      std::vector<init_spec_atom *> dims;
+      std::vector<init_spec_atom *> pitches;
+      parseImageDimensionExpressions(dims, pitches);
+      //
+      width = dims[0];
+      height = dims.size() >= 2 ? dims[1] : nullptr;
+      depth = dims.size() >= 3 ? dims[2] : nullptr;
+      row_pitch = pitches[0];
+      slice_pitch = pitches.size() >= 2 ? pitches[1] : nullptr;
+    }
+    consume(RANGLE);
+    std::string file;
+    if (consumeIf(LPAREN)) {
+      if (!lookingAt(STRLIT)) {
+        fatalAt(at, "expected file path (string literal)");
+      }
+      file = tokenStringLiteral(); skip();
+      consume(RPAREN);
+    }
+    at.extend_to(nextLoc());
+    return new init_spec_image(
+      at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
+  }
+  init_spec_atom *parseInitAtomPrimStruct(loc at)
+  {
+    // {...}
+    auto re = new init_spec_record(at);
+    if (!lookingAt(RBRACE)) {
+      re->children.push_back(parseInitAtom());
+      while (consumeIf(COMMA))
+        re->children.push_back(parseInitAtom());
+    }
+    consume(RBRACE);
+    re->defined_at.extend_to(nextLoc());
+    return re;
+  }
+  init_spec_atom *parseInitAtomPrimVector(loc at, const type *et)
+  {
+    // vector initializer
+    if (!et->is<type_vector>()) {
+      fatal("vector initializer type is not vector");
+    }
+    auto *vi = new init_spec_vector(at, et);
+    skip();
+    consume(RPAREN);
+    //   vector:    (float4)(1,2,3,4)
+    //   broadcast: (float4)(3.14f)
+    if (lookingAt(LPAREN)) {
+      consume(LPAREN);
+      vi->children.push_back(parseInitAtom());
+      while (consumeIf(COMMA))
+        vi->children.push_back(parseInitAtom());
+      consume(RPAREN);
+      if (vi->children.size() == 1) {
+        // broadcast
+        for (int i = 0; i < (int)et->as<type_vector>().length; i++)
+          vi->children.push_back(vi->children[i]);
+      }
+    } else {
+      // broadcast: (float4)3.14f
+      auto *e = parseInitAtom();
+      for (int i = 0; i < (int)et->as<type_vector>().length; i++)
+        vi->children.push_back(e);
+    }
+    return vi;
+  }
+  init_spec_atom *parseInitAtomPrimSymbol(loc at, const std::string &id)
+  {
+    auto mv = lookup_builtin_symbol(id);
+    if (mv.has_value()) {
+      val v = *mv;
+      if (v.is_floating())
+        return new init_spec_float(at, v.as<double>());
+      else
+        return new init_spec_int(at, v.as<int64_t>());
+    } else {
+      // some other symbol (may target a LET binding)
+      return new init_spec_symbol(at, id);
+    }
+  }
+
   init_spec_atom *parseInitAtomUnr()
   {
     if (lookingAt(SUB) || lookingAt(TILDE)) {
@@ -1796,12 +1845,14 @@ struct cls_parser: parser
     spec *value = nullptr;
     loc value_loc = nextLoc();
     bool is_init_expr_start =
+      // SPECIFY: does this handle built-in function (e.g. atan2)
       lookingAtFloat() ||
       lookingAtInt() ||
       lookingAt(LPAREN) ||
       lookingAtIdentEq("seq") ||
       lookingAtIdentEq("random") ||
       lookingAtIdentEq("file") ||
+      lookingAtIdentEq("undef") ||
       lookingAtIdentEq("image");
     if (!is_init_expr_start && lookingAtSeq(IDENT, LANGLE)) {
       // let D = K<1024>(....) where ...

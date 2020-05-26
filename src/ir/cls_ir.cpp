@@ -1,11 +1,16 @@
+#define _USE_MATH_DEFINES
 #include "cls_ir.hpp"
 #include "../system.hpp"
 #include "../text.hpp"
 
 #include <cfenv>
 #include <cmath>
+#include <limits>
+#include <map>
 #include <numeric>
+#include <optional>
 #include <tuple>
+
 
 using namespace cls;
 using namespace text::spans;
@@ -20,6 +25,47 @@ static format_opts::color_span make_colored(
   } else {
     return format_opts::color_span(nullptr, s);
   }
+}
+
+
+// https://www.khronos.org/registry/OpenCL/sdk/2.0/docs/man/xhtml/mathConstants.html
+struct sym {
+  const char *name; double value;
+};
+constexpr const static sym symbols[] {
+  {"MAXFLOAT",   std::numeric_limits<float>::max()},
+  {"HUGE_VALF",  HUGE_VALF},
+  {"NAN",        std::numeric_limits<float>::quiet_NaN()},
+  {"HUGE_VAL",   HUGE_VAL},
+  {"M_E",        M_E},
+  {"M_LOG2E",    M_LOG2E},
+  {"M_LOG10E",   M_LOG10E},
+  {"M_LN2",      M_LN2},
+  {"M_LN10",     M_LN10},
+  {"M_PI",       M_PI},
+  {"M_PI_2",     M_PI_2},
+  {"M_PI_4",     M_PI_4},
+  {"M_1_PI",     M_1_PI},
+  {"M_2_PI",     M_2_PI},
+  {"M_2_SQRTPI", M_2_SQRTPI},
+  {"M_SQRT2",    M_SQRT2},
+  {"M_SQRT1_2",  M_SQRT1_2},
+};
+
+std::vector<std::string> cls::builtin_symbols()
+{
+  std::vector<std::string> syms;
+  for (const auto sym : symbols)
+    syms.push_back(sym.name);
+  return syms;
+}
+
+std::optional<val> cls::lookup_builtin_symbol(const std::string &name)
+{
+  for (const auto sym : symbols)
+    if (sym.name == name)
+      return sym.value;
+  return std::optional<val>();
 }
 
 std::string spec::name() const
@@ -345,7 +391,7 @@ void test()
   static val apply_ ## F (\
     diagnostics &,const loc &,const val &vl,const val &vr)\
  {\
-    if (vl.is_float() || vr.is_float()) {\
+    if (vl.is_floating() || vr.is_floating()) {\
       return std:: F (vl.as<double>(),vr.as<double>());\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return std:: F (vl.as<int64_t>(),vr.as<int64_t>());\
@@ -357,7 +403,7 @@ void test()
   static val apply_ ## SYM (\
     diagnostics &,const loc &,const val &vl,const val &vr)\
  {\
-    if (vl.is_float() || vr.is_float()) {\
+    if (vl.is_floating() || vr.is_floating()) {\
       return (vl.as<double>() OP vr.as<double>());\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return (vl.as<int64_t>() OP vr.as<int64_t>());\
@@ -370,7 +416,7 @@ void test()
   static val apply_ ## F (\
     diagnostics &ds,const loc &at,const val &vl,const val &vr)\
  {\
-    if (vl.is_float() || vr.is_float()) {\
+    if (vl.is_floating() || vr.is_floating()) {\
       ds.fatalAt(at, "function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
@@ -383,7 +429,7 @@ void test()
   static val apply_ ## SYM (\
       diagnostics &ds,const loc &at,const val &vl,const val &vr)\
   {\
-    if (vl.is_float() || vr.is_float()) {\
+    if (vl.is_floating() || vr.is_floating()) {\
       ds.fatalAt(at,"function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
@@ -396,8 +442,8 @@ void test()
 static val apply_pow(
   diagnostics &,const loc &,const val &vl, const val &vr)
 {
-  if (vl.is_float()) {
-    if (vr.is_float()) {
+  if (vl.is_floating()) {
+    if (vr.is_floating()) {
       return std::pow(vl.as<double>(),vr.as<double>());
     } else {
       return std::pow(vl.as<double>(),vr.as<int64_t>());
@@ -411,7 +457,7 @@ static val apply_pow(
 static val apply_div(
   diagnostics &ds, const loc &at, const val &vl, const val &vr)
 {
-  if (vl.is_float() || vr.is_float()) {
+  if (vl.is_floating() || vr.is_floating()) {
     return vl.as<double>() / vr.as<double>();
   } else if (vr.s64 == 0) {
     ds.fatalAt(at, "division by 0");
@@ -424,7 +470,7 @@ static val apply_div(
 static val apply_mod(
   diagnostics &ds, const loc &at,const val &vl, const val &vr)
 {
-  if (vl.is_float() || vr.is_float()) {
+  if (vl.is_floating() || vr.is_floating()) {
     return std::fmod(vl.as<double>(),vr.as<double>());
   } else if (vr.s64 == 0) {
     ds.fatalAt(at, "modulus by 0");
@@ -665,7 +711,7 @@ static val apply_unsigned(diagnostics &, const loc &, const val &v) {
   return v.as<uint64_t>();
 }
 static val apply_abs(diagnostics &, const loc &, const val &v) {
-  if (v.is_float()) {
+  if (v.is_floating()) {
     return std::abs(v.as<double>());
   } else if (v.is_signed()) {
     return std::abs(v.as<int64_t>());
@@ -675,7 +721,7 @@ static val apply_abs(diagnostics &, const loc &, const val &v) {
 }
 
 static val apply_negate(diagnostics &, const loc &, const val &v) {
-  if (v.is_float()) {
+  if (v.is_floating()) {
     return -v.as<double>();
   } else if (v.is_signed()) {
     return -v.as<int64_t>();
@@ -684,7 +730,7 @@ static val apply_negate(diagnostics &, const loc &, const val &v) {
   }
 }
 static val apply_complement(diagnostics &ds, const loc &at, const val &v) {
-  if (v.is_float()) {
+  if (v.is_floating()) {
     ds.fatalAt(at, "~ requires integer argument");
   } else if (v.is_signed()) {
     return ~v.as<int64_t>();
@@ -727,7 +773,7 @@ UNR_OP_FLOAT(trunc)
 UNR_OP_FLOAT(round)
 
 static val apply_llround(diagnostics &, const loc &, const val &v) {
-  if (v.is_float()) {
+  if (v.is_floating()) {
     return std::llround(v.as<double>());
   } else if (v.is_signed()) {
     return v.as<int64_t>();
@@ -751,7 +797,7 @@ static val apply_nearbyint_by(diagnostics &ds,const loc &at,const val &v) {
 }
 #define UNR_OP_FLOAT_BOOL(F) \
   static val apply_ ## F (diagnostics &ds, const loc &at, const val &v) { \
-    if (v.is_float()) { \
+    if (v.is_floating()) { \
       return std:: F (v.as<double>()) ? 1 : 0; \
     } else { \
       ds.fatalAt(at, "floating point input required"); \

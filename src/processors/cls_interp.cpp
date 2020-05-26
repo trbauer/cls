@@ -127,9 +127,12 @@ val evaluator::eval(
         }
       }
     }
-    [[fallthrough]];
+    internalAt(e->defined_at,
+      __FILE__, ":", __LINE__, ": nullptr compiled script");
   }
-  default: fatalAt(e->defined_at, "unsupported primitive expression"); break;
+  default:
+    internalAt(e->defined_at,
+      __FILE__, ":", __LINE__, ": unsupported primitive expression");
   }
   return val((uint64_t)0); // unreachable
 }
@@ -137,14 +140,14 @@ val evaluator::eval(
 val evaluator::evalI(context &ec, const init_spec_atom *e)
 {
   val v = eval(ec, e);
-  if (!v.is_int())
+  if (!v.is_integral())
     fatalAt(e->defined_at, "argument must be integral");
   return v;
 }
 val evaluator::evalF(context &ec, const init_spec_atom *e)
 {
   val v = eval(ec, e);
-  if (!v.is_float())
+  if (!v.is_floating())
     fatalAt(e->defined_at, "argument must be floating point");
   return v;
 }
@@ -251,7 +254,7 @@ void evaluator::setKernelArgBuffer(
       fatalAt(
         ism->defined_at,
         "buffer/image size differs from uses "
-        "(see line ",so->spec->defined_at.line,")");
+        "(see line ",so->init->defined_at.line,")");
     }
   } else {
     // creating a new surface (buffer)
@@ -1068,31 +1071,31 @@ void evaluator::evalInto(
   switch (tn.skind) {
   case type_num::SIGNED:
     switch (tn.size_in_bytes) {
-    case 1: evalIntoT<int8_t>(ec,at,is,ab); break;
-    case 2: evalIntoT<int16_t>(ec,at,is,ab); break;
-    case 4: evalIntoT<int32_t>(ec,at,is,ab); break;
-    case 8: evalIntoT<int64_t>(ec,at,is,ab); break;
-    default: internalAt(at,"unreachable");
+    case 1: evalIntoT<int8_t>(ec, at, is, ab); break;
+    case 2: evalIntoT<int16_t>(ec, at, is, ab); break;
+    case 4: evalIntoT<int32_t>(ec, at, is, ab); break;
+    case 8: evalIntoT<int64_t>(ec, at, is, ab); break;
+    default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");
     }
     break;
   case type_num::UNSIGNED:
     switch (tn.size_in_bytes) {
-    case 1: evalIntoT<uint8_t>(ec,at,is,ab); break;
-    case 2: evalIntoT<uint16_t>(ec,at,is,ab); break;
-    case 4: evalIntoT<uint32_t>(ec,at,is,ab); break;
-    case 8: evalIntoT<uint64_t>(ec,at,is,ab); break;
-    default: internalAt(at,"unreachable");
+    case 1: evalIntoT<uint8_t>(ec, at, is, ab); break;
+    case 2: evalIntoT<uint16_t>(ec, at, is, ab); break;
+    case 4: evalIntoT<uint32_t>(ec, at, is, ab); break;
+    case 8: evalIntoT<uint64_t>(ec, at, is, ab); break;
+    default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");
     }
     break;
   case type_num::FLOATING:
     switch (tn.size_in_bytes) {
-    case 2: evalIntoT<half>(ec,at,is,ab); break;
-    case 4: evalIntoT<float>(ec,at,is,ab); break;
-    case 8: evalIntoT<double>(ec,at,is,ab); break;
-    default: internalAt(at,"unreachable");
+    case 2: evalIntoT<half>(ec, at, is, ab); break;
+    case 4: evalIntoT<float>(ec, at, is, ab); break;
+    case 8: evalIntoT<double>(ec, at, is, ab); break;
+    default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");
     }
     break;
-  default: internalAt(at,"unreachable");
+  default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");
   }
 }
 
@@ -1119,7 +1122,7 @@ void evaluator::evalIntoT(
   case init_spec::IS_VEC: fatalAt(at, "vector initializer passed to scalar");
   case init_spec::IS_FIL:
   case init_spec::IS_RND:
-  default: internalAt(at,"unreachable");
+  default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");
   }
 }
 

@@ -8,14 +8,13 @@
 #include "../fatal.hpp"
 #include "../text.hpp"
 
-#include <ostream>
 #include <map>
+#include <optional>
+#include <ostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#define SLIT(X) "\033[1;36m" X "\033[0m"
-#define SVAR(X) "\033[2;36m" "<" X ">" "\033[0m"
 
 namespace cls
 {
@@ -45,41 +44,41 @@ namespace cls
       uint64_t u64;
       double   f64;
     };
-    val() : val((int64_t)0) {}
-    val(int8_t _s) : val((int64_t)_s) {}
-    val(int16_t _s) : val((int64_t)_s) {}
-    val(int32_t _s) : val((int64_t)_s) {}
-    val(int64_t _s64) : s64(_s64), is_f(false), is_u(false) {}
-    val(uint8_t _u) : val((uint64_t)_u) {}
-    val(uint16_t _u) : val((uint64_t)_u) {}
-    val(uint32_t _u) : val((uint64_t)_u) {}
-    val(uint64_t _u64) : u64(_u64), is_f(false), is_u(true) {}
-    val(double _f64) : f64(_f64), is_f(true), is_u(false) {}
-    val(float _f32) : val((double)_f32) {}
+    constexpr val() : val((int64_t)0) {}
+    constexpr val(int8_t _s) : val((int64_t)_s) {}
+    constexpr val(int16_t _s) : val((int64_t)_s) {}
+    constexpr val(int32_t _s) : val((int64_t)_s) {}
+    constexpr val(int64_t _s64) : s64(_s64), is_f(false), is_u(false) {}
+    constexpr val(uint8_t _u) : val((uint64_t)_u) {}
+    constexpr val(uint16_t _u) : val((uint64_t)_u) {}
+    constexpr val(uint32_t _u) : val((uint64_t)_u) {}
+    constexpr val(uint64_t _u64) : u64(_u64), is_f(false), is_u(true) {}
+    constexpr val(double _f64) : f64(_f64), is_f(true), is_u(false) {}
+    constexpr val(float _f32) : val((double)_f32) {}
 
-    val &operator=(uint64_t _val) {*this = val(_val); return *this;}
-    val &operator=(uint32_t _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(uint16_t _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(uint8_t  _val) {*this = (uint64_t)_val; return *this;}
-    val &operator=(int64_t  _val) {*this = val(_val); return *this;}
-    val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
-    val &operator=(half     _val) {*this = (double)_val; return *this;}
-    val &operator=(float    _val) {*this = (double)_val; return *this;}
-    val &operator=(double   _val) {*this = val(_val); return *this;}
+    constexpr val &operator=(uint64_t _val) {*this = val(_val); return *this;}
+    constexpr val &operator=(uint32_t _val) {*this = (uint64_t)_val; return *this;}
+    constexpr val &operator=(uint16_t _val) {*this = (uint64_t)_val; return *this;}
+    constexpr val &operator=(uint8_t  _val) {*this = (uint64_t)_val; return *this;}
+    constexpr val &operator=(int64_t  _val) {*this = val(_val); return *this;}
+    constexpr val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
+    constexpr val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
+    constexpr val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
+    constexpr val &operator=(half     _val) {*this = (double)_val; return *this;}
+    constexpr val &operator=(float    _val) {*this = (double)_val; return *this;}
+    constexpr val &operator=(double   _val) {*this = val(_val); return *this;}
 
-    bool is_float() const {return is_f;}
-    bool is_int() const {return !is_f;}
-    bool is_signed() const {return !is_f && !is_u;}
-    bool is_unsigned() const {return is_u;}
+    constexpr bool is_floating() const {return is_f;}
+    constexpr bool is_integral() const {return !is_floating();}
+    constexpr bool is_signed() const {return !is_floating() && !is_unsigned();}
+    constexpr bool is_unsigned() const {return is_u;}
 
     template <typename T>
-    T as() const
+    constexpr T as() const
     {
       if (std::is_floating_point<T>()) {
         // * -> {half,float,double}
-        if (is_float())
+        if (is_floating())
           return (T)f64; // double -> ...
         else if (is_signed())
           return (T)s64; // int64_t -> ...
@@ -87,13 +86,17 @@ namespace cls
           return (T)u64; // uint64_t -> ...
       } else {
         // * -> uint{8,16,32,64}_t
-        if (is_float())
+        if (is_floating())
           return (T)f64; // double-> ...
         return std::is_signed<T>() ?
           (T)s64 : (T)u64; // {u,}int64-> ...
       }
     }
   }; // val
+
+  // finds a builtin-symbol
+  std::optional<val> lookup_builtin_symbol(const std::string &name);
+  std::vector<std::string> builtin_symbols();
 
   /////////////////////////////////////////////////////////////////////////////
   // fills in for anything that can be referenced or defined immediately
@@ -219,7 +222,7 @@ namespace cls
   //
   // e.g. "0:w", "file.bmp:rw", or "binary.buf:r"
   struct init_spec_mem : init_spec {
-    init_spec_atom    *root = nullptr; // 0x44
+    init_spec_atom *root = nullptr; // 0x44
 
     init_spec_atom *dimension = nullptr; // optional dimension expression: e.g. [g.x]
 
@@ -238,8 +241,9 @@ namespace cls
       TX_SVM_FINE,  // :sf -> clSVMAlloc
     } transfer_properties = TX_DEFAULT;
 
-    bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
-    bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
+    // bool use_svm = false;
+    // bool use_svm_fine_grained = false; // <lit>:vf use CL_MEM_SVM_FINE_GRAIN_BUFFER
+    // bool use_svm_atomics = false;      // <lit>:va or <lit>:vfa use CL_MEM_SVM_ATOMICS
 
     // either :p# or :P#
     bool print_pre = false, print_post = false;
@@ -248,7 +252,7 @@ namespace cls
     // :S save after (edits extension)
     bool save_post = false;
 
-    init_spec_mem(loc loc) : init_spec(loc,IS_MEM) { }
+    init_spec_mem(loc loc) : init_spec(loc, IS_MEM) { }
 
     void str(std::ostream &os, format_opts fopts) const;
   };
