@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+#define SLIT(X) "\033[1;36m" X "\033[0m"
+#define SVAR(X) "\033[2;36m" "<" X ">" "\033[0m"
+
 namespace cls
 {
   struct format_opts {
@@ -163,6 +166,7 @@ namespace cls
       IS_REC,  // {c1, c2, ...} children hold c1, c2, ... (includes vectors)
       IS_VEC,  // (float4)(c1,c2,...)
       IS_BIV,  // built-in variable
+      IS_UND,  // undef: an undefined value
       IS_SYM,  // a symbol (a reference to a let binding)
       IS_BEX, IS_UEX, // an expression (binary or unary)
       ////////////////////////////////////
@@ -195,6 +199,7 @@ namespace cls
       case IS_REC:
       case IS_VEC:
       case IS_BIV:
+      case IS_UND:
       case IS_BEX:
       case IS_UEX:
         return true;
@@ -277,6 +282,13 @@ namespace cls
     std::vector<init_spec_atom *> children;
     init_spec_vector(loc at, const cls::type *t)
       : init_spec_atom(at, IS_VEC), type(t) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
+  // 'undef': an undefined value
+  struct init_spec_undef : init_spec_atom {
+    init_spec_undef(loc at) :
+      init_spec_atom(at, IS_UND) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 

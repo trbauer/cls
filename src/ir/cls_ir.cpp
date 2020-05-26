@@ -202,13 +202,14 @@ void init_spec_mem::str(std::ostream &os, format_opts fopts) const {
 void init_spec::str(std::ostream &os, format_opts fopts) const
 {
   switch (skind) {
-  case IS_SYM: fmt(os, fopts, (const init_spec_symbol        *)this); break;
   case IS_INT: fmt(os, fopts, (const init_spec_int           *)this); break;
   case IS_FLT: fmt(os, fopts, (const init_spec_float         *)this); break;
   case IS_SZO: fmt(os, fopts, (const init_spec_sizeof        *)this); break;
   case IS_BIV: fmt(os, fopts, (const init_spec_builtin       *)this); break;
   case IS_REC: fmt(os, fopts, (const init_spec_record        *)this); break;
   case IS_VEC: fmt(os, fopts, (const init_spec_vector        *)this); break;
+  case IS_UND: fmt(os, fopts, (const init_spec_undef         *)this); break;
+  case IS_SYM: fmt(os, fopts, (const init_spec_symbol        *)this); break;
   case IS_BEX: fmt(os, fopts, (const init_spec_bex           *)this); break;
   case IS_UEX: fmt(os, fopts, (const init_spec_uex           *)this); break;
   case IS_FIL: fmt(os, fopts, (const init_spec_file          *)this); break;
@@ -261,6 +262,10 @@ void init_spec_vector::str(std::ostream &os, format_opts fopts) const {
     c->str(os, fopts);
   }
   os << ")";
+}
+
+void init_spec_undef::str(std::ostream &os, format_opts fopts) const {
+  os << fopts.keyword("undef");
 }
 
 void init_spec_symbol::str(std::ostream &os, format_opts fopts) const {

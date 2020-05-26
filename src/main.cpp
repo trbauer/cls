@@ -101,8 +101,14 @@ int main(int argc, const char **argv)
       [] (const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
           opts.verbosity = -1;
       });
-  cmdspec.defineExtraHelpSection("syntax", "syntax information",
-    cls::CLS_SYNTAX);
+  cmdspec.defineExtraHelpSection("syn", "all syntax information",
+    cls::CLS_SYNTAX_ALL());
+  cmdspec.defineExtraHelpSection("syn-sc", "syntax script layout",
+    cls::CLS_SYN_SC());
+  cmdspec.defineExtraHelpSection("syn-pex", "syntax for primitive expressions",
+    cls::CLS_SYN_PEX());
+  cmdspec.defineExtraHelpSection("syn-sex", "syntax for surface initializers expressions",
+    cls::CLS_SYN_SEX());
 
   auto &g = cmdspec.defineGroup("t", "profiling options");
   g.defineFlag("W",nullptr,"profiles with wall timers", "", opts::NONE,

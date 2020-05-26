@@ -11,7 +11,13 @@
 
 namespace cls
 {
-  extern const char *CLS_SYNTAX;
+  std::string CLS_SYNTAX_ALL();
+
+  std::string CLS_SYN_SC();
+  std::string CLS_SYN_ST();
+
+  std::string CLS_SYN_PEX(); // primitive expression initializers
+  std::string CLS_SYN_SEX(); // surface initializer expressions
 
   void parse_script(
     const opts &os,

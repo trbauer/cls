@@ -92,7 +92,7 @@ struct surface_object {
     SO_INVALID = 0,
     SO_BUFFER,
     SO_IMAGE
-  } skind;
+  }                         skind;
 
   const init_spec_mem      *spec;
   size_t                    size_in_bytes;
@@ -101,8 +101,8 @@ struct surface_object {
   cl_command_queue          queue = nullptr;
 
   // only non-zero if it's an image
-  cl_image_format           image_format{0};
-  cl_image_desc             image_desc{0};
+  cl_image_format           image_format { };
+  cl_image_desc             image_desc { };
   const void               *image_init_bytes = nullptr;
 
   // e.g. if it's used in a diff command only diff(seq(1,2):w,...)

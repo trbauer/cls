@@ -142,15 +142,18 @@ namespace text
                 to_words(const std::string &str);
 
   std::string   prefix_lines(const std::string &pfx, const std::string &str);
-  void          prefix_lines_to(std::ostream &os, const std::string &pfx, const std::string &str);
+  void          prefix_lines_to(
+      std::ostream &os, const std::string &pfx, const std::string &str);
   void          printf_to(std::ostream &os, const char *patt, va_list va);
   void          printf_to(std::ostream &os, const char *patt, ...);
   std::string   printf(const char *patt, ...);
 
   template <typename...Ts>
-  void          format_to(std::ostream &os) { }
+  void          format_to(std::ostream &) { }
   template <typename T, typename...Ts>
-  void          format_to(std::ostream &os, T t, Ts...ts) {os << t; format_to(os, ts...);}
+  void          format_to(std::ostream &os, T t, Ts...ts) {
+      os << t; format_to(os, ts...);
+  }
 
   template <typename...Ts>
   std::string   format(Ts...ts) {
@@ -160,7 +163,7 @@ namespace text
   /////////////////////////////////////////////////////////////////////////////
   // calls the str() function on a type T and returns the result as a string
   template <typename T>
-  std::string  str_extract(T t) {
+  std::string   str_extract(T t) {
     std::stringstream ss; t.str(ss); return ss.str();
   }
 

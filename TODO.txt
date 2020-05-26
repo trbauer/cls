@@ -1,5 +1,10 @@
 SEE: https://github.com/trbauer/cls/issues/
 
+We'd like to override buffer attributes with print arguments
+  let A = 0:w
+  ...
+  ...<...>(A:p8, ...)
+
 
 TODO:
 * FEATURE:
