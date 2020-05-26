@@ -16,7 +16,7 @@ project(cls)
 # can at least build the system.
 #
 # This defines ${CLS_VERSION_STRING} as something like
-#   "1.69-3610b3a" or "1.69-3610b3a*" (suffixed with *)
+#   "1.69-3610b3a" or "1.69-3610b3a+" (suffixed with +)
 #
 # * The initial "1" is an arbitrary major version which gets incremented during
 #   major breaking changes (e.g. radical syntax changes)
@@ -61,6 +61,7 @@ else()
   set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.unknown-version")
 endif()
 
+message("== CLS_VERSION_STRING = ${CLS_VERSION_STRING}")
 #####################################################
 
 
