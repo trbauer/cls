@@ -136,6 +136,14 @@ int main(int argc, const char **argv)
     });
   opts::Group<cls::opts> &xGrp =
     cmdspec.defineGroup("X", "Experimental Options");
+  xGrp.defineFlag(
+    "all-times",
+    nullptr,
+    "include times for non-kernel operations",
+    "This option enables times for non-kernel dispatches.  "
+    "For instances memory object initialization will be included here.",
+    opts::OptAttrs::NONE,
+    os.show_all_times);
   xGrp.defineOpt(
     "cpp-path",
     nullptr,
@@ -153,14 +161,6 @@ int main(int argc, const char **argv)
     "This overrides that behavior.",
     opts::OptAttrs::NONE,
     os.no_exit_on_diff_fail);
-  xGrp.defineFlag(
-    "show-init-times",
-    nullptr,
-    "include times for non-kernel operations",
-    "This option enables times for non-kernel dispatches.  "
-    "For instances memory object initialization will be included here.",
-    opts::OptAttrs::NONE,
-    os.show_init_times);
   if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);
   }
@@ -211,6 +211,7 @@ static void runFile(
     d.emit_and_exit_with_error();
   }
 
+  auto start_compile = std::chrono::high_resolution_clock::now();
   cls::compiled_script cs;
   try {
     os.verbose() << "============ compiling script\n";
@@ -221,6 +222,10 @@ static void runFile(
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
   }
+  auto duration_compile =
+    std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - start_compile);
+  const auto compile_time = duration_compile.count()/1000.0/1000.0;
 
   sampler execute_times;
   for (int i = 0; i < os.iterations; i++) {
@@ -288,7 +293,7 @@ static void runFile(
       }
     }
   };
-  if (os.show_init_times)
+  if (os.show_all_times)
     emitStats("TOTAL", execute_times, std::nullopt);
   if (os.verbosity >= 0) {
     if (os.prof_time) {
@@ -299,13 +304,25 @@ static void runFile(
   }
   auto dispatch_times =
     os.prof_time ? cs.get_prof_times() : cs.get_wall_times();
-  const double total = execute_times.avg();
+  double total = execute_times.avg();
+  if (os.show_all_times) {
+    total += compile_time;
+    for (const auto &dt : cs.get_init_times()) {
+      const cls::init_spec_mem &im = *std::get<0>(dt);
+      total += std::get<1>(dt).avg();
+    }
+  }
+
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);
     emitStats(ds.spec::str(), ts, std::make_optional(total));
   }
-  if (os.show_init_times) {
+  if (os.show_all_times) {
+    sampler comps;
+    comps.add(compile_time);
+    emitStats("COMPILE", comps, std::make_optional(total));
+    //
     for (const auto &dt : cs.get_init_times()) {
       const cls::init_spec_mem &im = *std::get<0>(dt);
       const sampler &ts = std::get<1>(dt);

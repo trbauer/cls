@@ -44,7 +44,7 @@ struct opts {
   bool                        prof_time = false;
   bool                        save_preprocessed = false;
   bool                        save_binaries = false;
-  bool                        show_init_times = false;
+  bool                        show_all_times = false;
   bool                        use_kernel_arg_info = false; // OpenCL 1.2+
   int                         verbosity = 0;
   bool                        wall_time = false;
