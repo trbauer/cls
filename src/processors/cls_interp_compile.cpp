@@ -106,24 +106,27 @@ static void emitCompiledKernelProperty(
   bool is_mem,
   const char *units = nullptr)
 {
+  std::cout << text::ANSI_FADED;
   emitParamName(param_name);
   T val;
   auto err =
     clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
-    std::cout << text::spans::RED(status_to_symbol(err));
+    std::cout << text::ANSI_RED << status_to_symbol(err);
   } else {
+    std::cout << text::ANSI_FADED_YELLOW;
     if (is_mem && !units) {
       if (val % 1024 == 0)
-        std::cout << text::spans::YELLOW(val/1024) << " K";
+        std::cout << (val/1024) << " K";
       else
-        std::cout << text::spans::YELLOW(val) << " B";
+        std::cout << val << " B";
     } else {
-      std::cout << text::spans::YELLOW(val);
+      std::cout << val;
       if (units)
         std::cout << units;
     }
   }
+  std::cout << text::ANSI_RESET;
   std::cout << "\n";
 }
 
@@ -140,13 +143,13 @@ clGetKernelSubGroupInfo_TYPE findSubgroupFunction()
   if (function == nullptr) {
     void *lib = sys::load_library("OpenCL");
     function = (clGetKernelSubGroupInfo_TYPE)
-      sys::get_symbol_address(lib,"clGetKernelSubGroupInfo");
+      sys::get_symbol_address(lib, "clGetKernelSubGroupInfo");
     if (function == nullptr)
       function = (clGetKernelSubGroupInfo_TYPE)
-        sys::get_symbol_address(lib,"clGetKernelSubGroupInfoKHR");
+        sys::get_symbol_address(lib, "clGetKernelSubGroupInfoKHR");
     if (function == nullptr)
       function = (clGetKernelSubGroupInfo_TYPE)
-        sys::get_symbol_address(lib,"clGetKernelSubGroupInfoIntel");
+        sys::get_symbol_address(lib, "clGetKernelSubGroupInfoIntel");
   }
   return function;
 }
@@ -177,7 +180,8 @@ static void emitCompiledKernelProperties(
   KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
   // KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
   KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
-  KERNEL_PROPERTY(cl_spec::CL_1_1, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, size_t);
+  KERNEL_PROPERTY(
+    cl_spec::CL_1_1, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, size_t);
   KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
   KERNEL_PROPERTY_MEM(cl_spec::CL_1_1, CL_KERNEL_PRIVATE_MEM_SIZE);
   if (hasExtension(device,"cl_intel_required_subgroup_size")) {
@@ -435,10 +439,10 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         po.device->device) << "\n";
       fatalAt(ps->defined_at, ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
-      os.debug() << getLabeledBuildLog(
+      debugAt(ps->defined_at, getLabeledBuildLog(
         ps->defined_at,
         po.program,
-        po.device->device);
+        po.device->device));
     } else if (bp_err != CL_SUCCESS) {
       fatalAt(
         ps->defined_at, "failed to build program ", status_to_symbol(bp_err));
@@ -483,8 +487,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       //     &bits_len,
       //     (const unsigned char **)&bits,
       //     &err_x);
-
-      os.verbose() << "dumping binary " << bin_path << "\n";
+      verbose(bin_path, ": dumping binary");
       sys::write_bin_file(bin_path, bits, bits_len);
     }
   } else { // is_bin || is_spv

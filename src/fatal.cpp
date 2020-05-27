@@ -16,9 +16,13 @@ void cls::formatMessageWithContextImpl(
   std::ostream &os,
   const cls::loc &at,
   const text::ansi_literal *highlight,
+  const text::ansi_literal *message_color,
   const std::string &input,
   const std::string &message)
 {
+  if (message_color)
+    os << *message_color;
+
   if (at.line > 0 && at.column > 0) {
     os << at.line << "." << at.column << ": ";
   }
@@ -30,8 +34,9 @@ void cls::formatMessageWithContextImpl(
       if (highlight && off == at.offset && at.extent > 0)
         os << *highlight;
       os << input[off++];
-      if (highlight && off == at.offset + at.extent)
-        os << text::ANSI_RESET;
+      if (highlight && off == at.offset + at.extent) {
+        os << (message_color ? *message_color : text::ANSI_RESET);
+      }
     }
     os << "\n";
     if (at.column > 0) {
@@ -44,6 +49,7 @@ void cls::formatMessageWithContextImpl(
       os << "^";
     os << "\n";
   }
+  os << text::ANSI_RESET;
 }
 
 
@@ -55,6 +61,7 @@ void diagnostic::str(std::ostream &os, const std::string &inp) const {
     os,
     at,
     level == ERROR ? &text::ANSI_RED : &text::ANSI_YELLOW,
+    nullptr,
     inp,
     message);
 }

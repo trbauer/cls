@@ -161,9 +161,7 @@ namespace cls {
     parser() = delete;
 
     // generate fatalAt, warningAt, ...
-    DIAGNOSTIC_MIXIN_MEMBERS(m_diagnostics);
-    /// fatal = fatalAt(nextLoc(), ...)
-    DIAGNOSTIC_MIXIN_MEMBERS_WITH_IMLICIT_LOC(nextLoc())
+    DIAGNOSTIC_MIXIN_MEMBERS(m_diagnostics, nextLoc());
 
     const std::string &input() const {return m_input;}
 

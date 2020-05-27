@@ -191,11 +191,13 @@ static void runFile(
   std::string file_name,
   std::string file_contents)
 {
+  auto start_setup = std::chrono::high_resolution_clock::now();
   cls::script s(file_contents);
   cls::diagnostics ds(os.verbosity, file_contents);
 
   try {
-    os.verbose() << "============ parsing script\n";
+    if (os.verbose_enabled())
+      std::cout << "============ parsing script\n";
 
     cls::parse_script(os, file_contents, file_name, s, ds);
 
@@ -210,11 +212,16 @@ static void runFile(
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
   }
+  auto duration_setup =
+    std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - start_setup);
+  const double duration_setup_s = duration_setup.count()/1000.0/1000.0;
 
   auto start_compile = std::chrono::high_resolution_clock::now();
   cls::compiled_script cs;
   try {
-    os.verbose() << "============ compiling script\n";
+    if (os.verbose_enabled())
+      std::cout << "============ compiling script\n";
     //
     cs = cls::compile(os, s, ds);
     //
@@ -225,16 +232,12 @@ static void runFile(
   auto duration_compile =
     std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now() - start_compile);
-  const auto compile_time = duration_compile.count()/1000.0/1000.0;
+  const auto compile_time_s = duration_compile.count()/1000.0/1000.0;
 
   sampler execute_times;
   for (int i = 0; i < os.iterations; i++) {
-    os.verbose() << "============ starting iteration " << i << "\n";
-    auto start_setup = std::chrono::high_resolution_clock::now();
-    auto duration_setup =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::high_resolution_clock::now() - start_setup);
-
+    if (os.verbose_enabled())
+      std::cout << "============ starting iteration " << i << "\n";
     try {
       auto start_execute = std::chrono::high_resolution_clock::now();
 
@@ -306,7 +309,8 @@ static void runFile(
     os.prof_time ? cs.get_prof_times() : cs.get_wall_times();
   double total = execute_times.avg();
   if (os.show_all_times) {
-    total += compile_time;
+    total += duration_setup_s;
+    total += compile_time_s;
     for (const auto &dt : cs.get_init_times()) {
       const cls::init_spec_mem &im = *std::get<0>(dt);
       total += std::get<1>(dt).avg();
@@ -319,14 +323,21 @@ static void runFile(
     emitStats(ds.spec::str(), ts, std::make_optional(total));
   }
   if (os.show_all_times) {
+    sampler start;
+    start.add(duration_setup_s);
+    emitStats("<startup>", start, std::make_optional(total));
+    //
     sampler comps;
-    comps.add(compile_time);
-    emitStats("COMPILE", comps, std::make_optional(total));
+    comps.add(compile_time_s);
+    emitStats("<compile>", comps, std::make_optional(total));
     //
     for (const auto &dt : cs.get_init_times()) {
       const cls::init_spec_mem &im = *std::get<0>(dt);
       const sampler &ts = std::get<1>(dt);
-      emitStats("INIT(" + im.spec::str() + ")", ts, std::make_optional(total));
+      emitStats(
+        "<init>(" + im.spec::str() + ")",
+        ts,
+        std::make_optional(total));
     }
   }
   t.str(std::cout);

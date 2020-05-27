@@ -245,7 +245,7 @@ using image_writer = std::function<void(size_t, size_t,void *)>;
 //     e.g. CL_COMMAND(spec->defined_at, clEnqueueNDRange, ...);
 struct cl_interface {
   diagnostics &m_diags;
-  DIAGNOSTIC_MIXIN_MEMBERS(m_diags);
+  DIAGNOSTIC_MIXIN_MEMBERS(m_diags, loc());
 
   cl_interface(
     diagnostics &ds,
@@ -256,21 +256,27 @@ struct cl_interface {
 
 
 #define CL_SYM_STR(X) #X
-#define CL_COMMAND(LOC,CL_FUNCTION,...) \
+#define CL_COMMAND(LOC, CL_FUNCTION,...) \
   do { \
     cl_int _err = CL_FUNCTION(__VA_ARGS__); \
+    if (isDebug())\
+      debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
+        CL_SYM_STR(CL_FUNCTION), "(...)"); \
     if (_err != CL_SUCCESS) { \
       fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
-        " (",cls::status_to_symbol(_err),")"); \
+        " (", cls::status_to_symbol(_err), ")"); \
     } \
   } while(0)
-#define CL_COMMAND_CREATE(ASSIGN_TO,LOC,CL_FUNCTION,...) \
+#define CL_COMMAND_CREATE(ASSIGN_TO, LOC, CL_FUNCTION, ...) \
   do { \
     cl_int _err = 0; \
-    ASSIGN_TO = CL_FUNCTION(__VA_ARGS__,&_err); \
+    ASSIGN_TO = CL_FUNCTION(__VA_ARGS__, &_err); \
+    if (isDebug())\
+      debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
+        CL_SYM_STR(CL_FUNCTION), "(...)"); \
     if (_err != CL_SUCCESS) { \
       fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
-        " (",cls::status_to_symbol(_err),")"); \
+        " (", cls::status_to_symbol(_err), ")"); \
     } \
   } while(0)
 
@@ -393,8 +399,7 @@ struct script_instruction {
 struct arg_buffer {
   diagnostics            diags;
   loc                    at;
-  DIAGNOSTIC_MIXIN_MEMBERS(diags);
-  DIAGNOSTIC_MIXIN_MEMBERS_WITH_IMLICIT_LOC(at);
+  DIAGNOSTIC_MIXIN_MEMBERS(diags, at);
 
   size_t                 capacity;
   uint8_t               *base, *curr;

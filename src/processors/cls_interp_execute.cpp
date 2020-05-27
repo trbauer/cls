@@ -1061,14 +1061,15 @@ void compiled_script::execute(int itr)
     case script_instruction::DISPATCH: {
       dispatch_command *dc = si.dsc;
       // TODO: use diagnostics::verbose(...)
-      csi->os.verbose() << "EXECUTING  => " << dc->spec->spec::str() << "\n";
-      csi->os.verbose() << "              " << dc->str() << "\n";
+      csi->verbose(
+        "EXECUTING  => ", dc->spec->spec::str(), "\n",
+        "              ", dc->str() );
       csi->execute(*dc);
       break;
     }
     case script_instruction::DIFFU: {
       diffu_command *dfuc = (diffu_command *)si.dfuc;
-      csi->os.verbose() << "EXECUTING  => " << dfuc->spec->spec::str() << "\n";
+      csi->verbose("EXECUTING  => ", dfuc->spec->spec::str());
       csi->withBufferMapRead(
         dfuc->spec->defined_at,
         dfuc->so,
@@ -1092,7 +1093,7 @@ void compiled_script::execute(int itr)
     }
     case script_instruction::PRINT: {
       print_command *prc = (print_command *)si.prc;
-      csi->os.verbose() << "EXECUTING  => " << prc->spec->spec::str() << "\n";
+      csi->debug("EXECUTING  => ", prc->spec->spec::str());
       csi->withBufferMapRead(
         prc->spec->defined_at,
         prc->so,

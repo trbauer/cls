@@ -78,6 +78,9 @@ namespace text
   constexpr ansi_literal ANSI_WHITE("\033[1;37m");
   constexpr ansi_literal ANSI_DWHITE("\033[2;37m");
 
+  constexpr ansi_literal ANSI_FADED("\033[38;2;120;120;120m");
+  constexpr ansi_literal ANSI_FADED_YELLOW("\033[38;2;120;120;0m");
+
   // #define ANSI_INTEL_BLUE     "\033[38;2;0;113;197m"
   // better on black background
   constexpr ansi_literal ANSI_COLOR_INTEL_BLUE("\033[38;2;10;153;245m");

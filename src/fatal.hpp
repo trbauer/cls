@@ -32,6 +32,7 @@ namespace cls
     std::ostream &os,
     const loc &at,
     const text::ansi_literal *highlight,
+    const text::ansi_literal *message_color,
     const std::string &input,
     const std::string &message);
 
@@ -40,12 +41,14 @@ namespace cls
     std::ostream &os,
     const loc &at,
     const text::ansi_literal *highlight,
+    const text::ansi_literal *message_color,
     const std::string &input,
     Ts... ts)
   {
     std::stringstream ss;
     text::format_to(ss, ts...);
-    formatMessageWithContextImpl(os, at, highlight, input, ss.str());
+    formatMessageWithContextImpl(
+      os, at, highlight, message_color, input, ss.str());
   }
 
   struct diagnostic : std::exception {
@@ -129,58 +132,63 @@ namespace cls
         diagnostic::WARNING, at, text::format(ts...), m_input);
     }
     template <typename...Ts>
+    void verboseAt(const loc &at, Ts... ts) const {
+      if (m_verbosity > 0)
+        formatMessageWithContext(
+          std::cout, at,
+          &text::ANSI_GREEN, &text::ANSI_FADED,
+          input(), ts...);
+    }
+    template <typename...Ts>
     void debugAt(const loc &at, Ts... ts) const {
       if (m_verbosity > 1)
         formatMessageWithContext(
-          std::cout, at, &text::ANSI_GREEN,  input(), ts...);
+          std::cout, at,
+          &text::ANSI_FADED_YELLOW, &text::ANSI_FADED,
+          input(), ts...);
     }
   }; // fatal_handler
 
   // This allows any class composing a diagnostics to generate member
   // functions to redirect to the diagnostics object.
-#define DIAGNOSTIC_MIXIN_MEMBERS(DIAGS_MEMBER)\
+#define DIAGNOSTIC_MIXIN_MEMBERS(DIAGS_MEMBER, DFT_AT)\
   template <typename...Ts> \
   [[noreturn]] void internalAt(const loc &at, Ts... ts) const {\
     (DIAGS_MEMBER).internalAt(at, ts...);\
   }\
   template <typename...Ts>\
+  [[noreturn]] void internal(Ts... ts) const {\
+    (DIAGS_MEMBER).internalAt(DFT_AT, ts...);\
+  }\
+  template <typename...Ts>\
   [[noreturn]] void fatalAt(const loc &at, Ts... ts) const {\
     (DIAGS_MEMBER).fatalAt(at, ts...);\
+  }\
+  template <typename...Ts>\
+  [[noreturn]] void fatal(Ts... ts) const {\
+    (DIAGS_MEMBER).fatalAt(DFT_AT, ts...);\
   }\
   template <typename...Ts> void warningAt(const loc &at, Ts... ts) const {\
     (DIAGS_MEMBER).warningAt(at, ts...);\
   }\
+  template <typename...Ts> void warning(Ts... ts) const {\
+    (DIAGS_MEMBER).warningAt(DFT_AT, ts...);\
+  }\
+  template <typename...Ts> void verboseAt(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).verboseAt(at, ts...);\
+  }\
+  template <typename...Ts> void verbose(Ts... ts) const {\
+    (DIAGS_MEMBER).verboseAt(DFT_AT, ts...);\
+  }\
   template <typename...Ts> void debugAt(const loc &at, Ts... ts) const {\
     (DIAGS_MEMBER).debugAt(at, ts...);\
+  }\
+  template <typename...Ts> void debug(Ts... ts) const {\
+    (DIAGS_MEMBER).debugAt(DFT_AT, ts...);\
   }\
   bool isQuiet() const {return (DIAGS_MEMBER).isQuiet();}\
   bool isVerbose() const {return (DIAGS_MEMBER).isVerbose();}\
   bool isDebug() const {return (DIAGS_MEMBER).isDebug();}
-
-#define DIAGNOSTIC_MIXIN_MEMBERS_WITH_IMLICIT_LOC(AT)\
-  template <typename...Ts> \
-  [[noreturn]] void internal(Ts... ts) const {\
-    internalAt(AT, ts...);\
-  }\
-  template <typename...Ts>\
-  [[noreturn]] void fatal(Ts... ts) const {\
-    fatalAt(AT, ts...);\
-  }\
-  template <typename...Ts> void warning(Ts... ts) const {\
-    warningAt(AT, ts...);\
-  }\
-  template <typename...Ts> void debug(Ts... ts) const {\
-    debugAt(AT, ts...);\
-  }
-
-
-//  struct diagnostics_at: diagnostics
-//  {
-//    loc at;
-//    diagnostics_at(int v, std::string &inp, loc _at)
-//      : diagnostics(v, inp), at(_at) { }
-//  };
-
 
 } // namespace cls
 

@@ -331,7 +331,7 @@ static cls::k::program_info *parseProgramInfoText(
     }
 
     // next iteration
-    off = src.build_opts.find("-D",off);
+    off = src.build_opts.find("-D", off);
   }
 
   std::string cpp_inp;
@@ -358,7 +358,7 @@ static cls::k::program_info *parseProgramInfoText(
     ppc_path += sys::path_separator;
     ppc_path += sys::replace_extension(src.path, ".pp.cl");
     std::ofstream of(ppc_path);
-    os.verbose() << "dumping preprocessed " << ppc_path << "\n";
+    ds.verboseAt(at, ppc_path, ": dumping preprocessed");
     of << cpp_inp;
   }
 
