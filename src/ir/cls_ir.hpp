@@ -64,10 +64,10 @@ namespace cls
     constexpr val &operator=(int32_t  _val) {*this = (int64_t)_val; return *this;}
     constexpr val &operator=(int16_t  _val) {*this = (int64_t)_val; return *this;}
     constexpr val &operator=(int8_t   _val) {*this = (int64_t)_val; return *this;}
-    constexpr val &operator=(half     _val) {*this = (double)_val; return *this;}
+              val &operator=(half     _val) {*this = (double)_val; return *this;}
     constexpr val &operator=(float    _val) {*this = (double)_val; return *this;}
     constexpr val &operator=(double   _val) {*this = val(_val); return *this;}
-
+    
     constexpr bool is_floating() const {return is_f;}
     constexpr bool is_integral() const {return !is_floating();}
     constexpr bool is_signed() const {return !is_floating() && !is_unsigned();}
@@ -282,10 +282,10 @@ namespace cls
 
   // e.g. (int4)(1,2,4,8)
   struct init_spec_vector: init_spec_atom {
-    const type *type;
+    const type *vtype;
     std::vector<init_spec_atom *> children;
     init_spec_vector(loc at, const cls::type *t)
-      : init_spec_atom(at, IS_VEC), type(t) { }
+      : init_spec_atom(at, IS_VEC), vtype(t) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 

@@ -171,15 +171,15 @@ void evaluator::setKernelArgImmediate(
   const arg_info &ai)
 {
   debugAt(ris.defined_at, "setting immediate argument for ",
-    ai.type->syntax()," ",ai.name);
+    ai.arg_type->syntax()," ",ai.name);
 
     // non-surface
   context ec(dc, &ss);
   const init_spec *is = ris;
 
-  arg_buffer ab(getDiagnostics(), ris.defined_at, ai.type->size());
+  arg_buffer ab(getDiagnostics(), ris.defined_at, ai.arg_type->size());
 
-  evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, *ai.type);
+  evalInto(ec, is->defined_at, (const init_spec_atom *)is, ab, *ai.arg_type);
 
   if (ab.num_left() != 0) {
     internalAt(ris.defined_at, "failed to set full argument");
@@ -194,8 +194,8 @@ void evaluator::setKernelArgImmediate(
       (const void *)ab.ptr());
 
   if (isDebug()) {
-    std::cout << " ==> ARG " << ai.type->syntax() << " "  << ai.name << " = ";
-    format(std::cout, ab.base, ab.capacity, *ai.type);
+    std::cout << " ==> ARG " << ai.arg_type->syntax() << " "  << ai.name << " = ";
+    format(std::cout, ab.base, ab.capacity, *ai.arg_type);
     std::cout << "\n";
   }
 }
@@ -226,17 +226,18 @@ void evaluator::setKernelArgBuffer(
   const arg_info &ai)
 {
   debugAt(ris.defined_at,
-    "setting memory object argument for ", ai.type->syntax(), " ", ai.name);
+    "setting memory object argument for ", 
+    ai.arg_type->syntax(), " ", ai.name);
 
   if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at, "expected surface initializer");
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type->is<type_ptr>()) {
+  if (!ai.arg_type->is<type_ptr>()) {
     fatalAt(ism->defined_at, "buffer/image requires pointer type");
   }
-  const type &elem_type = *ai.type->as<type_ptr>().element_type;
+  const type &elem_type = *ai.arg_type->as<type_ptr>().element_type;
   size_t buffer_size = 0;
   if (ism->dimension) {
     evaluator::context ec(dc);
@@ -277,7 +278,7 @@ void evaluator::setKernelArgBuffer(
   }
   ss << "MEM[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
   //
-  dc.surfaces.emplace_back(so, *ai.type->as<type_ptr>().element_type, ai, at);
+  dc.surfaces.emplace_back(so, *ai.arg_type->as<type_ptr>().element_type, ai, at);
   //
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
@@ -289,7 +290,7 @@ void evaluator::setKernelArgBuffer(
       (const void *)&so->memobj);
   if (isDebug()) {
     std::cout << " ==> ARG " <<
-      ai.type->syntax() << " "  << ai.name << " = " << so->str() << "\n";
+      ai.arg_type->syntax() << " "  << ai.name << " = " << so->str() << "\n";
   }
 }
 
@@ -594,17 +595,17 @@ void evaluator::setKernelArgImage(
   const arg_info &ai)
 {
   debugAt(ris.defined_at, "setting memory object argument for ",
-    ai.type->syntax()," ",ai.name);
+    ai.arg_type->syntax()," ",ai.name);
 
   if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {
     fatalAt(ris.defined_at, "expected image surface initializer");
   }
   const init_spec_mem *ism =
     (const init_spec_mem *)(const init_spec *)ris;
-  if (!ai.type->is<type_builtin>()) {
+  if (!ai.arg_type->is<type_builtin>()) {
     fatalAt(ism->defined_at, "image requires image type (e.g. image2d_t)");
   }
-  const type_builtin &tbi = ai.type->as<type_builtin>();
+  const type_builtin &tbi = ai.arg_type->as<type_builtin>();
 
   cl_image_format img_fmt{0};
   cl_image_desc img_desc{0};
@@ -936,7 +937,7 @@ void evaluator::setKernelArgImage(
     so->image_init_bytes = image_arg_data;
   }
   //
-  dc.surfaces.emplace_back(so, ai.type->as<type_builtin>(), ai, at);
+  dc.surfaces.emplace_back(so, ai.arg_type->as<type_builtin>(), ai, at);
   //
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
@@ -1003,7 +1004,7 @@ void evaluator::setKernelArgSLM(
   const arg_info &ai)
 {
   debugAt(ris.defined_at, "setting SLM size for ",
-    ai.type->syntax()," ",ai.name);
+    ai.arg_type->syntax()," ",ai.name);
 
   const init_spec *is = ris;
   // Special treatment of local * arguments
@@ -1013,7 +1014,7 @@ void evaluator::setKernelArgSLM(
   //
   //  SPECIFY: do we allow the alternative?
   //     foo<1024,16>(...,0:rw); // assume 1 int2 per work item
-  if (!ai.type->is<type_ptr>()) {
+  if (!ai.arg_type->is<type_ptr>()) {
     fatalAt(
       ris.defined_at,
       "kernel argument in local address space must be pointer type");
@@ -1022,7 +1023,7 @@ void evaluator::setKernelArgSLM(
       ris.defined_at,
       "local pointer requires size in bytes");
   } // SPECIFY: see above  (use tp.element_type->size() * wg-size)
-  const type_ptr &tp = ai.type->as<type_ptr>();
+  const type_ptr &tp = ai.arg_type->as<type_ptr>();
   evaluator::context ec(dc);
   auto v = csi->e->evalTo<size_t>(ec,(const init_spec_atom *)is);
   size_t local_bytes = (size_t)v.u64;
@@ -1035,7 +1036,7 @@ void evaluator::setKernelArgSLM(
       nullptr);
   ss << "SLM[" << local_bytes << " B]";
   if (isDebug()) {
-    std::cout << " ==> ARG local " << ai.type->syntax() << " " <<
+    std::cout << " ==> ARG local " << ai.arg_type->syntax() << " " <<
       ai.name << " = " << local_bytes << " B\n";
   }
 }

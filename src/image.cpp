@@ -5,8 +5,10 @@
 #include "../deps/lodepng/lodepng.h"
 #endif
 
+#ifdef _WIN32
 #include <Windows.h>
 // #include <Wincodec.h>
+#endif
 #include <cmath>
 #include <cstdlib>
 #include <fstream>

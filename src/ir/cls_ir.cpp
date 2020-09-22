@@ -298,7 +298,7 @@ void init_spec_record::str(std::ostream &os, format_opts fopts) const {
 }
 
 void init_spec_vector::str(std::ostream &os, format_opts fopts) const {
-  os << type->syntax() << "(";
+  os << vtype->syntax() << "(";
   bool first = true;
   for (const auto *c : children) {
     if (first)
@@ -583,8 +583,9 @@ void init_spec_uex::str(std::ostream &os, format_opts fopts) const
     // given "-9223372036854775808", this will parse as
     // uint64_t 9223372036854775808 and then casting to
     // -9223372036854775808, giving --9223372036854775808
+    int64_t MINVAL64 = 0x8000000000000000LL;
     if (*e_op.symbol != '-' || e->skind != IS_INT ||
-      ((const init_spec_int *)e)->value != -9223372036854775808LL)
+      ((const init_spec_int *)e)->value != MINVAL64)
     {
       os << e_op.symbol;
     }
@@ -774,7 +775,7 @@ UNR_OP_FLOAT(round)
 
 static val apply_llround(diagnostics &, const loc &, const val &v) {
   if (v.is_floating()) {
-    return std::llround(v.as<double>());
+    return (int64_t)std::llround(v.as<double>());
   } else if (v.is_signed()) {
     return v.as<int64_t>();
   } else {

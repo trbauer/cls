@@ -211,7 +211,14 @@ else()
 endif()
 
 target_include_directories("${CLS_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS})
+if (WIN32)
 target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES})
+else()
+target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES} "dl")
+endif()
+
+target_compile_features(${CLS_EXE} PRIVATE cxx_std_17)
+
 
 set_target_properties("${CLS_EXE}" PROPERTIES
   CXX_STANDARD 17

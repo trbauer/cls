@@ -47,7 +47,7 @@ namespace cls
       cl_kernel_arg_access_qualifier   accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
       cl_kernel_arg_type_qualifier     type_qual = CL_KERNEL_ARG_TYPE_NONE;
       std::string                      name;
-      const type                      *type;
+      const type                      *arg_type;
       std::string typeSyntax() const;
     };
 

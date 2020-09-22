@@ -23,14 +23,14 @@ namespace cls {
   const char *to_syntax(lexeme l);
 
   struct token {
-    lexeme lexeme;
-    loc    loc;
+    lexeme kind;
+    loc    at;
 
-    token() : lexeme(lexeme::LEXICAL_ERROR) { }
+    token() : kind(lexeme::LEXICAL_ERROR) { }
     token(
       lexemes::lexeme lxm,
       uint32_t ln, uint32_t cl, uint32_t off, uint32_t len)
-      : lexeme(lxm), loc(ln, cl, off, len) { }
+      : kind(lxm), at(ln, cl, off, len) { }
   };
 
   // These have to be functions for some reason unknown to me
@@ -166,7 +166,7 @@ namespace cls {
     const std::string &input() const {return m_input;}
 
     bool endOfFile() const {
-      return m_tokens[m_offset].lexeme == END_OF_FILE;
+      return m_tokens[m_offset].kind == END_OF_FILE;
     }
     size_t tokensLeft() const {
       return m_tokens.size() - m_offset;
@@ -214,7 +214,7 @@ namespace cls {
       }
     }
     const cls::loc &nextLoc(int i = 0) const {
-      return next(i).loc;
+      return next(i).at;
     }
     bool skip(int i = 1) {
       int k = (int)m_offset + i;
@@ -225,7 +225,7 @@ namespace cls {
       return true;
     }
     bool lookingAt(lexeme lx, int i = 0) const {
-      return next(i).lexeme == lx;
+      return next(i).kind == lx;
     }
     template <typename...Ts>
     bool lookingAtSeq(Ts...ts) const {
@@ -235,7 +235,7 @@ namespace cls {
       return tokenString() == sym;
     }
     bool lookingAtIdent(int i = 0) const {
-      return next(i).lexeme == IDENT;
+      return next(i).kind == IDENT;
     }
     bool lookingAtIdentEq(const char *v, int i = 0) const {
       if (!lookingAt(IDENT)) {

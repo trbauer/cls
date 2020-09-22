@@ -10,6 +10,7 @@
 #endif
 
 #include <cstdint>
+#include <cstddef> // linux size_t
 
 struct pixel_value {
   pixel_value(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _a)

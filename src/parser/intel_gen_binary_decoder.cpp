@@ -164,7 +164,7 @@ struct igb_decoder : decoder {
         }
       }
     }
-    ki.args[arg_ix].type = t;
+    ki.args[arg_ix].arg_type = t;
     //
     ki.args[arg_ix].type_qual = CL_KERNEL_ARG_TYPE_NONE;
     auto type_qual = decodeString(type_qual_len);

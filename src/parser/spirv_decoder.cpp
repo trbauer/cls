@@ -630,7 +630,7 @@ struct spv_decoder: decoder {
         last_kernel->args.emplace_back();
         arg_info &ai = last_kernel->args.back();
         ai.name = *arg;
-        ai.type = t;
+        ai.arg_type = t;
         if (t->is<type_ptr>()) {
           const arg_attrs *param_attrs = findArgAttrs(rid);
           if (param_attrs) {

@@ -391,7 +391,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
         const arg_info &ai = std::get<2>(sinfo);
         const loc &at = std::get<3>(sinfo);
 
-        std::cout << ai.type->syntax() << "  " << ai.name << " = " <<
+        std::cout << ai.arg_type->syntax() << "  " << ai.name << " = " <<
           so->str() << "\n";
 
         if (is_image) {
@@ -866,8 +866,8 @@ void compiled_script_impl::init_surfaces()
       const surface_object::use &u = so->dispatch_uses.front();
       dc = std::get<0>(u);
       const arg_info &ai = std::get<2>(u);
-      if (ai.type->is<type_ptr>()) {
-        elem_type = ai.type->as<type_ptr>().element_type;
+      if (ai.arg_type->is<type_ptr>()) {
+        elem_type = ai.arg_type->as<type_ptr>().element_type;
       }
     } else if (!so->dummy_object) { // no valid uses found
       fatalAt(so->init->defined_at,"no uses of this surface found");

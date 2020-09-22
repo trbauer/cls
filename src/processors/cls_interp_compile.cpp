@@ -847,14 +847,14 @@ void script_compiler::compile()
                 fatalAt(dfsc->spec->defined_at,"cannot infer element type");
               }
               const type &t =
-                *std::get<2>(dfsc->so_sut->dispatch_uses.back()).type;
+                *std::get<2>(dfsc->so_sut->dispatch_uses.back()).arg_type;
               if (!t.is<type_ptr>()) {
                 fatalAt(dfsc->spec->defined_at,
                   "inferred element type (from SUT) is not a pointer");
               }
               elem_type = t.as<type_ptr>().element_type;
             }
-            csi->init_surface(*dfsc->so_ref,ec,elem_type,host_ptr);
+            csi->init_surface(*dfsc->so_ref, ec, elem_type, host_ptr);
           });
       }
       break;
@@ -862,7 +862,7 @@ void script_compiler::compile()
     case script_instruction::DIFFU: {
       diffu_command *dfuc = si.dfuc;
       si.dfuc->so = &csi->surfaces.get(dfuc->spec->sut.value);
-      debugAt(si.dfuc->spec->defined_at, "bound surface to ",dfuc->so->str());
+      debugAt(si.dfuc->spec->defined_at, "bound surface to ", dfuc->so->str());
       if (!dfuc->element_type) {
         dfuc->element_type =
           inferSurfaceElementType(dfuc->spec->defined_at, dfuc->so);
@@ -1000,11 +1000,11 @@ dispatch_command *script_compiler::compileDispatchArgs(
     const init_spec *is = ris;
     if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
       csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
-    } else if (ai.type->is<type_ptr>()) {
+    } else if (ai.arg_type->is<type_ptr>()) {
       csi->e->setKernelArgBuffer(
         arg_index, dc, ss, ris.defined_at, ris, ai);
-    } else if (ai.type->is<type_builtin>() &&
-      ai.type->as<type_builtin>().is_surface())
+    } else if (ai.arg_type->is<type_builtin>() &&
+      ai.arg_type->as<type_builtin>().is_surface())
     {
       csi->e->setKernelArgImage(
         arg_index, dc, ss, ris.defined_at, ris, ai);
@@ -1052,12 +1052,12 @@ const type *script_compiler::inferSurfaceElementType(
     const refable<init_spec> &ris = dc->spec->arguments[arg_index];
     const init_spec *is = ris;
     if (is == so->init) {
-      if (!ai.type->is<type_ptr>()) {
+      if (!ai.arg_type->is<type_ptr>()) {
         // TODO: I am not sure if this check is needed
         //       We could skip the error and try another dispatch command
         fatalAt(at, "INTERNAL ERROR: surface type used as non-pointer type");
       }
-      return ai.type->as<type_ptr>().element_type;
+      return ai.arg_type->as<type_ptr>().element_type;
     }
   }
   fatalAt(at, "INTERNAL ERROR: surface object mis-linked to dispatch");

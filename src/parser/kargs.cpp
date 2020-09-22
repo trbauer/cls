@@ -50,7 +50,7 @@ std::string cls::k::arg_info::typeSyntax() const
   case CL_KERNEL_ARG_ACCESS_READ_WRITE:  ss << "read_write"; break;
   case CL_KERNEL_ARG_ACCESS_NONE: break;
   }
-  ss << " " << type->syntax();
+  ss << " " << arg_type->syntax();
 
   if (type_qual & CL_KERNEL_ARG_TYPE_RESTRICT) {
     // restrict applies to the pointer
@@ -272,9 +272,9 @@ struct karg_parser : cls::parser
     if (t == nullptr) {
       fatalAt(type_loc,"unrecognized type");
     }
-    a.type = t;
+    a.arg_type = t;
     while (consumeIf(MUL)) {
-      a.type = &pi.pointerTo(*t, bytes_per_addr);
+      a.arg_type = &pi.pointerTo(*a.arg_type, bytes_per_addr);
       // this allows (global char *const *name)
       //                           ^^^^^
       // maybe useful for SVM
@@ -284,7 +284,7 @@ struct karg_parser : cls::parser
     }
 
     // omit address qualifier for images
-    if (a.type->is<type_builtin>() && type_name.substr(0, 5) == "image") {
+    if (a.arg_type->is<type_builtin>() && type_name.substr(0, 5) == "image") {
       a.addr_qual = 0;
       if (a.accs_qual == CL_KERNEL_ARG_ACCESS_NONE) {
         // image without an access qualifier is implicitly read_only
@@ -586,10 +586,10 @@ program_info *cls::k::parseProgramInfoFromAPI(
           "failed to parse program info program: "
           "unable to lookup type ", type_name, " from program object");
       }
-      ai.type = t;
+      ai.arg_type = t;
       for (size_t i = star; i < full_type_name.size(); i++) {
         if (full_type_name[i] == '*')
-          ai.type = &pi->pointerTo(*ai.type, bytes_per_addr);
+          ai.arg_type = &pi->pointerTo(*ai.arg_type, bytes_per_addr);
       }
 
       err = clGetKernelArgInfo(

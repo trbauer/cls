@@ -7,7 +7,17 @@
 #include <sstream>
 #include <thread>
 
-// #define USE_CPP17_STD_FILESYSTEM
+#ifndef _WIN32
+// Force Linux to use STL file system (or implement dirent)
+#define USE_CPP17_STD_FILESYSTEM
+#endif
+
+#ifndef _WIN32
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <signal.h>
+#endif
 
 #ifdef USE_CPP17_STD_FILESYSTEM
 // #include <experimental/filesystem>
@@ -16,8 +26,8 @@
 #include <filesystem>
 // different versions of VS2017 have this in different namespaces
 // even with the top-level header
-// namespace fs = std::filesystem;
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
+// namespace fs = std::experimental::filesystem;
 #elif __has_include(<experimental/filesystem>)
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
@@ -80,7 +90,11 @@ size_t sys::get_terminal_width()
 ///////////////////////////////////////////////////////////////////////////////
 // LOGGING AND EXIT
 void sys::debug_break() {
+#ifdef _WIN32
   DebugBreak();
+#else
+  raise(SIGTRAP);
+#endif
 }
 
 // the desired message verbosity
@@ -99,16 +113,27 @@ void sys::message_for_level(int this_level, const char *patt, ...)
 
   va_list va;
   va_start(va, patt);
+#ifdef _WIN32
   size_t elen = _vscprintf(patt, va) + 1;
+#else
+  char dummy[1];
+  size_t elen = vsnprintf(&dummy[0], 0, patt, va) + 1;
+#endif
   va_end(va);
+#ifdef _WIN32
   char *ebuf = (char *)_alloca(elen);
+#else
+  char *ebuf = (char *)alloca(elen);
+#endif
   va_start(va, patt);
   vsnprintf(ebuf, elen, patt, va);
   ebuf[elen - 1] = 0;
   va_end(va);
 
+#ifdef _WIN32
   if (this_level > 0)
    OutputDebugStringA(ebuf);
+#endif
 
   if (is_tty(std::cerr)) {
     if (this_level >= 2)
@@ -126,9 +151,13 @@ void sys::message_for_level(int this_level, const char *patt, ...)
 
 void sys::fatal_exit()
 {
-    if (IsDebuggerPresent()) {
-        sys::debug_break();
-    }
+#ifdef _WIN32
+  if (IsDebuggerPresent()) {
+      sys::debug_break();
+  }
+#else
+  // TODO: search /proc/self/status for "TracerPid" attribute
+#endif
     exit(-1);
 //  abort();
 }
@@ -174,7 +203,7 @@ bool sys::directory_exists(const std::string &path)
          (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 #else
   struct stat sb = {0};
-  if (stat(path, &sb)) {
+  if (stat(path.c_str(), &sb)) {
       return false;
   }
   return S_ISDIR(sb.st_mode);
@@ -351,11 +380,17 @@ std::string sys::get_temp_path(const char *sfx)
 
 std::string sys::get_main_executable()
 {
+#ifdef _WIN32
   char buffer[MAX_PATH + 1] = {0};
   if (GetModuleFileNameA(NULL, buffer, sizeof(buffer)) == sizeof(buffer)) {
     // overflow
   }
   return std::string(buffer);
+#else
+  // TODO: readlink /proc/self/exe
+  FATAL("sys::get_main_executable: not implemented on Linux");
+  return "";
+#endif
 }
 
 std::string sys::find_exe(const char *exe)
@@ -497,6 +532,10 @@ void *sys::get_symbol_address(void *lib, const char *name) {
 // PROCESS CREATION
 //
 
+#ifndef _WIN32
+  using HANDLE = int; // fd
+#endif
+
 // NEEDED because GCC's std::thread isn't allowing more than one argument
 //  (could be older headers on MinGW:GCC 7.2)
 //
@@ -512,7 +551,7 @@ struct process_io_args {
 static void process_reader(process_io_args args)
 {
   std::stringstream ss;
-
+#ifdef _WIN32
   while (true) {
     OVERLAPPED o;
     ZeroMemory(&o, sizeof(0));
@@ -536,13 +575,16 @@ static void process_reader(process_io_args args)
       ss << buf;
     }
   }
-
+#else
+  FATAL("process_reader not implemented on Linux\n");
+#endif 
   args.data = ss.str();
 }
 
 // static void process_writer(HANDLE write_handle, std::string data)
 static void process_writer(process_io_args args)
 {
+#ifdef _WIN32
   const char *buf = args.data.c_str();
   size_t off = 0;
   while (off < args.data.size()) {
@@ -561,6 +603,9 @@ static void process_writer(process_io_args args)
       FATAL("process_writer failed %d\n", (int)err);
     }
   }
+#else
+
+#endif  
 }
 
 process_result sys::process_read(
@@ -568,9 +613,10 @@ process_result sys::process_read(
   std::vector<std::string> args,
   std::string input)
 {
+  process_result pr;
+#ifdef _WIN32
   // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/
   //        creating-a-child-process-with-redirected-input-and-output
-  process_result pr;
   memset(&pr, 0, sizeof(pr));
 
   // surround in " if there's a space (and it's not already surrounded)
@@ -580,17 +626,18 @@ process_result sys::process_read(
   std::string cmdline = exe;
   for (std::string a : args)
     cmdline += " " + a;
-    // has to be writable...
-    char *cmdline_buffer = (char *)alloca(cmdline.size() + 1024);
-    memset(cmdline_buffer, 0, cmdline.size() + 1024);
-    STRNCPY(cmdline_buffer,
-      cmdline.size() + 1024, cmdline.c_str(), cmdline.size());
 
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    ZeroMemory(&pi, sizeof(pi));
+  // has to be writable...
+  char *cmdline_buffer = (char *)alloca(cmdline.size() + 1024);
+  memset(cmdline_buffer, 0, cmdline.size() + 1024);
+  STRNCPY(cmdline_buffer,
+    cmdline.size() + 1024, cmdline.c_str(), cmdline.size());
+
+  STARTUPINFOA si;
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&si, sizeof(si));
+  si.cb = sizeof(si);
+  ZeroMemory(&pi, sizeof(pi));
 
   SECURITY_ATTRIBUTES sa;
   ZeroMemory(&sa,sizeof(sa));
@@ -677,15 +724,15 @@ process_result sys::process_read(
   std::thread thr_in(process_writer, process_io_args(stdin_write_handle, input));
 
   // fetch the exit code and release the process object
-    auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
-    if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
-      WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
-    pr.exit_code = -1;
-    } else {
-      DWORD exit_code = 0;
-      (void)GetExitCodeProcess(pi.hProcess, &exit_code);
-      pr.exit_code = (int)exit_code;
-    }
+  auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
+  if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
+    WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
+  pr.exit_code = -1;
+  } else {
+    DWORD exit_code = 0;
+    (void)GetExitCodeProcess(pi.hProcess, &exit_code);
+    pr.exit_code = (int)exit_code;
+  }
   (void)CloseHandle(pi.hProcess);
   // wait for the IO threads to complete
   thr_in.join();
@@ -695,9 +742,14 @@ process_result sys::process_read(
   (void)CloseHandle(stdin_write_handle);
   (void)CloseHandle(stdout_read_handle);
   (void)CloseHandle(stderr_read_handle);
-
+#else
+  // Linux
+  pr.startup_status = -2; // not implemented
+  pr.exit_code = -1;
+#endif
   return pr;
 }
+
 process_result sys::process_read(
   std::string exe,
   std::initializer_list<std::string> args)
@@ -842,6 +894,10 @@ static bool lookup_registry_key_impl(
   return true;
 }
 #else
+using REGSAM=int;
+using DWORD=uint32_t;
+#define KEY_WOW64_64KEY 0
+
 static bool lookup_registry_key_impl(
   const char *, REGSAM, DWORD &)
 {
@@ -874,6 +930,7 @@ bool sys::lookup_registry_key64(const char *path, std::string &out_value)
 std::string sys::lookup_gen_device_info()
 {
   std::string str;
+  // TODO: do something else for Linux
   if (!sys::lookup_registry_key64("HKLM\\Software\\Intel\\KMD\\DevId", str)) {
     // WARNING("cannot infer device without registry value"
     //  " HKLM\\Software\\Intel\\KMD\\DevId\n");
@@ -922,6 +979,7 @@ std::string sys::display_device()
 {
   std::stringstream ss;
 
+#ifdef _WIN32
   DISPLAY_DEVICEA dd = { 0 };
   dd.cb = sizeof(dd);
 
@@ -978,7 +1036,10 @@ std::string sys::display_device()
     }
     ss << "\n";
   }
-
+#else
+  // TODO: something /proc for this information?
+  ss << "???";
+#endif
   return ss.str();
 }
 
