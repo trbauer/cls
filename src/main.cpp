@@ -39,7 +39,7 @@ int main(int argc, const char **argv)
     "  % " CLS_EXE " script.cls\n"
   );
   cmdspec.defineArg(
-    "FILE","a cls script file",
+    "FILE", "a cls script file",
     "A cls script.  Use -e to specify an expression "
     "on the command line.  Use -h=syntax for cls syntax.", opts::NONE,
     os.input_files);

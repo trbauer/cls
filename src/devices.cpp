@@ -274,8 +274,10 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
     } else if (nameHasAny({})) {
       // not sure what Volta used (no GTX parts?)
       arch = microarch::NVIDIA_VOL;
-    } else if (nameHasAny({"GTX 1660","RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
+    } else if (nameHasAny({"GTX 1650","GTX 1660","RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
       arch = microarch::NVIDIA_TUR;
+    } else if (nameHasAny({"RTX 3070","RTX 3080","RTX 3090"})) {
+      arch = microarch::NVIDIA_AMP;
     } else {
       // TODO: non GTX parts
       arch = microarch::OTHER;
