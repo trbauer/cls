@@ -5,8 +5,18 @@
 #include <ostream>
 
 
+// converts fp16 to f32; snan suppresses to qnan
 float     half_bits_to_float(uint16_t);
+// similar to half_bits_to_float, but preserves signaling state if the input
+// is signaling
+float     half_bits_to_float_preserving_snan(uint16_t);
+
+// converts fp32 to f16; snan suppresses to qnan
 uint16_t  float_to_half_bits(float);
+//
+// similar to float_to_half_bits, but preserves signaling state if the input
+// is signaling
+uint16_t  float_to_half_bits_preserving_snan(float);
 
 
 
@@ -16,6 +26,14 @@ uint16_t  float_to_half_bits(float);
 // TODO: make constexpr; having trouble because helpers as constexpr
 // (e.g. half_bits_to_float) don't appear to make it across the link
 struct half {
+  static bool is_qnan(float x);
+  static bool is_snan(float x);
+  static bool is_nan(float x);
+  static bool is_qnan(uint16_t x);
+  static bool is_snan(uint16_t x);
+  static bool is_nan(uint16_t x);
+  // TODO: fpclassify
+
   uint16_t bits;
 
   constexpr half() : bits(0) {}
