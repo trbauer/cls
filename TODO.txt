@@ -1,10 +1,40 @@
 SEE: https://github.com/trbauer/cls/issues/
 
-We'd like to override buffer attributes with print arguments
+
+CONCEPTS:
+* We'd like to override buffer attributes with print arguments
   let A = 0:w
   ...
   ...<...>(A:p8, ...)
 
+* Emitting a dataflow graph in dot or svg format
+
+* Device check and emit SASS and GEN ISA
+
+* Emitting cpp code instead of running it
+
+* Caching read-only inputs for surface objects
+  If it's read-only, don't re-initialize in successive runs
+
+* Debugging
+  Modify source to take a status buffer, and bounds on buffers and doing bounds checking
+  Could support SPIR-V and PTX injection.
+
+* Emit MDAPI counters.  CL Intercept is nice, but it's always a pain to setup and run.
+
+* Kernel argument folding (SPIR-V/PTX modification)
+   file.cl`kernel<512x512!,8x8!>(0:w,1:r,1024!)
+
+* Reductions and Branching
+   if (all(A,\x -> gcd(10,x) == 1))
+     ...
+
+* Run graphs optimally
+
+* Generic print
+   print(#0)
+
+* Printing diffing floating point element should use maximal precision in printing or print hex values
 
 TODO:
 * FEATURE:
@@ -61,13 +91,10 @@ TODO:
 
 * FEATURE
    flush and finish on context
-   #0:A`finish
-   #0:A`flush
-   @A(#0)`.... // binds A to device 0 instance
-   finish(A)
-   flush(A)
-   finish() // flushes all queues
-   flush()  // finishes all queues
+   #0:A:finish
+   #0:A:flush
+   or flush(#0), finish(#0), finish(#0:A)
+
 
 * FEATURE
     - image diff
@@ -79,20 +106,29 @@ TODO:
 
     - get rid of context identifiers
         two programs from the same context
-          let A=#0, B=#0 replaces #0:A..., #0:B
+          def A=#0, B=#0 // replaces #0:A..., #0:B
           A`prog1.cl`kernel<32>(...)
-          A`prog2.cl`kernel<32>(...)
-        two kernels from the same program
-          let A=#0`prog1.cl
-          A`kernel1...
-          A`kernel2...
-        two kernels from the same program
-          let A=#0`prog1.cl
-          A`kernel...
-          A`kernel...
+          def P=A`prog1.cl[opts]
+          P`kernel<32>(...)
+          def K1=P`kernel
+          def K2=P`kernel
+          def K3=P`kernel<32x32>(...)
 
+        two distinct kernels from the same program
+          let P=#0`prog1.cl
+          P`kernel1...
+          P`kernel2...
+        same kernel, but different instances
+          let P=#0`prog1.cl
+          P`kernel<...>  different kernel instances
+          P`kernel<...> different instances
+        calling the same kernel instance twice
+          let K=#0`file.cl`kernel
+          K<...>() // set args; call
+          K<...>() // set args; call
 
-      let D(x)=#0`...<1024>(x,...)
+   functions?
+      def D(X)=statement; statements...
       D(A); D(B)
 
 

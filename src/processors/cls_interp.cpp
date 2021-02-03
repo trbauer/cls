@@ -226,7 +226,7 @@ void evaluator::setKernelArgBuffer(
   const arg_info &ai)
 {
   debugAt(ris.defined_at,
-    "setting memory object argument for ", 
+    "setting memory object argument for ",
     ai.arg_type->syntax(), " ", ai.name);
 
   if (((const init_spec *)ris)->skind != init_spec::IS_MEM) {

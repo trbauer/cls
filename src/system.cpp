@@ -577,7 +577,7 @@ static void process_reader(process_io_args args)
   }
 #else
   FATAL("process_reader not implemented on Linux\n");
-#endif 
+#endif
   args.data = ss.str();
 }
 
@@ -605,7 +605,7 @@ static void process_writer(process_io_args args)
   }
 #else
 
-#endif  
+#endif
 }
 
 process_result sys::process_read(

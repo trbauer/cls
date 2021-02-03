@@ -149,7 +149,7 @@ void text::printf_to(std::ostream &os, const char *patt, va_list va)
   va_list va_tmp;
 
   va_copy(va_tmp, va);
-#ifdef _WIN32  
+#ifdef _WIN32
   size_t elen = (size_t)_vscprintf(patt, va_tmp) + 1;
 #else
   char dummy;
@@ -157,7 +157,7 @@ void text::printf_to(std::ostream &os, const char *patt, va_list va)
 #endif
   va_end(va_tmp);
 
-#ifdef _WIN32  
+#ifdef _WIN32
   char *ebuf = (char *)_alloca(elen);
 #else
   char *ebuf = (char *)alloca(elen);

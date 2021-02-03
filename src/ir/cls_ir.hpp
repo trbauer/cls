@@ -67,7 +67,7 @@ namespace cls
               val &operator=(half     _val) {*this = (double)_val; return *this;}
     constexpr val &operator=(float    _val) {*this = (double)_val; return *this;}
     constexpr val &operator=(double   _val) {*this = val(_val); return *this;}
-    
+
     constexpr bool is_floating() const {return is_f;}
     constexpr bool is_integral() const {return !is_floating();}
     constexpr bool is_signed() const {return !is_floating() && !is_unsigned();}
