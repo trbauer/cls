@@ -9,6 +9,7 @@ import Data.Word
 import System.Environment
 import System.Exit
 import System.Directory
+import System.Info
 import System.IO
 import System.Process
 import Text.Printf
@@ -23,6 +24,7 @@ data Opts =
   , oDeviceIndex :: !Int
   , oResults :: !(IORef (Int,Int,Int))
   , oClsExe :: !FilePath
+  , oPrecheck :: !Bool
   }
 oVerbose :: Opts -> Bool
 oVerbose = (>0) . oVerbosity
@@ -42,13 +44,18 @@ mkOptsDev d = do
     , oFailFast = True
     , oDeviceIndex = d
     , oResults = ior
+    , oPrecheck = True
     , oClsExe = cls64_exe
     }
 
+cls64_msvc_exe :: FilePath
+cls64_msvc_exe = "builds/vs2019-64/Debug/cls64.exe"
+cls32_msvc_exe :: FilePath
+cls32_msvc_exe = "builds/vs2019-32/Debug/cls32.exe"
+cls64_gnu_exe :: FilePath
+cls64_gnu_exe = "builds/gnu-64/cls"
 cls64_exe :: FilePath
-cls64_exe = "builds/vs2019-64/Debug/cls64.exe"
-cls32_exe :: FilePath
-cls32_exe = "builds/vs2019-32/Debug/cls32.exe"
+cls64_exe = if os == "mingw32" then cls64_msvc_exe else cls64_gnu_exe
 
 help = do
   putStr $
@@ -94,25 +101,24 @@ parseOpts :: [String] -> Opts -> IO Opts
 parseOpts []     os = return os
 parseOpts (a:as) os =
     case a of
-      "-32" -> continue os{oClsExe = cls32_exe}
-      "-64" -> continue os{oClsExe = cls64_exe}
-      e | "-exe="`isPrefixOf`a -> continue os{oClsExe = val_str}
-      d | "-d="`isPrefixOf`a ->
+      _ | "-exe="`isPrefixOf`a -> continue os{oClsExe = val_str}
+      _ | "-d="`isPrefixOf`a ->
           case reads val_str of
             [(val,"")] -> continue $ os{oDeviceIndex = val}
             _ -> badOpt "malformed device index"
-      d | "-d" `isPrefixOf` a && all isDigit (drop 2 a) -> parseOpts (("-d="++drop 2 a):as) os
+      _ | "-d" `isPrefixOf` a && all isDigit (drop 2 a) -> parseOpts (("-d="++drop 2 a):as) os
       "-F" -> continue os{oFailFast = False}
       "-q" -> continue os{oVerbosity = -1}
       "-v" -> continue os{oVerbosity = 1}
       "-v2" -> continue os{oVerbosity = 2}
+      "--no-precheck" -> continue os{oPrecheck = False}
       "-h" -> do
         putStr $
-          "-32/-64    tests cls32.exe/cls64.exe\n" ++
-          "-d=INT     tests using a given device index\n" ++
-          "-exe=PATH  overrides path to cls*.exe\n" ++
-          "-F         fail fast\n" ++
-          "-q/-v/v2  sets verbosity\n" ++
+          "  -d=INT         tests using a given device index\n" ++
+          "  -exe=PATH      overrides path to cls*.exe\n" ++
+          "  --no-precheck  skip prechecks\n" ++
+          "  -F             disable fast failing\n" ++
+          "  -q/-v/v2       sets verbosity\n" ++
           ""
         exitSuccess
       ('-':_) -> badOpt "unrecongized option"
@@ -133,7 +139,10 @@ run :: [String] -> IO ()
 run as = do
   dft_opts <- mkDftOpts
   os <- parseOpts as dft_opts
-  preCheckForOpts os
+  unless (oVerbosity os < 0) $
+    putStrLn $ "testing with EXE: " ++ oClsExe os
+  when (oPrecheck os) $
+    preCheckForOpts os
   runWithOpts os
 
 putStrLnWarning :: String -> IO ()
@@ -194,16 +203,34 @@ preCheckForOpts os = do
         and <$> mapM checkPath fs
   z1 <- checkAgainstFile "CMakeLists.txt"
   z2 <- checkAgainstDir "src"
-  unless (z1 && z2) $ do
-    die "pre-check failed"
+  when (not z1 || not z2) $
+    dieOrError os "precheck failed"
 
+dieOrError :: Opts -> String -> IO ()
+dieOrError os msg = do
+  putStrRed (msg ++ "\n")
+  when (oFailFast os) $ exitFailure
+
+oNormalLn :: Opts -> String -> IO ()
+oNormalLn os
+  | oVerbosity os < 0 = const (return ())
+  | otherwise = putStrLn
 
 runWithOpts :: Opts -> IO ()
 runWithOpts os = run_tests >> print_summary >> exit
   where run_tests = do
-          putStrLn $ "running with " ++ oClsExe os ++ " on device " ++ show (oDeviceIndex os)
+          oNormalLn os $ "running with " ++ oClsExe os ++ " on device " ++ show (oDeviceIndex os)
           oup <- readProcess (oClsExe os) ["-l"] ""
-          putStr oup
+          let filterDevice =
+                filter (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isInfixOf`)
+          case filterDevice (lines oup) of
+            [x] -> oNormalLn os x
+            _ ->
+              -- this indicates cls did not produce a valid device index for the chosen device
+              -- or the tester was given an invalid index
+              dieOrError os $
+                "selected test device not found on machine or cls output is malformed:\n" ++
+                oup
           putStrLn "==============================================="
 
           -- MISC
