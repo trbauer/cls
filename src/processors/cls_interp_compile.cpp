@@ -277,7 +277,6 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   }
 
   // Fetch the required workgroup size
-  // a bug in Intel CPU driver means we have to use the C API (cl.hpp blows up)
   // __attribute__((reqd_work_group_size(X, Y, Z)))
   CL_COMMAND(ks->defined_at,
     clGetKernelWorkGroupInfo,
