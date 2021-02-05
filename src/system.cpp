@@ -82,7 +82,7 @@ std::string sys::format_last_error(int e = last_error())
     nullptr,
     (DWORD)e,
     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-    (LPCSTR)&msgBuf,
+    (LPSTR)&msgBuf,
     0, nullptr);
   std::string s((const char *)msgBuf);
   LocalFree(msgBuf);
@@ -292,7 +292,7 @@ bool sys::path_exists(const std::string &path)
 bool sys::file_exists(const std::string &path)
 {
 #ifdef _WIN32
-  DWORD dwAttrib = GetFileAttributesA(path);
+  DWORD dwAttrib = GetFileAttributesA(path.c_str());
   return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
          !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 #else
@@ -431,12 +431,12 @@ std::string sys::get_temp_dir(status &st)
   // e.g. C:/Users/%USERNAME%/AppData/Local/Temp/
   DWORD tmp_dir_len = GetTempPathA(0, NULL);
   if (tmp_dir_len == 0) {
-    st.error("GetTempPathA");
+    st.sys_error("GetTempPathA");
     return "";
   }
   char *tmp_path = (char *)alloca(tmp_dir_len + 1);
   if (GetTempPathA(tmp_dir_len, tmp_path) == 0) {
-    st.error("GetTempPathA");
+    st.sys_error("GetTempPathA");
     return "";
   }
   tmp_path[tmp_dir_len] = 0;
@@ -846,7 +846,7 @@ void process_pipe::open_pipe() {
     CloseHandle(wr);
   }*/
 }
-void pipe_t::close_impl(handle_t h) {CloseHandle(h);}
+void process_pipe::close_impl(handle_t h) {CloseHandle(h);}
 #else // !_WIN32
 void process_pipe::open_pipe() {
   int fds[2];
@@ -878,7 +878,7 @@ void process_pipe::read(std::string &out)
           ss << buf;
         }
       }
-      error("ReadFile", (int)err);
+      st.sys_error("ReadFile", (int)err);
       break;
     } else if (nr == 0) {
       break;
@@ -902,7 +902,7 @@ void process_pipe::write(const std::string &out)
       &nw,
       NULL))
     {
-      sys_error("WriteFile");
+      st.sys_error("WriteFile");
     }
   }
 }
@@ -953,10 +953,11 @@ process_result sys::process_read(
   // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/
   //        creating-a-child-process-with-redirected-input-and-output
   // surround in " if there's a space (and it's not already surrounded)
-  if (exe.find(' ') != std::string::npos && exe.find('"') != 0)
-    exe = '\"' + exe + '\"';
+  std::string winexe = exe;
+  if (winexe.find(' ') != std::string::npos && winexe.find('"') != 0)
+    winexe = '\"' + winexe + '\"';
 
-  std::string cmdline = exe;
+  std::string cmdline = winexe;
   for (std::string a : args)
     cmdline += " " + a;
 
@@ -977,33 +978,33 @@ process_result sys::process_read(
 
   HANDLE stdout_read_handle, stdout_write_handle;
   if (!CreatePipe(&stdout_read_handle, &stdout_write_handle, &sa, 64*1024)) {
-    pr.sys_error("CreatePipe(stdout_write)");
+    pr.st.sys_error("CreatePipe(stdout_write)");
     return pr;
   }
   if (!SetHandleInformation(stdout_read_handle, HANDLE_FLAG_INHERIT, 0)) {
-    pr.sys_error("SetHandleInformation(stdout_read)")
+    pr.st.sys_error("SetHandleInformation(stdout_read)");
     return pr;
   }
   si.hStdOutput = stdout_write_handle;
 
   HANDLE stderr_read_handle, stderr_write_handle;
   if (!CreatePipe(&stderr_read_handle, &stderr_write_handle, &sa, 0)) {
-    pr.sys_error("CreatePipe(stderr_write)")
+    pr.st.sys_error("CreatePipe(stderr_write)");
     return pr;
   }
   if (!SetHandleInformation(stderr_read_handle, HANDLE_FLAG_INHERIT, 0)) {
-    pr.sys_error("SetHandleInformation(stderr_read)")
+    pr.st.sys_error("SetHandleInformation(stderr_read)");
     return pr;
   }
   si.hStdError = stderr_write_handle;
 
   HANDLE stdin_write_handle, stdin_read_handle;
   if (!CreatePipe(&stdin_read_handle, &stdin_write_handle, &sa, 0)) {
-    pr.sys_error("CreatePipe(stdin_write)")
+    pr.st.sys_error("CreatePipe(stdin_write)");
     return pr;
   }
   if (!SetHandleInformation(stdin_write_handle, HANDLE_FLAG_INHERIT, 0)) {
-    pr.sys_error("SetHandleInformation(stdin_write)")
+    pr.st.sys_error("SetHandleInformation(stdin_write)");
     return pr;
   }
   si.hStdInput = stdin_read_handle;
@@ -1048,22 +1049,23 @@ process_result sys::process_read(
   //  std::thread thr_out(process_reader, stdout_read_handle, pr.out); // see the note above by process_io_args
   //  std::thread thr_err(process_reader, stderr_read_handle, pr.err);
   //  std::thread thr_in(process_writer, stdin_write_handle, input);
-  std::thread thr_out(process_reader, process_reader_args(stdout_read_handle, pr.out));
-  std::thread thr_err(process_reader, process_reader_args(stderr_read_handle, pr.err));
-  std::thread thr_in(process_writer, process_writer_args(stdin_write_handle, input));
+  std::thread thr_out(process_reader, process_io_args(stdout_read_handle, pr.out));
+  std::thread thr_err(process_reader, process_io_args(stderr_read_handle, pr.err));
+  std::string input_copy = input; // temporary workaround; should be const below
+  std::thread thr_in(process_writer, process_io_args(stdin_write_handle, input_copy));
 
   // fetch the exit code and release the process object
   auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
   if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
-    pr.sys_error("WaitForSingleObject:return", exit_code);
+    pr.st.sys_error("WaitForSingleObject:return", exit_code);
   } else {
     DWORD exit_code = 0;
     if (!GetExitCodeProcess(pi.hProcess, &exit_code)) {
-      pr.sys_error("GetExitCodeProcess");
+      pr.st.sys_error("GetExitCodeProcess");
     } else {
       pr.state = process_result::process_state::EXITED;
     }
-    pr.exit_code = (int)exit_code;
+    pr.code = (int)exit_code;
   }
   (void)CloseHandle(pi.hProcess);
   // wait for the IO threads to complete

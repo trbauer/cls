@@ -28,15 +28,8 @@ static void runFile(
   std::string file_name,
   std::string file_contents);
 
-
-void test_pread();
-
 int main(int argc, const char **argv)
 {
-  test_pread();
-  std::cout << "stopping after test_pread()\n";
-  exit(0);
-
   cls::opts os;
   opts::CmdlineSpec<cls::opts> cmdspec(
     "CL Script " CLS_VERSION_STRING " (" __DATE__ ")",

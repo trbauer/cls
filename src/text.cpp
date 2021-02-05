@@ -459,7 +459,7 @@ static std::string find_msvc()
   // VS2012 requires .bat setup script (missing DLL otherwise)
   // RETURN_IF_EXISTS("C:\\Program Files (x86)\\Microsoft Visual Studio 11.0\\VC\\BIN\\cl.exe");
 
-  return searchEnv("cl");
+  return search_env("cl");
 }
 #endif
 static std::string find_clang()
@@ -491,17 +491,6 @@ static const std::string &find_cpp()
     ppc_exe = find_gnu_cpp();
 
   return ppc_exe;
-}
-
-void test_pread()
-{
-  auto ou = text::load_c_preprocessed("../../../test.cl", "-DVAL=23");
-  std::cout << "status: cpp result enum " << int(ou.result) << "\n";
-  std::cout << "cpp_path: " << ou.cpp_path << "\n";
-  std::cout << "output: " << ou.output << "\n";
-  //
-  std::cerr << "fatal exiting to see if debugger catches it\n";
-  sys::fatal_exit();
 }
 
 std::string text::cpp_result::status_to_string() const {
