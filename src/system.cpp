@@ -1,9 +1,10 @@
 #include "system.hpp"
 #include "text.hpp"
 
+#include <atomic>
 #include <fstream>
 #include <iostream>
-#include <mutex>
+#include <iomanip>
 #include <sstream>
 #include <thread>
 
@@ -15,8 +16,11 @@
 #ifndef _WIN32
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
+#include <string.h> // strerror
 #endif
 
 #ifdef USE_CPP17_STD_FILESYSTEM
@@ -62,6 +66,91 @@ namespace fs = std::experimental::filesystem;
 
 
 using namespace sys;
+
+///////////////////////////////////////////////////////////////////////////////
+// SYSTEM ERROR HANDLING
+#ifdef _WIN32
+
+int sys::last_error() {return (int)GetLastError();}
+std::string sys::format_last_error(int e = last_error())
+{
+  LPVOID msgBuf;
+  FormatMessageA(
+    FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM |
+      FORMAT_MESSAGE_IGNORE_INSERTS,
+    nullptr,
+    (DWORD)e,
+    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+    (LPCSTR)&msgBuf,
+    0, nullptr);
+  std::string s((const char *)msgBuf);
+  LocalFree(msgBuf);
+  return s;
+}
+#else // !_WIN32
+
+int sys::last_error() {return (int)errno;}
+
+std::string sys::format_last_error(int e)
+{
+  char err_buf[64];
+  const char *err_cstr = strerror_r(e, err_buf, sizeof(err_buf) - 1);
+  if (err_cstr != nullptr)
+    return err_cstr;
+  return "?";
+}
+#endif // !_WIN32
+
+status::~status()
+{
+  if (fatal_on_error && has_error()) {
+    str(std::cerr);
+    fatal_exit();
+  }
+}
+
+void sys::status::sys_error(const char *_api, int _code)
+{
+  failed = true;
+  api = _api;
+  api_code = _code;
+}
+
+void sys::status::other_error(const std::string &msg)
+{
+  failed = true;
+  extended = msg;
+}
+
+static std::string fmt_err_hex(int x) {
+  std::stringstream ss;
+  ss << "0x" << std::hex << std::uppercase << x;
+  return ss.str();
+}
+
+void sys::status::str(std::ostream &os) const
+{
+  bool wrote_something = false;
+  if (!context.empty()) {
+    os << context << ": ";
+    wrote_something = true;
+  }
+  if (api) {
+    wrote_something = true;
+    os << api << " returned " << fmt_err_hex(api_code) <<
+      " (" << format_last_error(api_code) << ")";
+  }
+  if (!extended.empty()) {
+    if (wrote_something)
+      os << "; ";
+    os << extended;
+  }
+}
+std::string sys::status::str() const
+{
+  std::stringstream ss; str(ss); return ss.str();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // COLORED TEXT
@@ -121,13 +210,16 @@ void sys::message_for_level(int this_level, const char *patt, ...)
 #endif
   va_end(va);
 #ifdef _WIN32
-  char *ebuf = (char *)_alloca(elen);
+  char *ebuf = (char *)_alloca(elen + 1);
 #else
-  char *ebuf = (char *)alloca(elen);
+  char *ebuf = (char *)alloca(elen + 1);
 #endif
   va_start(va, patt);
   vsnprintf(ebuf, elen, patt, va);
   ebuf[elen - 1] = 0;
+  if (elen - 1 > 0 && ebuf[elen - 2] != '\n')
+    ebuf[elen - 1] = '\n';
+  ebuf[elen - 0] = 0;
   va_end(va);
 
 #ifdef _WIN32
@@ -155,19 +247,29 @@ void sys::fatal_exit()
   if (IsDebuggerPresent()) {
       sys::debug_break();
   }
+  exit(-1);
 #else
-  // TODO: search /proc/self/status for "TracerPid" attribute
+  if (sys::file_exists("/proc/self/status")) {
+    // if there's a tracing PID we can trap
+    // NOTE: sometimes the field is there, but mapped to 0, meaning no trace
+    auto status = sys::read_file_text("/proc/self/status");
+    // std::cout << status << "\n";
+    size_t tp = status.find("TracerPid:");
+    if (tp != std::string::npos) {
+      while (tp < status.size() && !isdigit(status[tp]))
+        tp++;
+      if (tp < status.size() && status[tp] != '0') {
+        sys::debug_break();
+      }
+    }
+  }
+  abort();
 #endif
-    exit(-1);
-//  abort();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // FILE SYSTEM
-bool sys::file_exists(const std::string &path) {
-  return file_exists(path.c_str());
-}
-bool sys::file_exists(const char *path)
+bool sys::path_exists(const std::string &path)
 {
 #ifdef _WIN32
   //  WIN32_FIND_DATAA ffd;
@@ -176,13 +278,27 @@ bool sys::file_exists(const char *path)
   //    FATAL("kdc -off failed to generate .daf file (is DafEnable set?)\n");
   //  }
   //  FindClose(h);
+  DWORD dwAttrib = GetFileAttributesA(path.c_str());
+  return (dwAttrib != INVALID_FILE_ATTRIBUTES);
+#else
+  struct stat sb = {0};
+  if (stat(path.c_str(), &sb)) {
+      return false;
+  }
+  return S_ISDIR(sb.st_mode) || S_ISREG(sb.st_mode);
+#endif
+}
+
+bool sys::file_exists(const std::string &path)
+{
+#ifdef _WIN32
   DWORD dwAttrib = GetFileAttributesA(path);
   return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
          !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 #else
-  // TODO: we could uniformly use this for Win32 as well!
+  // TODO: we might be able to use this for Win32 as well on newer compilers
   struct stat sb = {0};
-  if (stat(path, &sb)) {
+  if (stat(path.c_str(), &sb)) {
       return false;
   }
   return S_ISREG(sb.st_mode);
@@ -192,12 +308,6 @@ bool sys::file_exists(const char *path)
 bool sys::directory_exists(const std::string &path)
 {
 #ifdef _WIN32
-  //  WIN32_FIND_DATAA ffd;
-  //  HANDLE h = FindFirstFileA(tmp_daf.c_str(), &ffd);
-  //  if (h == INVALID_HANDLE_VALUE) {
-  //    FATAL("kdc -off failed to generate .daf file (is DafEnable set?)\n");
-  //  }
-  //  FindClose(h);
   DWORD dwAttrib = GetFileAttributesA(path.c_str());
   return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
          (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
@@ -257,11 +367,11 @@ static std::vector<std::string> list_dir_elems(
 }
 std::vector<std::string> sys::list_directory(const std::string &path)
 {
-  return list_dir_elems(path,false);
+  return list_dir_elems(path, false);
 }
 std::vector<std::string> sys::list_directory_full_paths(const std::string &path)
 {
-  return list_dir_elems(path,true);
+  return list_dir_elems(path, true);
 }
 
 uint64_t sys::file_size(const std::string &path)
@@ -308,20 +418,40 @@ std::string sys::replace_extension(std::string file, std::string new_ext)
   //  return file;
   return file.substr(0, dot_ix) + "." + new_ext;
 }
-
 std::string sys::get_temp_dir()
 {
+  status st = status::FATAL_ON_ERROR();
+  return get_temp_dir(st);
+}
+std::string sys::get_temp_dir(status &st)
+{
+  st.context = "sys::get_temp_dir";
   std::string path;
 #ifdef _WIN32
-  DWORD tmpdirlen = GetTempPathA(0, NULL);
-  char *tmp_path = (char *)alloca(tmpdirlen + 1);
-  (void)GetTempPathA(tmpdirlen, tmp_path);
-  tmp_path[tmpdirlen] = 0;
+  // e.g. C:/Users/%USERNAME%/AppData/Local/Temp/
+  DWORD tmp_dir_len = GetTempPathA(0, NULL);
+  if (tmp_dir_len == 0) {
+    st.error("GetTempPathA");
+    return "";
+  }
+  char *tmp_path = (char *)alloca(tmp_dir_len + 1);
+  if (GetTempPathA(tmp_dir_len, tmp_path) == 0) {
+    st.error("GetTempPathA");
+    return "";
+  }
+  tmp_path[tmp_dir_len] = 0;
   path = tmp_path;
 #else
   const char *e = getenv("TEMP");
-  if (!e) {
+  if (e == nullptr) {
     e = getenv("TMP");
+  }
+  if (e == nullptr && sys::directory_exists("/tmp/")) {
+    e = "/tmp/";
+  }
+  if (e == nullptr) {
+    st.other_error("unable to find temporary directory");
+    return "";
   }
   path = e;
 #endif
@@ -331,48 +461,71 @@ std::string sys::get_temp_dir()
   return path;
 }
 
-static std::mutex temp_path_mutex;
-
 std::string sys::get_temp_path(const char *sfx)
 {
+  status st = status::FATAL_ON_ERROR();
+  return get_temp_path(sfx, st);
+}
+
+std::string sys::get_temp_path(const char *c_sfx, status &st)
+{
+  st.context = "sys::get_temp_path";
+  // normalize the suffix
+  std::string sfx = c_sfx ? c_sfx : "";
 #ifdef _WIN32
   int pid = (int)GetCurrentProcessId();
 #else
   int pid = (int)getpid();
 #endif
-  std::stringstream ss;
-  auto exe = get_main_executable();
-  // foo/bar/baz.exe => foo/bar/baz
-  auto ext = exe.rfind('.');
-  if (ext != std::string::npos) {
-    exe = exe.substr(0,ext);
+
+  status err;
+  auto exe = get_main_executable(err);
+  if (err) {
+    st = err;
+    st.chain_error("sys::get_temp_path");
+    return "";
   }
+
   // foo/bar/baz => baz
+  // foo\bar\baz.exe => baz.exe
   size_t last_slash = exe.size() - 1;
   while (last_slash > 0) {
     if (exe[last_slash] == '\\' || exe[last_slash] == '/') {
-      exe = exe.substr(last_slash+1);
+      exe = exe.substr(last_slash + 1);
       break;
     } else {
       last_slash--;
     }
   }
-
+#ifdef _WIN32
+  // baz.exe => baz
+  auto ext = exe.rfind('.');
+  if (ext != std::string::npos) {
+    exe = exe.substr(0, ext);
+  }
+#endif
+  std::stringstream ss;
   ss << exe << "_" << pid;
-  std::string pfx = get_temp_dir() + sys::path_separator + ss.str() + "_";
 
-  std::lock_guard<std::mutex> guard(temp_path_mutex);
-  static int i = 0;
+  auto temp_dir = get_temp_dir(err);
+  if (err) {
+    err.chain_error("sys::get_main_executable");
+    return "";
+  }
+
+  std::string pfx = temp_dir + ss.str() + "_";
+
+  // This should be fairly safe, even with conurrent processes.
+  // 1. we use our PID in the temp name, so the only collisions are from
+  //    this process
+  // 2. we atomic increment a unique suffix until we find a file
+  static std::atomic_llong next_suffix_id(0);
   while (1) {
+    auto next_id = next_suffix_id.fetch_add(1);
     std::stringstream ss;
-    ss << pfx << std::setw(4) << std::setfill('0') << i++;
-    ss << "_" << sfx;
+    ss << pfx << std::setw(4) << std::setfill('0') << next_id << sfx;
     std::string file = ss.str();
-    if (!file_exists(file.c_str())) {
-      // technically should touch the path to create file, but we take a
-      // weak assumption that we're the only process modifying this file
-      // currently (pretty safe given that we also use a pid in it and a
-      // monotonically increasing integer)
+    if (!file_exists(file) && !directory_exists(file)) {
       return file;
     }
   }
@@ -380,16 +533,39 @@ std::string sys::get_temp_path(const char *sfx)
 
 std::string sys::get_main_executable()
 {
+  status st = status::FATAL_ON_ERROR();
+  return get_main_executable(st);
+}
+std::string sys::get_main_executable(status &st)
+{
+  st.context = "sys::get_main_executable";
 #ifdef _WIN32
   char buffer[MAX_PATH + 1] = {0};
   if (GetModuleFileNameA(NULL, buffer, sizeof(buffer)) == sizeof(buffer)) {
+    st.sys_error("GetModuleFileName");
+    return "";
     // overflow
   }
   return std::string(buffer);
 #else
   // TODO: readlink /proc/self/exe
-  FATAL("sys::get_main_executable: not implemented on Linux");
-  return "";
+  std::vector<char> buf;
+  buf.resize(1);
+  ssize_t nr;
+  while (true) {
+    nr = readlink("/proc/self/exe", buf.data(), buf.size());
+    if (nr < 0) {
+      st.sys_error("readlink");
+      return "";
+    } else if (nr == buf.size()) {
+      buf.resize(buf.size() + 1);
+      continue;
+    } else {
+      break;
+    }
+  }
+//  buf.push_back(0); // readlink doesn't append a 0
+  return std::string(buf.data(), nr);
 #endif
 }
 
@@ -398,7 +574,7 @@ std::string sys::find_exe(const char *exe)
   std::string filename_exe = exe;
 #ifdef _WIN32
   // "foo" -> "foo.exe"
-  if (strlen(exe) < 4 && strncmp(".exe",exe + strlen(exe) - 4,4) != 0) {
+  if (strlen(exe) < 4 && strncmp(".exe", exe + strlen(exe) - 4,4) != 0) {
     filename_exe += ".exe";
   }
 #endif
@@ -531,11 +707,9 @@ void *sys::get_symbol_address(void *lib, const char *name) {
 ///////////////////////////////////////////////////////////////////////////////
 // PROCESS CREATION
 //
-
-#ifndef _WIN32
-  using HANDLE = int; // fd
-#endif
-
+#ifdef _WIN32
+// TODO: remove this and unify via process_pipe and other abstractions
+//
 // NEEDED because GCC's std::thread isn't allowing more than one argument
 //  (could be older headers on MinGW:GCC 7.2)
 //
@@ -551,7 +725,6 @@ struct process_io_args {
 static void process_reader(process_io_args args)
 {
   std::stringstream ss;
-#ifdef _WIN32
   while (true) {
     OVERLAPPED o;
     ZeroMemory(&o, sizeof(0));
@@ -575,16 +748,12 @@ static void process_reader(process_io_args args)
       ss << buf;
     }
   }
-#else
-  FATAL("process_reader not implemented on Linux\n");
-#endif
   args.data = ss.str();
 }
 
 // static void process_writer(HANDLE write_handle, std::string data)
 static void process_writer(process_io_args args)
 {
-#ifdef _WIN32
   const char *buf = args.data.c_str();
   size_t off = 0;
   while (off < args.data.size()) {
@@ -603,22 +772,186 @@ static void process_writer(process_io_args args)
       FATAL("process_writer failed %d\n", (int)err);
     }
   }
-#else
-
+}
 #endif
+
+
+#ifdef _WIN32
+using handle_t = HANDLE;
+static const handle_t CLOSED_HANDLE = nullptr;
+#else // !_WIN32
+using handle_t = int; // fd
+static const handle_t CLOSED_HANDLE = -1;
+#endif // !_WIN32
+
+struct process_pipe {
+  status st;
+  handle_t rd = CLOSED_HANDLE, wr = CLOSED_HANDLE;
+  enum class which_type {STDIN, STDOUT, STDERR} which;
+
+  process_pipe(const status &s, which_type w) : st(s), which(w)
+  {
+    if (which == which_type::STDIN)
+      st.context += ": stdin pipe writer";
+    else if (which == which_type::STDOUT)
+      st.context += ": stdout pipe reader";
+    else if (which == which_type::STDERR)
+      st.context += ": stderr pipe reader";
+    else
+      st.context += ": unknown pipe accessor";
+    open_pipe();
+  }
+  ~process_pipe() {close_both();}
+
+  void open_pipe();
+
+  bool valid() const {return rd != CLOSED_HANDLE || wr != CLOSED_HANDLE;}
+
+  void close_both() {close_rd(); close_wr();}
+  void close_rd() {close_one(rd);}
+  void close_wr() {close_one(wr);}
+
+  void read(std::string &out);
+  void write(const std::string &out);
+
+private:
+  void close_one(handle_t &h) {
+    if (h != CLOSED_HANDLE) {
+      close_impl(h);
+      h = CLOSED_HANDLE;
+    }
+  }
+  void close_impl(handle_t h);
+};
+
+#ifdef _WIN32
+void process_pipe::open_pipe() {
+  SECURITY_ATTRIBUTES sa { };
+  sa.nLength = sizeof(sa);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = NULL;
+
+  if (!CreatePipe(&rd, &wr, &sa, 64*1024)) {
+    st.sys_error("CreatePipe");
+    return;
+  }
+  /*
+  // why should this be needed?
+  // was RD (stdout), RD (stderr), WR (stdin)
+  HANDLE i = w == which_type::STDIN ? wr : rd;
+  if (!SetHandleInformation(i, HANDLE_FLAG_INHERIT, 0)) {
+    error_api = "SetHandleInformation";
+    error_code = last_error();
+    CloseHandle(rd);
+    CloseHandle(wr);
+  }*/
+}
+void pipe_t::close_impl(handle_t h) {CloseHandle(h);}
+#else // !_WIN32
+void process_pipe::open_pipe() {
+  int fds[2];
+  if (pipe(fds) == 0) {
+    rd = fds[0]; // 0 is the read end
+    wr = fds[1];
+  } else {
+    st.sys_error("pipe");
+  }
+}
+void process_pipe::close_impl(handle_t h) {close(h);}
+#endif // !_WIN32
+
+#ifdef _WIN32
+void process_pipe::read(std::string &out)
+{
+  std::stringstream ss;
+  while (true) {
+    OVERLAPPED o;
+    ZeroMemory(&o, sizeof(0));
+
+    char buf[512];
+    DWORD nr = 0;
+    if (!ReadFile(rd, buf, sizeof(buf) - 1, &nr, NULL)) {
+      DWORD err = GetLastError();
+      if (err == ERROR_BROKEN_PIPE) {
+        if (nr > 0) {
+          buf[nr] = 0;
+          ss << buf;
+        }
+      }
+      error("ReadFile", (int)err);
+      break;
+    } else if (nr == 0) {
+      break;
+    } else {
+      buf[nr] = 0;
+      ss << buf;
+    }
+  }
 }
 
+void process_pipe::write(const std::string &out)
+{
+  const char *buf = out.c_str();
+  size_t off = 0, len = out.size();
+  while (off < len) {
+    DWORD nw = 0;
+    if (!WriteFile(
+      wr,
+      buf + off,
+      (DWORD)(len - off),
+      &nw,
+      NULL))
+    {
+      sys_error("WriteFile");
+    }
+  }
+}
+
+#else // !_WIN32
+void process_pipe::read(std::string &out)
+{
+  std::stringstream ss;
+  while (true) {
+    char buf[512];
+    auto nr = ::read(rd, buf, sizeof(buf) - 1);
+    if (nr == 0) {
+      break; // eof
+    } else if (nr < 0) { // error
+      st.sys_error("read");
+      break;
+    } else {
+      buf[nr] = 0;
+      ss << buf;
+    }
+  }
+  out = ss.str();
+}
+void process_pipe::write(const std::string &in)
+{
+  const char *buf = in.c_str();
+  size_t off = 0, len = in.size();
+  while (off < len) {
+    auto nw = ::write(wr, buf + off, len - off);
+    if (nw < 0) {
+      st.sys_error("write");
+      break;
+    }
+    off += nw;
+  } // end while
+}
+#endif // !_WIN32
+
 process_result sys::process_read(
-  std::string exe,
-  std::vector<std::string> args,
-  std::string input)
+  const std::string &exe,
+  const std::vector<std::string> &args,
+  const std::string &input)
 {
   process_result pr;
+  pr.st.context = "sys::process_read";
+
 #ifdef _WIN32
   // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/
   //        creating-a-child-process-with-redirected-input-and-output
-  memset(&pr, 0, sizeof(pr));
-
   // surround in " if there's a space (and it's not already surrounded)
   if (exe.find(' ') != std::string::npos && exe.find('"') != 0)
     exe = '\"' + exe + '\"';
@@ -633,79 +966,75 @@ process_result sys::process_read(
   STRNCPY(cmdline_buffer,
     cmdline.size() + 1024, cmdline.c_str(), cmdline.size());
 
-  STARTUPINFOA si;
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&si, sizeof(si));
+  STARTUPINFOA si { };
   si.cb = sizeof(si);
-  ZeroMemory(&pi, sizeof(pi));
+  PROCESS_INFORMATION pi { };
 
-  SECURITY_ATTRIBUTES sa;
-  ZeroMemory(&sa,sizeof(sa));
+  SECURITY_ATTRIBUTES sa { };
   sa.nLength = sizeof(sa);
   sa.bInheritHandle = TRUE;
   sa.lpSecurityDescriptor = NULL;
 
   HANDLE stdout_read_handle, stdout_write_handle;
-  if (!CreatePipe(&stdout_read_handle,&stdout_write_handle,&sa,64*1024)) {
-    FATAL("process_read: failed to create pipe");
+  if (!CreatePipe(&stdout_read_handle, &stdout_write_handle, &sa, 64*1024)) {
+    pr.sys_error("CreatePipe(stdout_write)");
+    return pr;
   }
-  if (!SetHandleInformation(stdout_read_handle, HANDLE_FLAG_INHERIT,0)) {
-    FATAL("process_read: set inherit flag");
+  if (!SetHandleInformation(stdout_read_handle, HANDLE_FLAG_INHERIT, 0)) {
+    pr.sys_error("SetHandleInformation(stdout_read)")
+    return pr;
   }
   si.hStdOutput = stdout_write_handle;
 
   HANDLE stderr_read_handle, stderr_write_handle;
-  if (!CreatePipe(&stderr_read_handle,&stderr_write_handle,&sa,0)) {
-    FATAL("process_read: failed to create pipe");
+  if (!CreatePipe(&stderr_read_handle, &stderr_write_handle, &sa, 0)) {
+    pr.sys_error("CreatePipe(stderr_write)")
+    return pr;
   }
-  if (!SetHandleInformation(stderr_write_handle, HANDLE_FLAG_INHERIT,0)) {
-    FATAL("process_read: set inherit flag");
+  if (!SetHandleInformation(stderr_read_handle, HANDLE_FLAG_INHERIT, 0)) {
+    pr.sys_error("SetHandleInformation(stderr_read)")
+    return pr;
   }
   si.hStdError = stderr_write_handle;
 
   HANDLE stdin_write_handle, stdin_read_handle;
-  if (!CreatePipe(&stdin_read_handle,&stdin_write_handle,&sa,0)) {
-    FATAL("process_read: failed to create pipe");
+  if (!CreatePipe(&stdin_read_handle, &stdin_write_handle, &sa, 0)) {
+    pr.sys_error("CreatePipe(stdin_write)")
+    return pr;
   }
-  if (!SetHandleInformation(stdin_write_handle, HANDLE_FLAG_INHERIT,0)) {
-    FATAL("process_read: set inherit flag");
+  if (!SetHandleInformation(stdin_write_handle, HANDLE_FLAG_INHERIT, 0)) {
+    pr.sys_error("SetHandleInformation(stdin_write)")
+    return pr;
   }
   si.hStdInput = stdin_read_handle;
   si.dwFlags = STARTF_USESTDHANDLES;
 
-    if (!CreateProcessA(
-        NULL,
-        cmdline_buffer,
-        NULL,
-        NULL,
-        FALSE,
-        0,
-        NULL,
-        NULL,
-        &si,
-        &pi))
-    {
-      auto err = GetLastError();
-      pr.startup_status =  (int)err;
-      // if (err == ERROR_FILE_NOT_FOUND) {
-      //  WARNING("exec_process: cpp.exe not found in %%PATH%%\n");
-      // } else {
-      //  WARNING("exec_process: CreateProcess failed (GLE: %d)\n", (int)err);
-      //  }
-      // close the pipes (both sides)
-      // ours
-      (void)CloseHandle(stdout_read_handle);
-      (void)CloseHandle(stderr_read_handle);
-      (void)CloseHandle(stdin_write_handle);
-      // theirs
-      (void)CloseHandle(stdout_write_handle);
-      (void)CloseHandle(stderr_write_handle);
-      (void)CloseHandle(stdin_read_handle);
-      // bail
-      return pr;
-    }
+  if (!CreateProcessA(
+      NULL,
+      cmdline_buffer,
+      NULL,
+      NULL,
+      FALSE,
+      0,
+      NULL,
+      NULL,
+      &si,
+      &pi))
+  {
+    // ours
+    (void)CloseHandle(stdout_read_handle);
+    (void)CloseHandle(stderr_read_handle);
+    (void)CloseHandle(stdin_write_handle); // TODO: this needs to stay open so we can write out the input
+    // theirs
+    (void)CloseHandle(stdout_write_handle);
+    (void)CloseHandle(stderr_write_handle);
+    (void)CloseHandle(stdin_read_handle);
+    // bail
+    pr.st.sys_error("CreateProcessA");
+    return pr;
+  }
   // CreateProcess at least succeeded
-  pr.startup_status = 0;
+  pr.state = process_result::process_state::OTHER;
 
   // we don't need the child's main thread handle
   (void)CloseHandle(pi.hThread);
@@ -719,18 +1048,21 @@ process_result sys::process_read(
   //  std::thread thr_out(process_reader, stdout_read_handle, pr.out); // see the note above by process_io_args
   //  std::thread thr_err(process_reader, stderr_read_handle, pr.err);
   //  std::thread thr_in(process_writer, stdin_write_handle, input);
-  std::thread thr_out(process_reader, process_io_args(stdout_read_handle, pr.out));
-  std::thread thr_err(process_reader, process_io_args(stderr_read_handle, pr.err));
-  std::thread thr_in(process_writer, process_io_args(stdin_write_handle, input));
+  std::thread thr_out(process_reader, process_reader_args(stdout_read_handle, pr.out));
+  std::thread thr_err(process_reader, process_reader_args(stderr_read_handle, pr.err));
+  std::thread thr_in(process_writer, process_writer_args(stdin_write_handle, input));
 
   // fetch the exit code and release the process object
   auto exit_code = WaitForSingleObject(pi.hProcess, INFINITE);
   if ((exit_code == WAIT_FAILED) || (exit_code == WAIT_ABANDONED)) {
-    WARNING("read_process(%s): unable to wait for process\n", exe.c_str());
-  pr.exit_code = -1;
+    pr.sys_error("WaitForSingleObject:return", exit_code);
   } else {
     DWORD exit_code = 0;
-    (void)GetExitCodeProcess(pi.hProcess, &exit_code);
+    if (!GetExitCodeProcess(pi.hProcess, &exit_code)) {
+      pr.sys_error("GetExitCodeProcess");
+    } else {
+      pr.state = process_result::process_state::EXITED;
+    }
     pr.exit_code = (int)exit_code;
   }
   (void)CloseHandle(pi.hProcess);
@@ -742,16 +1074,165 @@ process_result sys::process_read(
   (void)CloseHandle(stdin_write_handle);
   (void)CloseHandle(stdout_read_handle);
   (void)CloseHandle(stderr_read_handle);
-#else
-  // Linux
-  pr.startup_status = -2; // not implemented
-  pr.exit_code = -1;
+#else // Linux
+  // create pipe with the various appropriate inheritence properties
+  process_pipe p_in(pr.st, process_pipe::which_type::STDIN);
+  if (!p_in.valid()) {
+    pr.st = p_in.st;
+    return pr;
+  }
+  process_pipe p_ou(pr.st, process_pipe::which_type::STDOUT);
+  if (!p_ou.valid()) {
+    pr.st = p_in.st;
+    return pr;
+  }
+  process_pipe p_er(pr.st, process_pipe::which_type::STDERR);
+  if (!p_er.valid()) {
+    pr.st = p_in.st;
+    return pr;
+  }
+
+  // flush output streams before the fork
+  std::cout.flush();
+  std::cerr.flush();
+
+  pid_t pid = fork();
+  if (pid == -1) {
+    // fork error
+    pr.st.sys_error("fork");
+    return pr;
+  } else if (pid != 0) {
+    // parent
+    pr.state = process_result::process_state::OTHER;
+    //
+    // close the pipes we don't need
+    p_ou.close_wr();
+    p_er.close_wr();
+    p_in.close_rd();
+    //
+    // spawn off reader threads and writer threads
+    std::thread thr_in([&] {
+        p_in.write(input);
+        p_in.close_wr();
+        std::atomic_thread_fence(std::memory_order_release);
+    });
+    std::thread thr_out([&] {
+        p_ou.read(pr.out);
+        std::atomic_thread_fence(std::memory_order_release);
+    });
+    std::thread thr_err([&] {
+        p_er.read(pr.err);
+        std::atomic_thread_fence(std::memory_order_release);
+    });
+
+    int st = -1;
+    if (waitpid(pid, &st, 0) < 0) {
+      pr.st.sys_error("wait");
+      // The waitpid call should never fail here, but here we are.
+      // Threads are still running and are using our memory
+      // (the std::thread, writing to pr).  We must not return until
+      // they are definitely dead.
+      //
+      // It's tempting to close the pipes and hope the things come toppling down
+      // so everyone can get error codes and exit, but that's unsafe.
+      // Another, thread could swoop in and open a new file or socket using
+      // that same descriptor.  The child's next read would be from the wrong
+      // source.  Massive chaos.
+      // p_in.close_both(); << DON'T DO IT BEFORE JOIN
+      // p_ou.close_both(); << DON'T DO IT BEFORE JOIN
+      // p_er.close_both(); << DON'T DO IT BEFORE JOIN
+      std::cerr << "  [WARNING]: cls: waitpid failed: " <<
+        format_last_error(pr.st.api_code) << "\n";
+      // might hang, but it's the best we can do
+      thr_in.join();
+      thr_out.join();
+      thr_err.join();
+      std::cerr << "  [WARNING] joined children; we can continue\n";
+      // the threads are definitely dead
+    } else {
+      // successful waitpid
+      if (WIFEXITED(st)) {
+        pr.state = process_result::process_state::EXITED;
+        pr.code = WEXITSTATUS(st);
+      } else if (WIFSIGNALED(st)) {
+        pr.state = process_result::process_state::SIGNALED;
+        pr.code = WTERMSIG(st);
+      } else {
+        // WIFSTOPPED/WIFCONTINUED
+        pr.st.sys_error("waitpid", 0);
+        pr.st.extended = "status not an exit or signal";
+      }
+      thr_in.join();
+      thr_out.join();
+      thr_err.join();
+      // threads close their own pipe ends; presumably in this order
+      // 1. the stdin writer finishes close stdin and begins exiting;
+      //    the child's stdin closes; they get EOF and finish processing
+      //    closing stdout and stderr and exiting peacefully
+      // 2. the reader threads gets the EOF and closes the output pipes
+      //    and exits
+      // 2. waitpid returns
+      // 3. we join the reader/writer threads (they are exited)
+      //
+      // check for errors in the child threads (only take the first)
+      // fence error_code/error_api
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if (p_in.st.has_error()) {
+        pr.st = p_in.st;
+        return pr;
+      }
+      if (p_ou.st.has_error()) {
+        pr.st = p_ou.st;
+        return pr;
+      }
+      if (p_er.st.has_error()) {
+        pr.st = p_er.st;
+        return pr;
+      }
+    }
+  } else {
+    // child process
+    //
+    // redirect file descriptors
+    dup2(p_in.rd, STDIN_FILENO);
+    dup2(p_ou.wr, STDOUT_FILENO);
+    dup2(p_er.wr, STDERR_FILENO);
+    //
+    // close aliases
+    p_in.close_both();
+    p_ou.close_both();
+    p_er.close_both();
+
+    // create the argv array: no need to free memory
+    std::vector<char *> argv;
+    auto add_arg = [&](const std::string &s) {
+      char* ptr = new char[s.size() + 1];
+      if (ptr == nullptr) {
+        std::cerr << "forked child failed to allocate memory\n";
+        raise(SIGSEGV);
+      }
+      memcpy(ptr, s.c_str(), s.size());
+      ptr[s.size()] = 0;
+      argv.push_back(ptr);
+    };
+    add_arg(exe);
+    for (const std::string &s : args) {
+      add_arg(s);
+    }
+    argv.push_back(nullptr);
+
+    execv(exe.c_str(), argv.data());
+    // should not return
+    std::cerr << "execv(" << exe << "): " <<
+      format_last_error(last_error()) << "\n";
+    _exit(-1);
+  }
 #endif
   return pr;
 }
 
 process_result sys::process_read(
-  std::string exe,
+  const std::string &exe,
   std::initializer_list<std::string> args)
 {
   std::vector<std::string> argv;

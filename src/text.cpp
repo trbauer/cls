@@ -412,7 +412,7 @@ std::string text::format_buffer_diff(
 }
 
 
-static std::string searchEnv(const char *exe)
+static std::string search_env(const char *exe)
 {
   return sys::find_exe(exe);
 }
@@ -420,15 +420,15 @@ static std::string searchEnv(const char *exe)
 #define RETURN_IF_EXISTS(X) \
   do {std::string s = (X); if (sys::file_exists(s)) return s;} while(0)
 
-static std::string findGnuCppExe()
+static std::string find_gnu_cpp()
 {
 #ifndef _WIN32
   RETURN_IF_EXISTS("/usr/bin/cpp");
 #endif
-  return searchEnv("cpp");
+  return search_env("cpp");
 }
 #ifdef _WIN32
-static std::string findMsvcExe()
+static std::string find_msvc()
 {
   // VS2017 and VS2019 have a versioned toolchain in the link
   // Try for VS2019
@@ -462,7 +462,7 @@ static std::string findMsvcExe()
   return searchEnv("cl");
 }
 #endif
-static std::string findClangExe()
+static std::string find_clang()
 {
 #ifdef _WIN32
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
@@ -472,44 +472,63 @@ static std::string findClangExe()
 #else
   RETURN_IF_EXISTS("/usr/bin/clang");
 #endif
-  return searchEnv("clang");
+  return search_env("clang");
 }
 
 static std::string ppc_exe;
 
-static const std::string &findPreprocessorExe()
+static const std::string &find_cpp()
 {
   if (!ppc_exe.empty())
     return ppc_exe;
 #ifdef _WIN32
   if (ppc_exe.empty())
-    ppc_exe = findMsvcExe();
+    ppc_exe = find_msvc();
 #endif
   if (ppc_exe.empty())
-    ppc_exe = findClangExe();
+    ppc_exe = find_clang();
   if (ppc_exe.empty()) // even Win32, we might find it in %PATH%
-    ppc_exe = findGnuCppExe();
+    ppc_exe = find_gnu_cpp();
 
   return ppc_exe;
 }
 
-std::string text::load_c_preprocessed(
+void test_pread()
+{
+  auto ou = text::load_c_preprocessed("../../../test.cl", "-DVAL=23");
+  std::cout << "status: cpp result enum " << int(ou.result) << "\n";
+  std::cout << "cpp_path: " << ou.cpp_path << "\n";
+  std::cout << "output: " << ou.output << "\n";
+  //
+  std::cerr << "fatal exiting to see if debugger catches it\n";
+  sys::fatal_exit();
+}
+
+std::string text::cpp_result::status_to_string() const {
+  switch (result) {
+  case status::SUCCESS: return "success";
+  case status::FILE_NOT_FOUND: return "failed to find the input file";
+  case status::CPP_NOT_FOUND: return "was not found";
+  case status::CPP_FAILED: return "failed";
+  default: return "???";
+  }
+}
+
+text::cpp_result text::load_c_preprocessed(
   const std::string &inp_path,
   const std::string &args)
 {
-  auto pp_exe = findPreprocessorExe();
+  auto pp_exe = find_cpp();
   if (pp_exe.empty()) {
     pp_exe = sys::find_exe("cpp");
     if (pp_exe.empty()) {
-      WARNING("[cls]  text::load_c_preprocessed: no preprocessor found on system\n");
-      // punt, and just return the .cl contents
-      return sys::read_file_text(inp_path);
+      return cpp_result(cpp_result::status::CPP_NOT_FOUND, "cpp");
     }
   }
   return load_c_preprocessed_using(pp_exe, inp_path, args);
 }
 
-std::string text::load_c_preprocessed_using(
+text::cpp_result text::load_c_preprocessed_using(
   const std::string &cpp_path,
   const std::string &inp_path,
   const std::string &args)
@@ -520,11 +539,10 @@ std::string text::load_c_preprocessed_using(
   // to a file
   // % cl /E examples\vec.cl /P /Fi:file.ppc -D TYPE=int
   //
-  // CLANG
-  // CPP
+  // CLANG/CPP
   // % cpp -E file.cl
   // % cpp -E file.cl -DTYPE=int -o out.ppc
-  std::vector<std::string> p_args{
+  std::vector<std::string> p_args {
     inp_path,
     "-E", // works for MSVC too
   };
@@ -535,33 +553,44 @@ std::string text::load_c_preprocessed_using(
     p_args.push_back(w);
   }
 
-  // using stdout doesn't seem to work
-#define USE_TEMP_FILE
-
-#ifdef USE_TEMP_FILE
-  auto tmp_file = sys::get_temp_path(".ppc");
+  // using stdout doesn't seem to work; so we create a file and cpp into that
+  sys::status st;
+  auto tmp_file = sys::get_temp_path(".ppc", st);
+  if (st) {
+    return cpp_result(cpp_result::status::CPP_FAILED, cpp_path,
+      text::format("failed to create temporary file for cpp: " + st.str()));
+  }
   if (cpp_path.find("cl.exe") != std::string::npos) {
     p_args.push_back("/P");
     p_args.push_back("/Fi:" + tmp_file);
-  }
-  else {
+  } else {
     p_args.push_back("-o");
     p_args.push_back(tmp_file);
   }
-#endif
 
   auto pr = sys::process_read(cpp_path, p_args);
-  if (!pr.succeeded()) {
-    // punt, and just return the .cl contents
-    WARNING("text::load_c_preprocessed: unable to preprocess\n");
-    return sys::read_file_text(inp_path);
-  }
-  else {
-#ifdef USE_TEMP_FILE
-    return sys::read_file_text(tmp_file);
-#else
-    return pr.out;
-#endif
+  if (!pr.started()) {
+    return cpp_result(cpp_result::status::CPP_FAILED, cpp_path,
+      text::format("failed to start child process: ", pr.st.str()));
+  } else if (!pr.succeeded()) {
+    if (pr.exited() || pr.signaled()) {
+      return cpp_result(cpp_result::status::CPP_FAILED, cpp_path,
+        text::format("child process exited/signaled: ", pr.code, "\n",
+          pr.err));
+    } else {
+      return cpp_result(cpp_result::status::CPP_FAILED, cpp_path,
+        text::format("error reading child process output: ", pr.st.str(), "\n",
+          pr.err));
+    }
+  } else {
+    // the file read could fail here; we're gonna cross our fingers for now
+    auto out = sys::read_file_text(tmp_file);
+    auto st = remove(tmp_file.c_str());
+    if (st != 0) {
+      WARNING("text::load_c_preprocessed_using: failed to remove temp file %s",
+        tmp_file.c_str());
+    }
+    return cpp_result(cpp_result::status::SUCCESS, cpp_path, out);
   }
 }
 

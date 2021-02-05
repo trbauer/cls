@@ -198,10 +198,26 @@ namespace text
   // (including clang, cpp, or even cl.exe on Windows)
   // If we can't find it or executing it fails, we just return the string
   // we loaded (emitting a warning) and hope for the best.
-  std::string   load_c_preprocessed(
+  struct cpp_result {
+    enum class status {
+      SUCCESS = 0,
+      FILE_NOT_FOUND,
+      CPP_NOT_FOUND,
+      CPP_FAILED, // failed to start or had an error
+    } result;
+    std::string cpp_path;
+    std::string output; // can contain error output if cpp fails due to #error
+
+    cpp_result() { }
+    cpp_result(status s, std::string cpp = "", std::string oup = "")
+      : result(s), cpp_path(cpp), output(oup) { }
+    std::string status_to_string() const;
+    bool succeeded() const {return result == status::SUCCESS;}
+  };
+  cpp_result load_c_preprocessed(
     const std::string &inp,
     const std::string &args);
-  std::string   load_c_preprocessed_using(
+  cpp_result load_c_preprocessed_using(
     const std::string &cpp_path,
     const std::string &inp,
     const std::string &args);

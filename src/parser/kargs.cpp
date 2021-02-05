@@ -307,11 +307,11 @@ static cls::k::program_info *parseProgramInfoText(
   const cls::program_source &src,
   size_t bytes_per_addr)
 {
-  std::stringstream ss;
+  std::stringstream ss_opts;
   size_t off = src.build_opts.find("-D",0);
   while (off < src.build_opts.size()) {
-    if ((size_t)ss.tellp() != 0) // separate arguments
-      ss << " ";
+    if ((size_t)ss_opts.tellp() != 0) // separate arguments
+      ss_opts << " ";
 
     // consume the -D option
     //
@@ -320,36 +320,46 @@ static cls::k::program_info *parseProgramInfoText(
     // -D foo
     // -D foo=bar
     size_t d_start = off;
-    ss << "-D";
+    ss_opts << "-D";
     off += 2;
     while (off < src.build_opts.size() && ::isspace(src.build_opts[off])) {
       // deals with separate tokens: e.g. "-D" "foo=bar"
-      ss << src.build_opts[off++];
+      ss_opts << src.build_opts[off++];
     }
     while (off < src.build_opts.size() && !::isspace(src.build_opts[off])) {
-      ss << src.build_opts[off++];
+      ss_opts << src.build_opts[off++];
     }
 
     // next iteration
     off = src.build_opts.find("-D", off);
   }
 
-  std::string cpp_inp;
+  text::cpp_result cpp;
   if (os.cpp_override_path.empty()) {
-    cpp_inp = text::load_c_preprocessed(src.path,ss.str());
+    cpp = text::load_c_preprocessed(src.path, ss_opts.str());
   } else {
     if (!sys::file_exists(os.cpp_override_path))
       ds.fatalAt(at,
         "unable to find C Preprocessor from command line option "
         "for kernel analysis");
-    cpp_inp =
-      text::load_c_preprocessed_using(os.cpp_override_path,src.path,ss.str());
+    cpp = text::load_c_preprocessed_using(
+      os.cpp_override_path, src.path, ss_opts.str());
+  }
+  if (!cpp.succeeded()) {
+    ds.fatalAt(at,
+      "C preprocessor ", cpp.status_to_string(), ":\n",
+      "CPP: ", cpp.cpp_path, "\n", cpp.output);
+  } else if (os.verbosity >= 2) {
+    ds.debugAt(at, "used preprocessor: ", cpp.cpp_path);
   }
   // suffix the build options so that line numbers all map correctly
   // (when we decide to support #line directives)
-  cpp_inp +=
-    "\n\n"
-    "// CPP OPTIONS: " + ss.str();
+  std::string cpp_inp =
+    text::format(
+      cpp.output,
+      "\n\n"
+      "// CPP OPTIONS: ", ss_opts.str(), "\n"
+      "// CPP PATH: ", cpp.cpp_path, "\n");
   if (os.save_preprocessed) {
     // auto ppc_path =
     //  fs::path(".") / fs::path(src.path).filename().replace_extension(".ppcl");

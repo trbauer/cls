@@ -29,8 +29,14 @@ static void runFile(
   std::string file_contents);
 
 
+void test_pread();
+
 int main(int argc, const char **argv)
 {
+  test_pread();
+  std::cout << "stopping after test_pread()\n";
+  exit(0);
+
   cls::opts os;
   opts::CmdlineSpec<cls::opts> cmdspec(
     "CL Script " CLS_VERSION_STRING " (" __DATE__ ")",
@@ -52,10 +58,10 @@ int main(int argc, const char **argv)
       opts::NONE,
     os.input_expr);
   cmdspec.defineOpt(
-    "i","iterations","INT","number of samples to execute","",opts::NONE,
+    "i","iterations","INT","number of samples to execute", "", opts::NONE,
     os.iterations);
   cmdspec.defineFlag(
-    "E","save-preprocessed","saves the pre-processed source","",opts::NONE,
+    "E","save-preprocessed","saves the pre-processed source", "", opts::NONE,
     os.save_preprocessed);
   cmdspec.defineFlag(
     "B", "save-binaries",
