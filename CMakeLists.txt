@@ -44,6 +44,17 @@ if (CLS_GIT_SUCCEEDED EQUAL 0)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   )
+  message("  git diff-index --quiet HEAD ==> ${CLS_GIT_IS_DIRTY}")
+  if (${CLS_GIT_IS_DIRTY})
+      execute_process(
+          COMMAND git diff-index HEAD
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+          OUTPUT_VARIABLE CLS_WHICH_GIT_FILES_DIRTY
+          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      )
+      message("  these files are different ==>")
+      message("  ${CLS_WHICH_GIT_FILES_DIRTY}")
+  endif()
   # git rev-list --count --all HEAD gives all branches
   execute_process(
       COMMAND git rev-list --count HEAD
@@ -51,14 +62,15 @@ if (CLS_GIT_SUCCEEDED EQUAL 0)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   )
-  if (CLS_GIT_IS_DIRTY EQUAL 0)
-    set (CLS_GIT_IS_DIRTY_SUFFIX "")
+  if (${CLS_GIT_IS_DIRTY})
+    set(CLS_GIT_IS_DIRTY_SUFFIX "")
   else ()
-    set (CLS_GIT_IS_DIRTY_SUFFIX "+")
+    set(CLS_GIT_IS_DIRTY_SUFFIX "+")
   endif()
   set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.${CLS_GIT_REV_INDEX}-${CLS_GIT_SHORT_HASH}${CLS_GIT_IS_DIRTY_SUFFIX}")
 else()
-  set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.unknown-version")
+  message("== GIT not found on the system (version will be unknown)")
+  set(CLS_VERSION_STRING "${CLS_MAJOR_VERSION}.unknown")
 endif()
 
 message("== CLS_VERSION_STRING = ${CLS_VERSION_STRING}")
