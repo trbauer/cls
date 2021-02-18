@@ -712,14 +712,14 @@ struct spv_decoder: decoder {
     seek(curr_inst_offset + 4*curr_inst_words);
     //
     if (debugging() && emit_inst) {
-      std::cout << text::fmtHex(curr_inst_offset) << ": ";
-      std::cout << "0x" << text::fmtHex(opcode);
+      std::cout << text::fmt_hex(curr_inst_offset) << ": ";
+      std::cout << "0x" << text::fmt_hex(opcode);
       std::stringstream ss;
       ss << " (" << currInstOpName() << ") ";
       std::cout << std::left << std::setw(24) << ss.str();
       for (uint16_t op_ix = 1; op_ix < curr_inst_words; op_ix++) {
         std::cout << "  0x" <<
-          text::fmtHex(peek<uint32_t>(curr_inst_offset + 4*op_ix));
+          text::fmt_hex(peek<uint32_t>(curr_inst_offset + 4*op_ix));
       }
       std::cout << "\n";
     }

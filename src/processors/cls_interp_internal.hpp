@@ -5,6 +5,7 @@
 // #include "../list_map.hpp"
 #include "../parser/kargs.hpp"
 #include "../stats.hpp"
+#include "../text.hpp"
 
 #include <fstream>
 #include <functional>
@@ -256,12 +257,13 @@ struct cl_interface {
 
 
 #define CL_SYM_STR(X) #X
-#define CL_COMMAND(LOC, CL_FUNCTION,...) \
+#define CL_COMMAND(LOC, CL_FUNCTION, ...) \
   do { \
     cl_int _err = CL_FUNCTION(__VA_ARGS__); \
     if (isDebug())\
       debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
-        CL_SYM_STR(CL_FUNCTION), "(...)"); \
+        CL_SYM_STR(CL_FUNCTION), "(", \
+        text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
       fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
         " (", cls::status_to_symbol(_err), ")"); \
@@ -273,7 +275,8 @@ struct cl_interface {
     ASSIGN_TO = CL_FUNCTION(__VA_ARGS__, &_err); \
     if (isDebug())\
       debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
-        CL_SYM_STR(CL_FUNCTION), "(...)"); \
+        CL_SYM_STR(CL_FUNCTION), "(", \
+          text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
       fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
         " (", cls::status_to_symbol(_err), ")"); \
@@ -378,7 +381,7 @@ struct save_command {
 };
 
 struct script_instruction {
-  enum {DISPATCH,DIFFS,DIFFU,PRINT,SAVE} skind;
+  enum {DISPATCH, DIFFS, DIFFU, PRINT, SAVE} skind;
   union {
     dispatch_command *dsc;
     diffs_command    *dfsc;
@@ -484,7 +487,7 @@ struct evaluator : cl_interface {
       : sizeof_pointer(sizeof_ptr)
       , global_size(gs), local_size(ls)
       , debug_stream(dss) { }
-    context() : context(0, ndr(),ndr()) { }
+    context() : context(0, ndr(), ndr()) { }
     context(const dispatch_command &dc, std::stringstream *dss = nullptr)
       : context(dc.pointer_size(), dc.global_size, dc.local_size, dss)
     {
@@ -514,17 +517,17 @@ struct evaluator : cl_interface {
   val evalToI(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     if (v.is_floating())
-      fatalAt(e->defined_at,"cannot implicitly convert float to int");
+      fatalAt(e->defined_at, "cannot implicitly convert float to int");
     if (v.is_signed()) {
       if ((T)v.s64 < std::numeric_limits<T>::min() ||
         (T)v.s64 > std::numeric_limits<T>::max())
       {
-        fatalAt(e->defined_at,"value out of range");
+        fatalAt(e->defined_at, "value out of range");
       }
       v = (T)v.s64;
     } else { // v.is_unsigned()
       if ((T)v.u64 > std::numeric_limits<T>::max()) {
-        fatalAt(e->defined_at,"value out of range");
+        fatalAt(e->defined_at, "value out of range");
       }
       v = (T)v.u64;
     }

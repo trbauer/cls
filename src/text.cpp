@@ -201,7 +201,7 @@ void text::format_buffer(
 {
   bool using_cols = elems_per_row == 0;
   if (max_cols != 0 && elems_per_row != 0) {
-    FATAL("FormatBinary can only accept maxcols xor elems_per_row");
+    FATAL("text::format_buffer can only accept maxcols xor elems_per_row");
   }
   else if (max_cols == 0 && elems_per_row == 0) {
     max_cols = sys::get_terminal_width();
@@ -227,12 +227,8 @@ void text::format_buffer(
   size_t col_ix = 0, elem_col_ix = 0;
 
   auto emit_off = [&]() {
-    os << std::hex << std::setfill('0');
-    os << std::setw(4) << (unsigned)(ptr - base) << ':';
+    os << text::fmt_hex((unsigned)(ptr - base), 4) << ':';
     col_ix += 5;
-    if (floating_point) {
-      os << std::setfill(' ');
-    }
   };
   auto newline = [&]() {
     os << '\n';

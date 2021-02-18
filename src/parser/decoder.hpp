@@ -46,7 +46,7 @@ namespace cls {
     void fatalAt(size_t off, Ts...ts) const {
       std::stringstream ss;
       if (off != (size_t)-1)
-        ss << "at binary offset 0x" << text::fmtHex(off) << ": ";
+        ss << "at binary offset 0x" << text::fmt_hex(off) << ": ";
       text::format_to(ss, ts...);
       diags.fatalAt(at, ss.str());
     }
@@ -54,7 +54,7 @@ namespace cls {
     template <typename...Ts>
     void warningAt(size_t off, Ts...ts) const {
       std::stringstream ss;
-      ss << "at binary offset 0x" << text::fmtHex(off) << ": ";
+      ss << "at binary offset 0x" << text::fmt_hex(off) << ": ";
       text::format_to(ss, ts...);
       diags.warningAt(at, ss.str());
     }
@@ -64,7 +64,7 @@ namespace cls {
     }
     void seek(size_t new_off) {
       if (new_off > bits_length)
-        fatal("premature end of file (trying to seek to ",new_off,")");
+        fatal("premature end of file (trying to seek to ", new_off, ")");
       off = new_off;
     }
 

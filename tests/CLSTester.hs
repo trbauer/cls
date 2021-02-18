@@ -334,7 +334,7 @@ runDimensionTests os = do
               "let G=0:w\n" ++
               "let L=0:w\n" ++
               "#" ++ show (oDeviceIndex os) ++ "`tests/dims.cl`dims" ++ dims ++ "(G,L)\n"
-        runScript os ("testing dimension syntax (negative): " ++ dims) (mShouldExit 1) script
+        runScript os ("dimension syntax (negative): " ++ dims) (mShouldExit 1) script
   runNegative "<1x>"
   runNegative "<1024x16xDSF>"
   runNegative "<-4>"
@@ -786,7 +786,6 @@ runInitRandomTests os = do
           (mShouldExit 1 .&&. mStderrContains "low bound > high bound") script_n
 
   runNegativeTestLowGtHigh "int"   "random(0,-1)"
-  runNegativeTestLowGtHigh "int"   "random(-1)"
   runNegativeTestLowGtHigh "float" "random(0,-1)"
   runNegativeTestLowGtHigh "float" "random(-1)"
 

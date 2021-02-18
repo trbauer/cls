@@ -25,16 +25,13 @@ namespace text
   }
 
   template <typename T>
-  static std::string fmtHex(T val, int w) {
+  static std::string fmt_hex(T val, int w = 2*sizeof(T)) {
     std::stringstream ss;
     ss << std::uppercase << std::hex << std::setfill('0') << std::setw(w) <<
       val;
     return ss.str();
   }
-  template <typename T>
-  static std::string fmtHex(T val) {
-    return fmtHex(val, 2*sizeof(val));
-  }
+
 
   /////////////////////////////////////////////////////////////////////////////
   // COLORED TEXT
@@ -161,6 +158,25 @@ namespace text
   template <typename...Ts>
   std::string   format(Ts...ts) {
     std::stringstream ss; format_to(ss, ts...); return ss.str();
+  }
+
+  template <typename S, typename...Ts>
+  void          intercalate_to_successive(const S &, std::ostream &) { }
+  template <typename S, typename T, typename...Ts>
+  void          intercalate_to_successive(const S &sep, std::ostream &os, T t, Ts...ts) {
+    os << sep;
+    os << t; intercalate_to_successive(sep, os, ts...);
+  }
+  template <typename S, typename...Ts>
+  void          intercalate_to(const S &, std::ostream &) { }
+  template <typename S, typename T, typename...Ts>
+  void          intercalate_to(const S &sep, std::ostream &os, T t, Ts...ts) {
+    os << t; intercalate_to_successive(sep, os, ts...);
+  }
+
+  template <typename S, typename...Ts>
+  std::string   intercalate(const S &sep, Ts...ts) {
+    std::stringstream ss; intercalate_to(sep, ss, ts...); return ss.str();
   }
 
   /////////////////////////////////////////////////////////////////////////////

@@ -238,8 +238,6 @@ std::string cls::CLS_SYN_PEX()
   }
   ss << "\n";
 
-
-
   ss <<
     "\n"
     "   - some unary C++ STL functions are supported:\n"
@@ -342,11 +340,16 @@ std::string cls::CLS_SYN_SEX()
     SLIT("random") SLIT("(") SVAR("RandBounds") "?" SLIT(")")
     " | " SLIT("random<") SVAR("EXPR") SLIT(">") SLIT("(") SVAR("RandBounds") "?" SLIT(")")
     "\n"
-    "  randomly initializes a buffer with an optional seed and bounds\n"
+    "  randomly initializes a buffer with an optional seed and optional bounds\n"
     "  " SVAR("RandBounds") " = " SVAR("EXPR") "(" SLIT(",") " " SVAR("EXPR")")?\n"
-    "  zero arguments lets one specify the low and high bounds\n"
-    "  one argument sets the high bound and uses zero as the low bound\n"
-    "  two argument sets the bounds as low and high bounds\n"
+    "  zero arguments defaults both low and high bounds\n"
+    "    for integer types low is std::numeric_limits<T>::min() and\n"
+    "       std::numeric_limits<T>::max()\n"
+    "    for floating-point types low defaults to 0.0 and the high to 1.0\n"
+    "  one argument set the high bound\n"
+    "  two arguments sets both bounds\n"
+    "  the pseudo random number generator starts with the given seed, implying\n"
+    "    that between iterations, the same data is generated\n"
     "\n"
     SVAR("FileExpr")  " = " SVAR("FileBinExpr") " | " SVAR("FileTxtExpr")
           " | " SVAR("FileTxtColExpr") "\n"
@@ -394,12 +397,14 @@ std::string cls::CLS_SYN_SEX()
     "\n"
     "  e.g. " SLIT("image<rgb,un8>('foo.bmp')") " and "
     SLIT("image<CL_RGB,CL_UNORM_INT8>('foo.bmp')") "\n"
-    "       both load foo.png and convert it to an CL_RGB image with CL_UNORM_INT8\n"
+    "       both load image foo.bmp and convert it to an CL_RGB image with CL_UNORM_INT8\n"
     "       .bmp will load as a bitmap\n"
     "       .ppm will load a PPM file\n"
-  #ifdef USE_LODE_PNG
+#ifdef USE_LODE_PNG
     "       .png loads as PNG format\n"
-  #endif
+#else
+    "       (compiled without .png support)\n"
+#endif
     "\n"
   ;
 }

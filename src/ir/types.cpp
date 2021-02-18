@@ -229,8 +229,7 @@ void cls::formatBuffer(
   size_t elems_on_row = 0;
 
   auto startNewLine = [&] {
-    os << std::setw(5) << std::setfill('0') << std::hex << (curr - base);
-    os << ":";
+    os << text::fmt_hex(curr - base, 4) << ":";
     curr_col = 6;
     elems_on_row = 0;
   };
@@ -240,7 +239,7 @@ void cls::formatBuffer(
     ss << "  ";
     formatBufferElement(ss, elem_type, curr);
     if (elems_per_row > 0 && elems_on_row == elems_per_row ||
-      is_os_tty && curr_col + ss.tellp() >= max_cols)
+      (elems_per_row <= 0) && is_os_tty && curr_col + ss.tellp() >= max_cols)
     {
       os << "\n";
       startNewLine();

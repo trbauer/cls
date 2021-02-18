@@ -104,9 +104,11 @@ int main(int argc, const char **argv)
     cls::CLS_SYNTAX_ALL());
   cmdspec.defineExtraHelpSection("syn-sc", "syntax script layout",
     cls::CLS_SYN_SC());
-  cmdspec.defineExtraHelpSection("syn-pex", "syntax for primitive expressions",
+  cmdspec.defineExtraHelpSection("syn-st", "script statement syntax",
+    cls::CLS_SYN_ST());
+  cmdspec.defineExtraHelpSection("syn-pex", "primitive expressions syntax",
     cls::CLS_SYN_PEX());
-  cmdspec.defineExtraHelpSection("syn-sex", "syntax for surface initializers expressions",
+  cmdspec.defineExtraHelpSection("syn-sex", "surface initializers expressions",
     cls::CLS_SYN_SEX());
 
   auto &g = cmdspec.defineGroup("t", "profiling options");

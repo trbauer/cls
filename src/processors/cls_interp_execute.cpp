@@ -106,7 +106,7 @@ static void fill_buffer_rng_loop_int(
   const init_spec_rng *isr,
   std::mt19937 &g)
 {
-  val v_lo = (T)0;
+  val v_lo = std::numeric_limits<T>::min();
   val v_hi = std::numeric_limits<T>::max();
   if (isr->e_lo) {
     v_lo = e->evalTo<T>(ec, isr->e_lo);
