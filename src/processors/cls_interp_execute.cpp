@@ -475,6 +475,17 @@ void compiled_script_impl::execute(dispatch_command &dc)
     dc.prof_times.add((en - st)/1000.0/1000.0/1000.0);
   }
 
+  cl_int enq_evt_st = 0;
+  CL_COMMAND(dc_at,
+    clGetEventInfo, enq_evt,
+      CL_EVENT_COMMAND_EXECUTION_STATUS,
+      sizeof(enq_evt_st), &enq_evt_st, nullptr);
+  if (enq_evt_st != CL_COMPLETE) {
+    // this is where NVidia might return -9999
+    fatalAt(dc_at, "synchronizing event status returned " ,
+      enq_evt_st, " (after wait)");
+  }
+
   CL_COMMAND(dc_at,
     clReleaseEvent, enq_evt);
 
