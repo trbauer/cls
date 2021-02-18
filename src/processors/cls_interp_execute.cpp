@@ -870,7 +870,7 @@ void compiled_script_impl::init_surfaces()
         elem_type = ai.arg_type->as<type_ptr>().element_type;
       }
     } else if (!so->dummy_object) { // no valid uses found
-      fatalAt(so->init->defined_at,"no uses of this surface found");
+      fatalAt(so->init->defined_at, "no uses of this surface found");
     }
 
     bool canUndef =
@@ -926,11 +926,11 @@ void compiled_script_impl::init_surface(
   case init_spec::IS_FIL: {
     const init_spec_file *isf = (const init_spec_file *)so.init->root;
     if (isf->flavor != init_spec_file::BIN) {
-      fatalAt(isf->defined_at,"only binary files supported at the moment");
+      fatalAt(isf->defined_at, "only binary files supported at the moment");
     }
     std::fstream fs(isf->path,std::ios_base::in|std::ios_base::binary);
     if (!fs.good()) {
-      fatalAt(isf->defined_at,"unable to open file");
+      fatalAt(isf->defined_at, "unable to open file");
     }
     fs.seekg(0, fs.end);
     size_t file_size = (size_t)fs.tellg();
