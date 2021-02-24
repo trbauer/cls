@@ -14,11 +14,14 @@
 #include <vector>
 
 
-#define INVALID_SPEC(M) \
-  FATAL("INTERNAL ERROR: INVALID SPEC given to opts.hpp\n" #M)
-
 namespace opts
 {
+  static void fatal_invalid_spec(std::string what) {
+    std::cerr <<
+      "INTERNAL ERROR: invalid CmdlineSpec (opts.hpp):\n" << what << "\n";
+    sys::fatal_exit();
+  }
+
   static bool streq(const char *str1, const char *str2)
   {
     return str1 == str2 || (str1 && str2 && strcmp(str1, str2) == 0);
@@ -86,8 +89,34 @@ namespace opts
     FLAG        = 0x04, // option takes no argument (setValue passed nullptr)
     FLAG_VALUE  = 0x08, // optional flag value: for stuff like the -h option
                         // which can be -h or -h=foo
-    // HIDDEN = 0x10    // for a hidden option (hidden from help message)
+    FUSED_VALUE = 0x10, // the option value is fused to the name
+                        // i.e this option permits matching an option
+                        // key/values without the = character between name
+                        // and value (e.g. -DFOO=BAR means -D=FOO=BAR).
+                        // The latter will be permitted too.
+
+    // HIDDEN = 0x20    // for a hidden option (hidden from help message)
   };
+
+  static std::string fmt_opt_key(
+    bool isLongKey, const char *key, OptAttrs attrs)
+  {
+    bool isFlag = attrs & OptAttrs::FLAG,
+      isFused = attrs & OptAttrs::FUSED_VALUE;
+    if (key == nullptr)
+      return "";
+    std::stringstream ss;
+    ss << '-';
+    if (isLongKey)
+      ss << '-';
+    ss << key;
+    if (!isFused)
+      ss << "=";
+    if (!isFlag) {
+      ss << "..";
+    }
+    return ss.str();
+  }
 
   // An option specification specifies all the info about an option
   // It has lambda functions for parsing and setting the value as well as
@@ -156,16 +185,26 @@ namespace opts
     {
     }
 
-    DefaultSetter<O> noDefault() const
-    {
+    std::string fmtShortNameForHelp() const {
+      return fmt_opt_key(false,
+        o.shortName,
+        attrs & OptAttrs::FLAG,
+        OptAttrs::FUSED_VALUE);
+    }
+    std::string fmtLongNameForHelp() const {
+      return fmt_opt_key(true, o.longName,
+        attrs & OptAttrs::FLAG,
+        attrs & OptAttrs::FUSED_VALUE);
+    }
+
+    DefaultSetter<O> noDefault() const {
       std::string optStr = optName(), helpStr = makeHelpMessage();
       return [=](const ErrorHandler &errHandler, O &) {
         errHandler(concat(optStr, " undefined"), helpStr);
       };
     }
 
-    bool hasAttribute(enum OptAttrs attr) const
-    {
+    bool hasAttribute(enum OptAttrs attr) const {
       return (attributes & attr) != 0;
     }
 
@@ -175,24 +214,24 @@ namespace opts
     bool isOpt() const { return !isArg(); }
 
     bool tryMatch(
-        int                 argc,
-        const char **       argv,
-        int &               argIx,
-        const ErrorHandler &errHandler,
-        O &                 opts)
+      int                 argc,
+      const char **       argv,
+      int &               argIx,
+      const ErrorHandler &errHandler,
+      O &                 opts)
     {
       bool        optCheck        = isOpt();
       std::string msgHelp         = makeHelpMessage();
       auto        raiseMatchError = [&](const char *msg) {
         errHandler(
-            concat(
-                argv[argIx],
-                ": invalid ",
-                optCheck ? "option" : "argument",
-                ": ",
-                msg,
-                "\n"),
-            msgHelp);
+          concat(
+            argv[argIx],
+            ": invalid ",
+            optCheck ? "option" : "argument",
+            ": ",
+            msg,
+            "\n"),
+          msgHelp);
       };
       const char *token = argv[argIx];
       const char *value = nullptr;
@@ -216,8 +255,9 @@ namespace opts
           key   = token + off;
           value = key + strlen(shortName);
         } else if (
-            longName && token[0] == '-' && token[1] == '-' &&
-            strpfx(longName, token + off + 1)) {
+          longName && token[0] == '-' && token[1] == '-' &&
+          strpfx(longName, token + off + 1))
+        {
           // long option --foo=... or --foo ...
           key   = token + off + 1;
           value = key + strlen(longName);
@@ -377,9 +417,8 @@ namespace opts
     const char *        name;   // e.g. "Experimental Options"
     std::vector<Opt<O>> members;
 
-    Group(const char *prefix_, const char *name_) : prefix(prefix_), name(name_)
-    {
-    }
+    Group(const char *prefix_, const char *name_)
+      : prefix(prefix_), name(name_) { }
     Group(Group &&copy)
     {
       prefix  = copy.prefix;
@@ -422,9 +461,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setVal)
     {
-      // TODO: validateOptNames(sNm, lNm); have to link to parent
-      ensureUnique(sNm);
-      ensureUnique(lNm);
+      ensureUnique(sNm, lNm, (OptAttrs)attrs);
       Opt<O> temp(prefix, sNm, lNm, "", desc, extDesc, attrs | FLAG, setVal);
       members.emplace_back(temp);
     }
@@ -446,7 +483,8 @@ namespace opts
           desc,
           extDesc,
           attrs,
-          [&](const char *value, const opts::ErrorHandler &eh, O &) {
+          [&] (const char *value, const opts::ErrorHandler &eh, O &)
+          {
             if (!readDecInt(value, val)) {
               std::stringstream ss;
               if (sNm)
@@ -467,7 +505,6 @@ namespace opts
         int          attrs, // OptAttrs
         std::string &stringValue)
     {
-      // TODO: validateOptNames(sNm, lNm); have to link to parent
       defineOpt(
           sNm,
           lNm,
@@ -489,9 +526,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setVal)
     {
-      // TODO: validateOptNames(sNm, lNm); have to link to parent
-      ensureUnique(sNm);
-      ensureUnique(lNm);
+      ensureUnique(sNm, lNm, (OptAttrs)attrs);
       Opt<O> temp(prefix, sNm, lNm, type, desc, extDesc, attrs, setVal);
       members.emplace_back(temp);
     }
@@ -508,8 +543,7 @@ namespace opts
         Setter<O>        setVal,
         DefaultSetter<O> setDftVal)
     {
-      ensureUnique(sNm);
-      ensureUnique(lNm);
+      ensureUnique(sNm, lNm, (OptAttrs)attrs);
       Opt<O> temp(
           prefix, sNm, lNm, type, desc, extDesc, attrs, setVal, setDftVal);
       members.emplace_back(temp);
@@ -531,26 +565,62 @@ namespace opts
       return false;
     }
 
-    void ensureUnique(const char *nm)
+    void ensureUnique(const char *sNm, const char *lNm, OptAttrs attrs) {
+      ensureUniqueKey(false, sNm, attrs);
+      ensureUniqueKey(true,  lNm, attrs);
+    }
+
+    void ensureUniqueKey(bool isLongKey, const char *key, OptAttrs attrs)
     {
 #ifdef _DEBUG
-      if (nm == nullptr)
+      if (key == nullptr)
         return;
       // ensure they didn't prefix their own -'s
-      if (*nm == '-') {
-        INVALID_SPEC(
-          "name should not start with (the - or -- is implicit)");
+      if (*key == '-') {
+        fatal_invalid_spec(concat("opt: ",
+          key, ": name should not start with (the - or -- is implicit)"));
       }
+      bool fused = (attrs & OptAttrs::FUSED_VALUE) != 0;
+
+      auto nameCollides = [&](
+        const char *oKey, bool oFused)
+      {
+        if (oKey == nullptr)
+          return false;
+        // CASES:
+        //  fused  oFused
+        //  F      F      -A=..  -B=..   e.g. -D=      and -D=
+        //  F      T      -A=..  -B..    e.g. -DOG=..  and -D..
+        //  T      F      -A..   -B=..   e.g. -D..     and -DOG=..
+        //  T      T      -A..   -B..    e.g. -D..     and -DOG.. or
+        //                                    -DOG..   and -D..
+        if (!fused && !oFused) {
+          return streq(key, oKey);
+        } else if (!fused) { // && oFused
+          return strpfx(oKey, key);
+        } else if (!oFused) { // && fused
+          return strpfx(key, oKey);
+        } else {
+          return strpfx(key, oKey) || strpfx(oKey, key);
+        }
+      };
+      auto checkName = [&](bool oIsLong, const char *oKey, OptAttrs oAttrs) {
+        bool oFused =  oAttrs & OptAttrs::FUSED_VALUE;
+        if (nameCollides(oKey, oFused)) {
+          std::stringstream ss;
+          ss << "ambiguous specification; "
+            "two or more options match the same inputs\n";
+          ss << "  "  << fmt_opt_key(oIsLong, oKey, oAttrs) << "\n";
+          ss << "and\n";
+          ss << "  "  << fmt_opt_key(isLongKey, key, attrs) << "\n";
+          fatal_invalid_spec(ss.str());
+        }
+      };
+
       // ensure doesn't collide with main name
-      for (auto &o : members) {
-        if (o.shortName && streq(nm, o.shortName)) {
-          INVALID_SPEC(
-            "name collides with another (short) option name");
-        }
-        if (o.longName && streq(nm, o.longName)) {
-          INVALID_SPEC(
-            "name collides with another (long) option name");
-        }
+      for (const auto &o : members) {
+        checkName(false, o.shortName, o.attributes);
+        checkName(true, o.longName, o.attributes);
       }
 #endif
     }
@@ -645,7 +715,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setter)
     {
-      ensureUnique(sNm, lNm);
+      ensureUnique(sNm, lNm, attrs);
       opts.defineFlag(sNm, lNm, desc, extDesc, attrs, setter);
     }
     void defineFlag(
@@ -656,7 +726,7 @@ namespace opts
         int         attrs, // OptAttrs
         bool&       var)
     {
-      ensureUnique(sNm, lNm);
+      ensureUnique(sNm, lNm, attrs);
       opts.defineFlag(sNm, lNm, desc, extDesc, attrs, var);
     }
     void defineOpt(
@@ -668,7 +738,7 @@ namespace opts
         int         attrs, // OptAttrs
         Setter<O>   setter)
     {
-      ensureUnique(sNm, lNm);
+      ensureUnique(sNm, lNm, attrs);
       opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, setter);
     }
     // have to expand these manually
@@ -682,7 +752,7 @@ namespace opts
         int         attrs, // OptAttrs
         T&          ref)
     {
-      ensureUnique(sNm, lNm);
+      ensureUnique(sNm, lNm, attrs);
       opts.defineOpt(sNm, lNm, type, desc, extDesc, attrs, ref);
     }
     void defineOpt(
@@ -695,7 +765,7 @@ namespace opts
         Setter<O>        setter,
         DefaultSetter<O> defaultSetter)
     {
-      ensureUnique(sNm, lNm);
+      ensureUnique(sNm, lNm, attrs);
       opts.defineOpt(
           sNm, lNm, type, desc, extDesc, attrs, setter, defaultSetter);
     }
@@ -752,7 +822,7 @@ namespace opts
     }
 
     Group<O> &defineGroup(const char *prefix, const char *name) {
-      ensureUnique(prefix);
+      ensureUniqueKey(false, prefix, OptAttrs::NONE);
       groups.emplace_back(new Group<O>(prefix, name));
       return *groups.back();
     }
@@ -763,24 +833,24 @@ namespace opts
       std::string shortDesc,
       std::string prose)
     {
-      ensureUnique(key.c_str());
+      ensureUniqueKey(false, key.c_str(), OptAttrs::NONE);
       extraHelp.emplace_back(key, shortDesc, prose);
     }
 
 private:
     // ensure option or key names are unique at the root level
-    void ensureUnique(const char *nm1, const char *nm2) {
-      ensureUnique(nm1);
-      ensureUnique(nm2);
+    void ensureUnique(const char *sNm, const char *lNm, int attrs) {
+      ensureUniqueKey(false, sNm, attrs);
+      ensureUniqueKey(true, lNm, attrs);
     }
-    void ensureUnique(const char *newKey) {
+    void ensureUniqueKey(bool isLongName, const char *newKey, int attrs) {
 #ifdef _DEBUG
-      if (!newKey)
+      if (newKey == nullptr)
         return;
-      opts.ensureUnique(newKey);
+      opts.ensureUniqueKey(isLongName, newKey, (OptAttrs)attrs);
       for (const auto &eh : extraHelp) {
         if (eh.key == newKey)
-          INVALID_SPEC("name conflicts with extra help section");
+          fatal_invalid_spec("name conflicts with extra help section");
       }
 #endif
     }
@@ -1059,7 +1129,5 @@ private:
     return path;
   }
 } // namespace opts
-
-#undef INVALID_SPEC
 
 #endif // _OPTS_HPP_
