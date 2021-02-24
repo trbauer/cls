@@ -515,8 +515,9 @@ void compiled_script_impl::execute(
   {
     fatalAt(
       dfc.spec->defined_at,
-      "buffer size is not a multiple of diff element type ",
-      elem_type->syntax());
+      "buffer size (", dfc.so_sut->size_in_bytes,
+      " B) is not a multiple of diff element type ",
+      elem_type->syntax(), " size (", elem_type->size(), " B)");
   }
 
   size_t total_elems = dfc.so_sut->size_in_bytes/elem_type->size();
@@ -563,8 +564,9 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
     dfc.so->size_in_bytes % elem_type->size() != 0) {
     fatalAt(
       dfc.spec->defined_at,
-      "buffer size is not a multiple of diff element type ",
-      elem_type->syntax());
+      "buffer size (", dfc.so->size_in_bytes,
+      " B) is not a multiple of diff element type ",
+      elem_type->syntax(), " size (", elem_type->size() , " B)");
   }
   size_t total_elems = dfc.so->size_in_bytes/elem_type->size();
   const uint8_t *host_ptr8 = (const uint8_t*)host_ptr;
