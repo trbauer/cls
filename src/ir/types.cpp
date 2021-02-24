@@ -228,9 +228,17 @@ void cls::formatBuffer(
   size_t curr_col = 0;
   size_t elems_on_row = 0;
 
+  // Each new line starts with the buffer's byte address there
+  //   00F0: ....
+  // Compute the number of digits for that column based on the buffer's
+  // overall size so that it's fixed width throughout the listing.
+  const int hex_digits_for_addrs =
+    std::max<int>(4,
+      (int)std::ceil(std::log(buffer_length_in_bytes + 1)/std::log(16)));
   auto startNewLine = [&] {
-    os << text::fmt_hex(curr - base, 4) << ":";
-    curr_col = 6;
+    auto addr = text::fmt_hex(curr - base, hex_digits_for_addrs);
+    os << addr << ":";
+    curr_col = addr.size() + 1;
     elems_on_row = 0;
   };
 

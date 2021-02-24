@@ -57,6 +57,7 @@ cls64_gnu_exe = "builds/gnu-64/cls"
 cls64_exe :: FilePath
 cls64_exe = if os == "mingw32" then cls64_msvc_exe else cls64_gnu_exe
 
+help :: IO ()
 help = do
   putStr $
     "main - runs tests\n" ++
@@ -67,6 +68,9 @@ help = do
     "  runSyntaxErrorTestCLS\n" ++
     "  runInitAtomTests\n" ++
     "  runDimensionTests\n" ++
+    "  runInputVariableTests\n" ++
+    "     runInputVariableTestPos\n" ++
+    "     runInputVariableTestNeg1\n" ++
     "  runSequentialAddTest os ARG-TYPE [ARGS] EXPECT-VAL - \n" ++
     "  runPrintCommandTests\n" ++
     "  runPrintAttributeTests\n" ++
@@ -205,7 +209,7 @@ preCheckForOpts os = do
   z1 <- checkAgainstFile "CMakeLists.txt"
   z2 <- checkAgainstDir "src"
   when (not z1 || not z2) $
-    dieOrError os "precheck failed"
+    dieOrError os "precheck failed (use --no-precheck to skip)"
 
 dieOrError :: Opts -> String -> IO ()
 dieOrError os msg = do
@@ -249,6 +253,9 @@ runWithOpts os = run_tests >> print_summary >> exit
           --
           -- MUTABILITY
           runSequentialAddTest os "int" ["1","3","-2"] "2"
+          --
+          -- INPUT VARS ($1)
+          runInputVariableTests os
           --
           -- PRINT
           runPrintCommandTests os
@@ -608,10 +615,10 @@ runPrintCommandTests os = do
         "print<int,4>(B)\n" ++
         ""
   let has_lines_s = mHasAllLines $
-        "00000:  0x00000010  0x00000011  0x00000012  0x00000013  0x00000014  0x00000015  0x00000016  0x00000017\n" ++
-        "00000:            16            17            18            19            20            21            22            23\n" ++
-        "00000:            16            17            18            19\n" ++
-        "00010:            20            21            22            23\n" ++
+        "0000:  0x00000010  0x00000011  0x00000012  0x00000013  0x00000014  0x00000015  0x00000016  0x00000017\n" ++
+        "0000:            16            17            18            19            20            21            22            23\n" ++
+        "0000:            16            17            18            19\n" ++
+        "0010:            20            21            22            23\n" ++
         ""
   runScript os "print command test (int)" (mShouldExit 0 .&&. has_lines_s) script_s
   -----------------------------------------------------------------------------
@@ -623,11 +630,12 @@ runPrintCommandTests os = do
         "print<int2,4>(B)\n" ++
         ""
   let has_lines_v = mHasAllLines $
-        "00000:  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)\n" ++
-        "00000:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
-        "00020:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
+        "0000:  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)  (0x00000002,0x00000004)\n" ++
+        "0000:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
+        "0020:  (           2,           4)  (           2,           4)  (           2,           4)  (           2,           4)\n" ++
         ""
   runScript os "print command test (int2)" (mShouldExit 0 .&&. has_lines_v) script_v
+
 
 runPrintAttributeTests :: Opts -> IO ()
 runPrintAttributeTests os = do
@@ -635,11 +643,34 @@ runPrintAttributeTests os = do
       script =
         "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uint]`add<8>(seq(2,2):rwPp4,16)\n"
   let has_lines = mHasAllLines $
-        "00000:  0x00000002  0x00000004  0x00000006  0x00000008  0x0000000A  0x0000000C  0x0000000E  0x00000010\n" ++
-        "00000:  0x00000012  0x00000014  0x00000016  0x00000018\n" ++
-        "00010:  0x0000001A  0x0000001C  0x0000001E  0x00000020\n" ++
+        "0000:  0x00000002  0x00000004  0x00000006  0x00000008  0x0000000A  0x0000000C  0x0000000E  0x00000010\n" ++
+        "0000:  0x00000012  0x00000014  0x00000016  0x00000018\n" ++
+        "0010:  0x0000001A  0x0000001C  0x0000001E  0x00000020\n" ++
         ""
   runScript os "print attribute test" (mShouldExit 0 .&&. has_lines) script
+
+
+runInputVariableTests :: Opts -> IO ()
+runInputVariableTests os = do
+  runInputVariableTestPos os
+  runInputVariableTestNeg1 os
+
+runInputVariableTestPos :: Opts -> IO ()
+runInputVariableTestPos os = do
+  let script :: String
+      script =
+        "#" ++ show (oDeviceIndex os) ++ "`tests/${A}dd.cl[-DT=int]`$ADD<1>(0:w,1)"
+  runScriptExtra ["-DA=a","-DADD=add"] os "input variable expansion" (mShouldExit 0) script
+runInputVariableTestNeg1 :: Opts -> IO ()
+runInputVariableTestNeg1 os = do
+  let script :: String
+      script =
+        "#" ++ show (oDeviceIndex os) ++ "`tests/${A}dd.cl[-DT=int]`$ADD<1>(0:w,1)"
+  runScriptExtra ["-DA=a","-DA=a","-DADD=add"] os "input variable expansion neg. (redef.)"
+    (mShouldExit 1 .&&. mStderrContains "input variable redefinition") script
+
+  runScriptExtra ["-DADD=add"] os "input variable expansion neg. (undef.)"
+    (mShouldExit 1 .&&. mStderrContains "undefined input variable") script
 
 
 -------------------------------------------------------------------------------
@@ -649,9 +680,11 @@ runSequentialAddTest os arg_type args result = do
   let script :: String
       script =
         "let B=0:rw\n" ++
-        concatMap (\a -> "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
+        concatMap (\a -> "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl" ++
+          "[-DT=" ++ arg_type ++ "]`add<1>(B," ++ a ++ ")\n") args ++
         "diff<" ++ arg_type ++ ">(" ++ result ++ ",B)\n"
   runScript os "sequential add test" (mShouldExit 0) script
+
 
 -------------------------------------------------------------------------------
 --
@@ -712,8 +745,8 @@ runInitConstWithDim os = do
         "print<int,8>(A)\n" ++
         "\n"
   let buffer_matches = mHasAllLines $
-        "00000:             4             5             4             5             4             5             4             5\n" ++
-        "00020:             1             2             1             2             1             2             1             2\n" ++
+        "0000:             4             5             4             5             4             5             4             5\n" ++
+        "0020:             1             2             1             2             1             2             1             2\n" ++
         ""
   runScript os "init surface with explicit size" (mShouldExit 0 .&&. buffer_matches) script
 
@@ -1117,7 +1150,6 @@ runScriptWith exe extra_opts os tag match script = do
           "***ERR***:\n" ++
           err ++ "\n" ++
           "******************************************"
-
   case r of
     Nothing -> do
       putStrGreen "  PASSED\n"
@@ -1131,6 +1163,9 @@ runScriptWith exe extra_opts os tag match script = do
       hFlush stdout
       let failed_cls = "failed.cls"
       writeFile failed_cls script
+      writeFile "failed.out" out
+      writeFile "failed.err" err
+      writeFile "failed.exited" (show ec)
       when (oFailFast os) $
         die $ "test failed (run " ++ fmtArgList args ++ " " ++ failed_cls ++ ")"
       modifyIORef (oResults os) $ \(total,passed,skipped) -> (total + 1,passed,skipped)
@@ -1139,8 +1174,11 @@ runScriptWith exe extra_opts os tag match script = do
 
 -------------------------------------------------------------------------------
 -- MATCHER EDSL
+--                          out        err         maybe an error message
 type Matcher = ExitCode -> String -> String -> IO (Maybe String)
 
+-- TODO: should rename mFail, mSuccess to something else
+-- because they aren't matcher functions
 mFail :: String -> IO (Maybe String)
 mFail = return . Just
 
@@ -1172,6 +1210,15 @@ combineOR m1 m2 = \ec out err -> do
 mHasAllLines :: String -> Matcher
 mHasAllLines = foldl (.&&.) (\_ _ _ -> mSuccess) . map mHasLine . lines
 
+mHasLine :: String -> Matcher
+mHasLine ln _ out _
+  | words ln `elem` map words (lines out) = mSuccess
+  | otherwise =
+    mFail $ "failed to find line with words: " ++ ln ++ "\n" ++
+      show (words ln) ++ " in output\n" ++
+      "===" ++ "\n" ++
+      concatMap (\ln -> show (words ln) ++ "\n") (lines out)
+
 mFileHasAllLines :: FilePath -> String -> Matcher
 mFileHasAllLines fp inp = \_ _ _ -> do
   z <- doesFileExist fp
@@ -1184,12 +1231,6 @@ mFileHasAllLines fp inp = \_ _ _ -> do
             | words ln`elem`output_file_line_words = checkLine lns
             | otherwise = mFail ("unable to find reference line in output:\n" ++ ln)
       checkLine (lines inp)
-
-
-mHasLine :: String -> Matcher
-mHasLine ln _ out _
-  | words ln `elem` map words (lines out) = mSuccess
-  | otherwise = mFail $ "failed to find line with words: " ++ ln
 
 mStderrContains :: String -> Matcher
 mStderrContains ss _ _ err =

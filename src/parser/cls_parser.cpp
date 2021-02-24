@@ -3,11 +3,13 @@
 #include "parser.hpp"
 #include "../system.hpp"
 
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <string>
 
 using namespace cls;
 
@@ -1967,6 +1969,82 @@ struct cls_parser: parser
   }
 };
 
+std::string cls::expand_input_variables(
+  const opts &os,
+  const std::string &inp,
+  diagnostics &ds)
+{
+  std::stringstream ss;
+  uint32_t off = 0;
+  uint32_t ln = 1, col = 1;
+
+  auto eos = [&] () {
+    return off == inp.size();
+  };
+  auto lookingAt = [&] (char c) {
+    return !eos() && inp[off] == c;
+  };
+  auto skip = [&](uint32_t n, bool copy = false) {
+    for (uint32_t i = 0; i < n && off < inp.size(); i++) {
+      if (inp[off] == '\n') {
+        ln++; col = 1;
+      } else {
+        col++;
+      }
+      if (copy)
+        ss << inp[off];
+      off++;
+    }
+  };
+  auto consumeIf = [&] (char c) {
+    if (lookingAt(c)) {
+      skip(1);
+      return true;
+    }
+    return false;
+  };
+
+  while (!eos()) {
+    if (lookingAt('$')) {
+      loc inp_var_start(ln, col, off, 0);
+      skip(1);
+      size_t key_start = off;
+      bool inBraces = consumeIf('{');
+      if (inBraces)
+        key_start++;
+      if (!isalpha(inp[off]) && inp[off] != '_') {
+        ds.fatalAt(loc(ln, col, off, 1),
+          "invalid program input variable: "
+          "should start with an identifier starting character");
+      }
+      while (!eos() && (isalnum(inp[off]) || inp[off] == '_')) {
+        skip(1);
+      }
+      std::string inp_var = inp.substr(key_start, off - key_start);
+      if (inBraces) {
+        if (!lookingAt('}'))
+          ds.fatalAt(loc(ln, col, off, 1), "expected '}'");
+        skip(1);
+      }
+      inp_var_start.extent = off - inp_var_start.offset;
+      bool matchedKey = false;
+      for (const auto &iv : os.input_vars) {
+        if (iv.first == inp_var) {
+          ss << iv.second;
+          matchedKey = true;
+          break;
+        }
+      }
+      if (!matchedKey) {
+        ds.fatalAt(inp_var_start,
+          "undefined input variable (-D", inp_var, "=..)");
+      }
+    } else {
+      skip(1, true);
+    }
+  }
+  return ss.str();
+}
 
 void cls::parse_script(
   const opts &os,

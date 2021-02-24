@@ -42,8 +42,30 @@ int main(int argc, const char **argv)
     "A cls script.  Use -e to specify an expression "
     "on the command line.  Use -h=syntax for cls syntax.", opts::NONE,
     os.input_files);
+
   cmdspec.defineOpt(
-    "e","expression",
+      "D", nullptr,
+      "OPT", "set a preprocessor option (e.g. -DN=4)",
+      "Given -DN=4, the parser will expand ...$N... to 4",
+      opts::FUSED_VALUE|opts::ALLOW_MULTI,
+      [](const char *c_opt, const opts::ErrorHandler &eh, cls::opts &os) {
+        std::string opt(c_opt);
+        auto ix = opt.find('=');
+        if (ix == std::string::npos) {
+          eh("expected format -Dkey=val");
+        }
+        auto key = opt.substr(0, ix);
+        if (key.empty())
+          eh("expected format -Dkey=val (empty key)");
+        auto val = opt.substr(ix + 1);
+        for (const auto &iv : os.input_vars) {
+          if (iv.first == key)
+            eh("input variable redefinition");
+        }
+        os.input_vars.emplace_back(key, val);
+    });
+  cmdspec.defineOpt(
+    "e", "expression",
       "EXPR", "pass an expression as an argument",
       "Execute the given expression on the command line "
       "(instead of using the script file argument).  "
@@ -51,7 +73,7 @@ int main(int argc, const char **argv)
       opts::NONE,
     os.input_expr);
   cmdspec.defineOpt(
-    "i","iterations","INT","number of samples to execute", "", opts::NONE,
+    "i", "iterations", "INT", "number of samples to execute", "", opts::NONE,
     os.iterations);
   cmdspec.defineFlag(
     "E","save-preprocessed","saves the pre-processed source", "", opts::NONE,
@@ -67,13 +89,13 @@ int main(int argc, const char **argv)
     opts::NONE,
     os.save_binaries);
   cmdspec.defineFlag(
-    "P","parse-only",
+    "P", "parse-only",
     "parses the script only and pretty prints it",
     "",
     opts::NONE,
     os.parse_only);
   cmdspec.defineOpt(
-    "l","list-devices","DEV?","list the devices by index or name",
+    "l", "list-devices", "DEV?", "list the devices by index or name",
     "Lists devices by index or name.\n"
     "EXAMPLES:\n"
     " -l         lists all devices on the sytstem\n"
@@ -199,7 +221,10 @@ static void runFile(
   try {
     if (os.verbose_enabled())
       std::cout << "============ parsing script\n";
-
+    file_contents =
+      cls::expand_input_variables(os, file_contents, ds);
+    if (os.verbose_enabled())
+      std::cout << "EXPANDS TO==\n" << file_contents << "\n==\n";
     cls::parse_script(os, file_contents, file_name, s, ds);
 
     ds.flushWarnings(std::cerr);
@@ -213,7 +238,7 @@ static void runFile(
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
   }
-  auto duration_setup =
+  const auto duration_setup =
     std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now() - start_setup);
   const double duration_setup_s = duration_setup.count()/1000.0/1000.0;
@@ -230,7 +255,7 @@ static void runFile(
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
   }
-  auto duration_compile =
+  const auto duration_compile =
     std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now() - start_compile);
   const auto compile_time_s = duration_compile.count()/1000.0/1000.0;

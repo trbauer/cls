@@ -51,13 +51,13 @@ namespace opts
     void operator()(const std::string &msg) const
     {
       std::cerr << msg << "\n";
-      sys::fatal_exit();
+      exit(EXIT_FAILURE);
     }
     void operator()(const std::string &msg, const std::string &usage) const
     {
       std::cerr << msg << "\n";
       std::cerr << usage;
-      sys::fatal_exit();
+      exit(EXIT_FAILURE);
     }
   };
 
@@ -87,7 +87,7 @@ namespace opts
     ALLOW_MULTI = 0x01, // option can be specified multiple times
     REQUIRED    = 0x02, // not an error if the option is never set
     FLAG        = 0x04, // option takes no argument (setValue passed nullptr)
-    FLAG_VALUE  = 0x08, // optional flag value: for stuff like the -h option
+    FLAG_VALUE  = 0x08, // flag or value: for stuff like the -h option
                         // which can be -h or -h=foo
     FUSED_VALUE = 0x10, // the option value is fused to the name
                         // i.e this option permits matching an option
@@ -249,18 +249,15 @@ namespace opts
           off += 1;
         }
 
-        const char *key;
         if (shortName && token[0] == '-' && strpfx(shortName, token + off)) {
-          // short option -f=... or -f ...
-          key   = token + off;
-          value = key + strlen(shortName);
+          // short option -f=... or -f ... or -fXXX (for fused)
+          value = token + off + strlen(shortName);
         } else if (
           longName && token[0] == '-' && token[1] == '-' &&
           strpfx(longName, token + off + 1))
         {
           // long option --foo=... or --foo ...
-          key   = token + off + 1;
-          value = key + strlen(longName);
+          value = token + off + 1 + strlen(longName);
         } else {
           // no match
           return false;
@@ -288,12 +285,12 @@ namespace opts
           } else {
             value++; // step past =
           }
-        } else {
+        } else if (!hasAttribute(FUSED_VALUE)) {
           // junk at end of key (recall, we strncmp'd)
           // e.g. this option is "--foo" and the token is "--food"
           // this is just a mismatch (no harm done)
           return false;
-        }
+        } // else: hasAttribute(FUSED_VALUE)
 
         // ensure the option hasn't been specified before
         if (timesMatched > 0 && !hasAttribute(OptAttrs::ALLOW_MULTI)) {
@@ -577,10 +574,15 @@ namespace opts
         return;
       // ensure they didn't prefix their own -'s
       if (*key == '-') {
-        fatal_invalid_spec(concat("opt: ",
-          key, ": name should not start with (the - or -- is implicit)"));
+        fatal_invalid_spec(concat("opt: ", key, ": "
+          "name should not start with (the - or -- is implicit)"));
       }
+
       bool fused = (attrs & OptAttrs::FUSED_VALUE) != 0;
+      if ((attrs & OptAttrs::FLAG) && !(attrs & OptAttrs::FLAG_VALUE) && fused) {
+        fatal_invalid_spec(concat("opt: ", key, ": "
+          "FLAG without FLAG_VALUE forbits FUSED_VALUE (no value to fuse)"));
+      }
 
       auto nameCollides = [&](
         const char *oKey, bool oFused)

@@ -241,26 +241,26 @@ static void fill_buffer_seq(
     switch (tn.skind) {
     case type_num::SIGNED: {
       switch (tn.size_in_bytes) {
-      case 1: fill_buffer_seq_loop<int8_t>(csi.e,ec,ab,iss); break;
-      case 2: fill_buffer_seq_loop<int16_t>(csi.e,ec,ab,iss); break;
-      case 4: fill_buffer_seq_loop<int32_t>(csi.e,ec,ab,iss); break;
-      case 8: fill_buffer_seq_loop<int64_t>(csi.e,ec,ab,iss); break;
+      case 1: fill_buffer_seq_loop<int8_t> (csi.e, ec, ab, iss); break;
+      case 2: fill_buffer_seq_loop<int16_t>(csi.e, ec, ab, iss); break;
+      case 4: fill_buffer_seq_loop<int32_t>(csi.e, ec, ab, iss); break;
+      case 8: fill_buffer_seq_loop<int64_t>(csi.e, ec, ab, iss); break;
       }
       break;
     }
     case type_num::UNSIGNED:
       switch (tn.size_in_bytes) {
-      case 1: fill_buffer_seq_loop<uint8_t>(csi.e,ec,ab,iss); break;
-      case 2: fill_buffer_seq_loop<uint16_t>(csi.e,ec,ab,iss); break;
-      case 4: fill_buffer_seq_loop<uint32_t>(csi.e,ec,ab,iss); break;
-      case 8: fill_buffer_seq_loop<uint64_t>(csi.e,ec,ab,iss); break;
+      case 1: fill_buffer_seq_loop<uint8_t> (csi.e, ec, ab, iss); break;
+      case 2: fill_buffer_seq_loop<uint16_t>(csi.e, ec, ab, iss); break;
+      case 4: fill_buffer_seq_loop<uint32_t>(csi.e, ec, ab, iss); break;
+      case 8: fill_buffer_seq_loop<uint64_t>(csi.e, ec, ab, iss); break;
       }
       break;
     case type_num::FLOATING:
       switch (tn.size_in_bytes) {
-      case 2: fill_buffer_seq_loop<half,float>(csi.e,ec,ab,iss); break;
-      case 4: fill_buffer_seq_loop<float>(csi.e,ec,ab,iss); break;
-      case 8: fill_buffer_seq_loop<double>(csi.e,ec,ab,iss); break;
+      case 2: fill_buffer_seq_loop<half,float>(csi.e, ec, ab, iss); break;
+      case 4: fill_buffer_seq_loop<float> (csi.e, ec, ab, iss); break;
+      case 8: fill_buffer_seq_loop<double>(csi.e, ec, ab, iss); break;
       }
       break;
     }

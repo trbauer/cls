@@ -1121,6 +1121,7 @@ void evaluator::evalIntoT(
   case init_spec::IS_SYM: fatalAt(at, "unbound symbol");
   case init_spec::IS_REC: fatalAt(at, "record initializer passed to scalar");
   case init_spec::IS_VEC: fatalAt(at, "vector initializer passed to scalar");
+  case init_spec::IS_MEM: fatalAt(at, "surface initializer passed to scalar");
   case init_spec::IS_FIL:
   case init_spec::IS_RND:
   default: internalAt(at, __FILE__, ":", __LINE__, ": unreachable");

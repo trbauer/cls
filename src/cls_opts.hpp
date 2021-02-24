@@ -7,6 +7,7 @@
 #include <iostream>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace cls
@@ -14,6 +15,7 @@ namespace cls
 struct opts {
   std::string                 cpp_override_path;
   std::vector<std::string>    input_files; // regular arg
+  std::vector<std::pair<std::string,std::string>> input_vars; // -DK=V => $K
   std::string                 input_expr; // -e
   int                         iterations = 1;
   bool                        list_devices = false;

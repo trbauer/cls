@@ -19,6 +19,11 @@ namespace cls
   std::string CLS_SYN_PEX(); // primitive expression initializers
   std::string CLS_SYN_SEX(); // surface initializer expressions
 
+  std::string expand_input_variables(
+    const opts &os,
+    const std::string &input,
+    diagnostics &ds);
+
   void parse_script(
     const opts &os,
     const std::string &input,
