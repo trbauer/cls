@@ -7,8 +7,10 @@
 #include "../stats.hpp"
 #include "../text.hpp"
 
+#include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <random>
 
 
@@ -389,6 +391,20 @@ struct script_instruction {
     print_command    *prc;
     save_command     *svc;
   };
+  loc defined_at() const {
+    switch (skind) {
+    case DISPATCH: return dsc->spec->defined_at;
+    case DIFFS:    return dfsc->spec->defined_at;
+    case DIFFU:    return dfuc->spec->defined_at;
+    case PRINT:    return prc->spec->defined_at;
+    case SAVE:     return svc->spec->defined_at;
+    default:
+      std::cerr <<
+        "INTERNAL ERROR: script_instruction::defined_at() with " <<
+        "unsupported command";
+      exit(-1);
+    }
+  }
   script_instruction(dispatch_command *_dc) : dsc(_dc), skind(DISPATCH) { }
   script_instruction(diffs_command *_dc) : dfsc(_dc), skind(DIFFS) { }
   script_instruction(diffu_command *_dc) : dfuc(_dc), skind(DIFFU) { }

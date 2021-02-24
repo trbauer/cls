@@ -71,6 +71,7 @@ help = do
     "  runPrintCommandTests\n" ++
     "  runPrintAttributeTests\n" ++
     "  runSaveTest\n" ++
+    "  runSaveTestNegBadSurf\n" ++
     "  runDiffUniformTestMatch\n" ++
     "  runDiffUniformTestMismatch\n" ++
     "  runDiffSurfaceTestMatchVar\n" ++
@@ -255,6 +256,7 @@ runWithOpts os = run_tests >> print_summary >> exit
           --
           -- SAVE
           runSaveTest os
+          runSaveTestNegBadSurf os
           --
           -- DIFF(U)
           runDiffUniformTestMatch os
@@ -684,6 +686,17 @@ runSaveTest os = do
   z <- doesFileExist output_binary
   when z $
     removeFile output_binary
+
+runSaveTestNegBadSurf :: Opts -> IO ()
+runSaveTestNegBadSurf os = do
+  let script :: String
+      script =
+        "let UNDEF_SURFACE=seq():rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add<8>(0:w,16)\n" ++
+        "save('test.bin',UNDEF_SURFACE)\n" ++
+        ""
+  runScript os "save command neg. test (unbound surf)" (mShouldExit 1 .&&. mStderrContains "non-existent surface object") script
+
 
 -------------------------------------------------------------------------------
 -- MEM INIT

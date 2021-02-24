@@ -765,18 +765,23 @@ void script_compiler::compile()
   //    print<int>(X)  <<<<<<<<<<<<< surface object used before dispatch
   //    #0`foo.cl`kernel<...>(X);
   for (script_instruction &si : csi->instructions) {
+    auto lookupSurfaceObject = [&] (const refable<init_spec_mem> &val) {
+      surface_object *so = &csi->surfaces.get(val);
+      if (so == nullptr) {
+        fatalAt(si.defined_at(), "non-existent surface object "
+          "(was it used in an enqueue?)");
+      }
+      return so;
+    };
     switch (si.skind)
     {
     case script_instruction::DIFFS: {
       diffs_command *dfsc = si.dfsc;
       // sut surface
-      dfsc->so_sut = &csi->surfaces.get(dfsc->spec->sut.value);
-      if (dfsc->so_sut == nullptr) {
-        fatalAt(dfsc->spec->defined_at,
-          "surface not allocated (are they used in a dispatch?)");
-      }
+      dfsc->so_sut = lookupSurfaceObject(dfsc->spec->sut.value);
       debugAt(
-        dfsc->spec->defined_at, "bound (SUT) surface to ", dfsc->so_sut->str());
+        dfsc->spec->defined_at, "bound (SUT) surface to ",
+        dfsc->so_sut->str());
 
       // bind the element type if it's not explicitly set
       if (!dfsc->element_type) {
@@ -797,7 +802,7 @@ void script_compiler::compile()
           "bound (REF) surface to ",
           dfsc->so_ref->str());
         if (dfsc->so_sut->size_in_bytes != dfsc->so_ref->size_in_bytes) {
-          fatalAt(dfsc->spec->defined_at,"surface sizes mismatch");
+          fatalAt(dfsc->spec->defined_at, "surface sizes mismatch");
         }
       } else {
         // it's an immediate object, we have to create a dummy surface
@@ -860,7 +865,7 @@ void script_compiler::compile()
     }
     case script_instruction::DIFFU: {
       diffu_command *dfuc = si.dfuc;
-      si.dfuc->so = &csi->surfaces.get(dfuc->spec->sut.value);
+      si.dfuc->so = lookupSurfaceObject(dfuc->spec->sut.value);
       debugAt(si.dfuc->spec->defined_at, "bound surface to ", dfuc->so->str());
       if (!dfuc->element_type) {
         dfuc->element_type =
@@ -872,7 +877,8 @@ void script_compiler::compile()
       break;
     }
     case script_instruction::PRINT:
-      si.prc->so = &csi->surfaces.get(si.prc->spec->arg.value);
+      si.prc->so = lookupSurfaceObject(si.prc->spec->arg);
+
       debugAt(si.prc->spec->defined_at, "bound surface to ", si.prc->so->str());
       if (!si.prc->element_type) {
         si.prc->element_type =
@@ -883,7 +889,7 @@ void script_compiler::compile()
       }
       break;
     case script_instruction::SAVE:
-      si.svc->so = &csi->surfaces.get(si.svc->spec->arg.value);
+      si.svc->so = lookupSurfaceObject(si.svc->spec->arg.value);
       debugAt(
         si.svc->spec->defined_at, "bound surface to ", si.svc->so->str());
       break;
