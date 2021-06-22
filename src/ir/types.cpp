@@ -2,6 +2,8 @@
 #include "../half.hpp"
 #include "../system.hpp"
 
+#include <cmath>
+
 using namespace cls;
 
 

@@ -185,18 +185,6 @@ namespace opts
     {
     }
 
-    std::string fmtShortNameForHelp() const {
-      return fmt_opt_key(false,
-        o.shortName,
-        attrs & OptAttrs::FLAG,
-        OptAttrs::FUSED_VALUE);
-    }
-    std::string fmtLongNameForHelp() const {
-      return fmt_opt_key(true, o.longName,
-        attrs & OptAttrs::FLAG,
-        attrs & OptAttrs::FUSED_VALUE);
-    }
-
     DefaultSetter<O> noDefault() const {
       std::string optStr = optName(), helpStr = makeHelpMessage();
       return [=](const ErrorHandler &errHandler, O &) {
