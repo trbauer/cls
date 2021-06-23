@@ -53,7 +53,7 @@ cls64_msvc_exe = "builds/vs2019-64/Debug/cls64.exe"
 cls32_msvc_exe :: FilePath
 cls32_msvc_exe = "builds/vs2019-32/Debug/cls32.exe"
 cls64_gnu_exe :: FilePath
-cls64_gnu_exe = "builds/gnu-64/cls"
+cls64_gnu_exe = "builds/gnu-64/Debug/cls"
 cls64_exe :: FilePath
 cls64_exe = if os == "mingw32" then cls64_msvc_exe else cls64_gnu_exe
 
