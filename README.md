@@ -41,7 +41,7 @@ This command breaks down into several sections separated by a \` (backtick).
   * The `demo.cl` part loads the OpenCL C source file and creates a program from that source.  This section can be suffixed with build options passed to `clBuildProgram`.  For example, `demo.cl[-DTYPE=int -cl-opt-disable]` would use the build option string `"-DTYPE=int -cl-opt-disable"`.
   * The `addK` section specifies the name of the kernel to create from the program compiled.
   * The angle bracket section `<32,4>` specifies the global and local sizes.   The local size may be omitted and CL Script will use `nullptr` as the local size (letting the driver choose the workgroup size. If the  `__attribute__((reqd_work_group_size(X,Y,Z)))` attribute is present, omission of the local size will cause CL Script to select the required workgroup size value. Two or three dimensional sizes are also supported using an `x` as part of the lexical token. E.g. `<1024x768,16x16>` would be an example 2D dimension specification.  Finally, constant expressions are also supported. For example `<(1024*2)x768>` would be the same as `<2048x768>`.
-  * Finally, the kernel arguments are constitute the rest of the command in parentheses `(0:w,seq(10):r,random<12007>(0,4):rw,3)`.  The general syntax for surface initializers (buffers or images) is an exprssion suffixed with a `:` and a string of surface attributes.
+  * Finally, the kernel arguments constitute the rest of the command in parentheses `(0:w,seq(10):r,random<12007>(0,4):rw,3)`.  The general syntax for surface initializers (buffers or images) is an exprssion suffixed with a `:` and a string of surface attributes.
 
 The specific meaning of the argument initializers above follows.
 
