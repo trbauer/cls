@@ -95,6 +95,7 @@ std::string spec::name() const
     case init_spec::IS_FIL: return "file initializer";
     case init_spec::IS_RND: return "random value initializer";
     case init_spec::IS_SEQ: return "sequence initializer";
+    case init_spec::IS_CYC: return "cycle initializer";
     case init_spec::IS_MEM: return "memory initializer";
     default:                return "unknown initializer";
     }
@@ -262,6 +263,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_IMG: fmt(os, fopts, (const init_spec_image         *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
+  case IS_CYC: fmt(os, fopts, (const init_spec_cyc           *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_mem           *)this); break;
   default: os << "init_spec?"; break;
   }
@@ -879,7 +881,7 @@ const static init_spec_uex::op_spec UNR_FUNCS[] {
 const init_spec_uex::op_spec *init_spec_uex::lookup_op(const char *symbol)
 {
   for (const init_spec_uex::op_spec &op : UNR_FUNCS) {
-    if (streq(symbol,op.symbol))
+    if (streq(symbol, op.symbol))
       return &op;
   }
   return nullptr;
@@ -893,10 +895,10 @@ void init_spec_rng::str(std::ostream &os, format_opts fopts) const
   if (e_hi) {
     os << "(";
     if (e_lo) {
-      e_lo->str(os,fopts);
+      e_lo->str(os, fopts);
       os << ",";
     }
-    e_hi->str(os,fopts);
+    e_hi->str(os, fopts);
     os << ")";
   }
 }
@@ -906,13 +908,27 @@ void init_spec_seq::str(std::ostream &os, format_opts fopts) const
   os << "seq";
   if (base) {
     os << "(";
-    base->str(os,fopts);
+    base->str(os, fopts);
     if (delta) {
       os << ",";
-      delta->str(os,fopts);
+      delta->str(os, fopts);
     }
     os << ")";
   }
+}
+
+void init_spec_cyc::str(std::ostream &os, format_opts fopts) const
+{
+  os << "cyc(";
+  bool first = true;
+  for (const auto *arg : args) {
+    if (first)
+      first = false;
+    else
+      os << ",";
+    arg->str(os, fopts);
+  }
+  os << ")";
 }
 
 void kernel_spec::str(std::ostream &os, format_opts fopts) const {

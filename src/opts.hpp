@@ -855,6 +855,7 @@ private:
           sys::is_tty(std::cerr),
           exeName,
           examples);
+        std::cout.flush();
         exit(EXIT_SUCCESS);
       } else {
         // given input: e.g. -h foo OR -h #1
@@ -863,6 +864,7 @@ private:
         for (const auto &eh : extraHelp) {
           if (inp == eh.key) {
             std::cout << eh.longDesc;
+            std::cout.flush();
             exit(EXIT_SUCCESS);
           }
         }
@@ -1088,9 +1090,9 @@ private:
         }
         if (examples) {
           os << "\n"
-             << "EXAMPLES: "
-             << "\n"
-             << examples;
+            << "EXAMPLES: "
+            << "\n"
+            << examples;
         }
       }
       if (!extraHelp.empty()) {

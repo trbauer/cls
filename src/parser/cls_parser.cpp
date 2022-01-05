@@ -291,7 +291,7 @@ std::string cls::CLS_SYN_SEX()
     "    dimension (one element per global work item)\n"
     "\n"
     "  " SVAR("MemElementInitExpr") "\n"
-    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("RandExpr")
+    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("CycExpr") " | " SVAR("RandExpr")
       " | " SVAR("FileExpr") " | " SVAR("ImgExpr") "\n"
     "    the memory object element initializer\n"
     "\n"
@@ -337,6 +337,13 @@ std::string cls::CLS_SYN_SEX()
     "  e.g. " SLIT("seq()") " generates 0, 1, 2, ...\n"
     "  e.g. " SLIT("seq(17)") " generates 17, 18, ...\n"
     "  e.g. " SLIT("seq(1,3)") " generates 1, 4, 7, ...\n"
+    "\n"
+    SVAR("CycExpr")   " = "
+    SLIT("cyc(") SVAR("Expr") "(" SLIT(",") SVAR("Expr") ")*" SLIT(")") "\n"
+    "  initializes a memory object to an arithmetic sequence of numbers;\n"
+    "  an optional base and delta are permitted\n"
+    "  e.g. " SLIT("cyc(1)") " generates 1, 1, 1, ...\n"
+    "  e.g. " SLIT("cyc(0,1)") " generates 0, 1, 0, 1, ...\n"
     "\n"
     SVAR("RandExpr")  " = "
     SLIT("random") SLIT("(") SVAR("RandBounds") "?" SLIT(")")
@@ -590,7 +597,7 @@ struct cls_parser: parser
         return new init_spec_symbol(at, id);
       } else if (lookingAt(LPAREN) || lookingAt(LANGLE) ||
         id == "sizeof" || id == "random" ||
-        id == "seq" || id == "file" || id == "image")
+        id == "seq" || id == "cyc" || id == "file" || id == "image")
       {
         // foo<...  (e.g. random<12007>(...))
         // or
@@ -631,6 +638,16 @@ struct cls_parser: parser
             }
             iss->defined_at.extend_to(nextLoc());
             return iss;
+          } else if (id == "cyc") {
+            init_spec_cyc *isc = new init_spec_cyc(at);
+            if (args.empty()) {
+              fatalAt(at, "cyc args must be non-empty");
+            }
+            for (const auto *arg : args) {
+              isc->args.push_back(arg);
+            }
+            isc->defined_at.extend_to(nextLoc());
+            return isc;
           }
 
           ///////////////////////////////////////////////////

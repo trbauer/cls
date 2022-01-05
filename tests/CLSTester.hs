@@ -1,4 +1,5 @@
 import Control.Monad
+import Control.Concurrent
 import Data.Bits
 import Data.Char
 import Data.List
@@ -224,18 +225,18 @@ oNormalLn os
 runWithOpts :: Opts -> IO ()
 runWithOpts os = run_tests >> print_summary >> exit
   where run_tests = do
-          oNormalLn os $ "running with " ++ oClsExe os ++ " on device " ++ show (oDeviceIndex os)
+          oNormalLn os $ "running with " ++ oClsExe os ++ " on DEVICE[" ++ show (oDeviceIndex os) ++ "]"
           oup <- readProcess (oClsExe os) ["-l"] ""
-          let filterDevice =
-                filter (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isInfixOf`)
-          case filterDevice (lines oup) of
+          let isDeviceIx :: String -> Bool
+              isDeviceIx = (("DEVICE[" ++ show (oDeviceIndex os) ++ "]")`isInfixOf`)
+          case filter isDeviceIx (lines oup) of
             [x] -> oNormalLn os x
             _ ->
               -- this indicates cls did not produce a valid device index for the chosen device
               -- or the tester was given an invalid index
               dieOrError os $
-                "selected test device not found on machine or cls output is malformed:\n" ++
-                oup
+                "device not found on machine, or cls output is malformed:\n" ++
+                "OUTPUT: " ++ show oup
           putStrLn "==============================================="
 
           -- MISC
@@ -287,6 +288,8 @@ runWithOpts os = run_tests >> print_summary >> exit
           runInitRandomTests os
           --   SEQUENCE VARIABLES
           runInitSequenceTests os
+          --   CYCLE VARIABLES
+          runInitCycleTests os
           --
           --   BINARY FILE MEM INITIALIZERS
           runInitFileBinTest os
@@ -854,6 +857,25 @@ runInitSequenceTests os = do
   runTest "int"    "seq(0,4)"  [0,4,8,12]
   runTest "int"    "seq(0,-1)" [0,-1,-2,-3]
   runTest "float"  "seq()"     [0,1,2,3 :: Float]
+
+-------------------------------------------------------------------------------
+--
+runInitCycleTests :: Opts -> IO ()
+runInitCycleTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<4>(A,0)\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init cyc test " ++ type_name ++ " " ++ init)  matches script
+  -- general testing
+  runTest "int"    "cyc(12)"  [12,12,12,12]
+  runTest "int"    "cyc(1,-1)" [1,-1,1,-1]
+  runTest "float"  "cyc(-2,2)" [-2,2,-2,2 :: Float]
 
 
 -- let A=file.bin

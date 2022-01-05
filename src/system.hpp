@@ -133,7 +133,7 @@ namespace sys
     static status FATAL_ON_ERROR(const char *in = nullptr) {
       return status(true, in);
     }
-  };
+  }; // status
 
   // fatal_exit will terminate the process with a with an non-zero exit code
   // or a signal some sort depending on platform.  If a debugger is attached,

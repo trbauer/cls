@@ -174,6 +174,7 @@ void listDeviceInfo(const cls::opts &os)
       listDeviceInfoForDevice(os, ds[ix], ix);
     }
   }
+  std::cout.flush();
 }
 
 cl_spec getDeviceSpec(cl_device_id d) {

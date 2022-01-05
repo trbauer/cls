@@ -268,10 +268,80 @@ static void fill_buffer_seq(
     const type_vector &tv = t.as<type_vector>();
     fill_buffer_seq(csi, ec, ab, iss, tv.element_type, at);
   } else {
-    csi.fatalAt(at,"unsupported type for random generator");
+    csi.fatalAt(at,"unsupported type for sequence generator");
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Cycle
+template <typename T>
+static void fill_buffer_cyc_loop(
+  evaluator *e,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_cyc *isc)
+{
+  std::vector<T> vals;
+  for (const auto *arg : isc->args) {
+    val v = e->evalTo<T>(ec, arg);
+    vals.emplace_back(v.as<T>());
+  }
+
+  size_t total_elems = ab.capacity / sizeof(T);
+  for (size_t i = 0; i < total_elems; i++) {
+    ab.write<T>(vals[i % vals.size()]);
+  }
+}
+
+static void fill_buffer_cyc(
+  compiled_script_impl &csi,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_cyc *isc,
+  const type &t,
+  const loc &at)
+{
+  if (isc->args.empty()) {
+    csi.internalAt(at, "cyc requires at least one argument");
+    return;
+  }
+  if (t.is<type_num>()) {
+    const type_num &tn = t.as<type_num>();
+    switch (tn.skind) {
+    case type_num::SIGNED: {
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_cyc_loop<int8_t> (csi.e, ec, ab, isc); break;
+      case 2: fill_buffer_cyc_loop<int16_t>(csi.e, ec, ab, isc); break;
+      case 4: fill_buffer_cyc_loop<int32_t>(csi.e, ec, ab, isc); break;
+      case 8: fill_buffer_cyc_loop<int64_t>(csi.e, ec, ab, isc); break;
+      }
+      break;
+    }
+    case type_num::UNSIGNED:
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_cyc_loop<uint8_t> (csi.e, ec, ab, isc); break;
+      case 2: fill_buffer_cyc_loop<uint16_t>(csi.e, ec, ab, isc); break;
+      case 4: fill_buffer_cyc_loop<uint32_t>(csi.e, ec, ab, isc); break;
+      case 8: fill_buffer_cyc_loop<uint64_t>(csi.e, ec, ab, isc); break;
+      }
+      break;
+    case type_num::FLOATING:
+      switch (tn.size_in_bytes) {
+      case 2: fill_buffer_cyc_loop<half>(csi.e, ec, ab, isc); break;
+      case 4: fill_buffer_cyc_loop<float> (csi.e, ec, ab, isc); break;
+      case 8: fill_buffer_cyc_loop<double>(csi.e, ec, ab, isc); break;
+      }
+      break;
+    }
+  } else if (t.is<type_vector>()) {
+    const type_vector &tv = t.as<type_vector>();
+    fill_buffer_cyc(csi, ec, ab, isc, tv.element_type, at);
+  } else {
+    csi.fatalAt(at, "unsupported type for sequence generator");
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 static void saveImage(
   std::string file_name,
   loc at,
@@ -994,8 +1064,6 @@ void compiled_script_impl::init_surface(
     if (elem_type == nullptr) {
       fatalAt(so.init->defined_at, "unable to infer element type for seq init");
     } else if (elem_type->is<type_num>()) {
-      // generator_state &gs =
-      //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
       fill_buffer_seq(
         *this,
         ec,
@@ -1006,6 +1074,22 @@ void compiled_script_impl::init_surface(
     } else {
       fatalAt(so.init->defined_at,
         "sequential inits can only apply to numeric element types");
+    }
+    break;
+  case init_spec::IS_CYC:
+    if (elem_type == nullptr) {
+      fatalAt(so.init->defined_at, "unable to infer element type for cyc init");
+    } else if (elem_type->is<type_num>()) {
+      fill_buffer_cyc(
+        *this,
+        ec,
+        ab,
+        (const init_spec_cyc *)so.init->root,
+        *elem_type,
+        so.init->defined_at);
+    } else {
+      fatalAt(so.init->defined_at,
+        "cyc inits can only apply to numeric element types");
     }
     break;
   ////////////////////////////////////////

@@ -44,25 +44,25 @@ int main(int argc, const char **argv)
     os.input_files);
 
   cmdspec.defineOpt(
-      "D", nullptr,
-      "OPT", "set a preprocessor option (e.g. -DN=4)",
-      "Given -DN=4, the parser will expand ...$N... to 4",
-      opts::FUSED_VALUE|opts::ALLOW_MULTI,
-      [](const char *c_opt, const opts::ErrorHandler &eh, cls::opts &os) {
-        std::string opt(c_opt);
-        auto ix = opt.find('=');
-        if (ix == std::string::npos) {
-          eh("expected format -Dkey=val");
-        }
-        auto key = opt.substr(0, ix);
-        if (key.empty())
-          eh("expected format -Dkey=val (empty key)");
-        auto val = opt.substr(ix + 1);
-        for (const auto &iv : os.input_vars) {
-          if (iv.first == key)
-            eh("input variable redefinition");
-        }
-        os.input_vars.emplace_back(key, val);
+    "D", nullptr,
+    "OPT", "set a preprocessor option (e.g. -DN=4)",
+    "Given -DN=4, the parser will expand ...$N... to 4",
+    opts::FUSED_VALUE|opts::ALLOW_MULTI,
+    [](const char *c_opt, const opts::ErrorHandler &eh, cls::opts &os) {
+      std::string opt(c_opt);
+      auto ix = opt.find('=');
+      if (ix == std::string::npos) {
+        eh("expected format -Dkey=val");
+      }
+      auto key = opt.substr(0, ix);
+      if (key.empty())
+        eh("expected format -Dkey=val (empty key)");
+      auto val = opt.substr(ix + 1);
+      for (const auto &iv : os.input_vars) {
+        if (iv.first == key)
+          eh("input variable redefinition");
+      }
+      os.input_vars.emplace_back(key, val);
     });
   cmdspec.defineOpt(
     "e", "expression",
@@ -207,6 +207,10 @@ int main(int argc, const char **argv)
     auto file_text = sys::read_file_text(file);
     runFile(os, file, file_text);
   }
+
+  // funky stuff happens with ANSI coloring without explicit flushing
+  std::cout.flush();
+  std::cerr.flush();
 }
 
 static void runFile(

@@ -182,7 +182,7 @@ namespace cls
       // generators
       IS_RND,   // e.g. random, random<13>(0.0,1.0)
       IS_SEQ,  // "seq:r" or "seq(start,delta):r"
-      // IS_CYC,  // "cyc(x1,x2,...)"
+      IS_CYC,  // "cyc(x1,x2,...)"
       ////////////////////////////////////
       // buffer initializers
       //
@@ -472,7 +472,7 @@ namespace cls
     bool has_seed = false;
     init_spec_atom *e_lo = nullptr, *e_hi = nullptr;
 
-    init_spec_rng(loc loc) : init_spec_atom(loc, IS_RND) { }
+    init_spec_rng(loc at) : init_spec_atom(at, IS_RND) { }
     void set_seed(int64_t _seed) {seed = _seed; has_seed = true;}
     void str(std::ostream &os, format_opts fopts) const;
   };
@@ -483,10 +483,19 @@ namespace cls
     const init_spec_atom *base;
     const init_spec_atom *delta;
     init_spec_seq(
-      loc loc, const init_spec_atom *_base, const init_spec_atom *_delta)
-      : init_spec_atom(loc, IS_SEQ), base(_base), delta(_delta) { }
+      loc at, const init_spec_atom *_base, const init_spec_atom *_delta)
+      : init_spec_atom(at, IS_SEQ), base(_base), delta(_delta) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
+
+  // cyc(4)    => 4,4
+  // cyc(4,2)  => 4,2,4,2,...
+  struct init_spec_cyc : init_spec_atom {
+    std::vector<const init_spec_atom *> args;
+    init_spec_cyc(loc at) : init_spec_atom(at, IS_CYC) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
 
 
 
@@ -501,8 +510,8 @@ namespace cls
       PRINT,     // print(buffer)
     } skind = INVALID_STATEMENT;
 
-    statement_spec(loc loc, enum statement_type k)
-      : spec(loc,spec::STATEMENT_SPEC), skind(k) { }
+    statement_spec(loc at, enum statement_type k)
+      : spec(at, spec::STATEMENT_SPEC), skind(k) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 
@@ -510,7 +519,7 @@ namespace cls
   struct statement_list_spec : spec {
     int                                 indent = 0;
     std::vector<statement_spec *>       statements;
-    statement_list_spec(loc loc) : spec(loc,spec::STATEMENT_LIST_SPEC) { }
+    statement_list_spec(loc at) : spec(at, spec::STATEMENT_LIST_SPEC) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 
@@ -527,7 +536,7 @@ namespace cls
 
     std::string   instance; // :BAR
 
-    device_spec(loc loc) : spec(loc,spec::DEVICE_SPEC) { }
+    device_spec(loc at) : spec(at, spec::DEVICE_SPEC) { }
 
     void setSource(std::string name);
     void setSource(int index);
@@ -540,7 +549,7 @@ namespace cls
     std::string     path;
     std::string     build_options;
 
-    program_spec(loc loc) : spec(loc,spec::PROGRAM_SPEC), device(loc) { }
+    program_spec(loc at) : spec(at, spec::PROGRAM_SPEC), device(at) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
   struct kernel_spec : spec {
@@ -548,7 +557,7 @@ namespace cls
     std::string               name;
 
     kernel_spec(program_spec *ps)
-      : spec(ps->defined_at,spec::KERNEL_SPEC), program(ps) { }
+      : spec(ps->defined_at, spec::KERNEL_SPEC), program(ps) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 

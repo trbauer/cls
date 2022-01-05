@@ -974,7 +974,7 @@ void listDeviceInfoForDevice(
 
   /////////////////////////////////////////////////////////////////////////////
   std::cout << "  === DEVICE EXTENSIONS:\n";
-  listExtensions(std::cout,extensions_string);
+  listExtensions(std::cout, extensions_string);
 }
 
 
