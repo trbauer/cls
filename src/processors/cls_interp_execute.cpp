@@ -347,12 +347,19 @@ static void saveImage(
   loc at,
   compiled_script_impl *csi,
   const surface_object *so,
+  size_t width,
+  size_t height,
   size_t row_pitch,
   size_t slice_pitch,
+  cl_channel_order ch_ord,
+  cl_channel_type ch_type,
   const void *bits)
 {
+  if (so->image_desc.image_depth != 0) {
+    csi->fatalAt(at, "3D images not supported for saving");
+  }
   image::data_format fmt;
-  switch (so->image_format.image_channel_order) {
+  switch (ch_ord) {
   case CL_A:
   case CL_R:
   // case CL_Rx:
@@ -386,25 +393,35 @@ static void saveImage(
   // case CL_sBGRA:
   // case CL_UNORM_INT_101010_2:
   default:
-    csi->internalAt(at, "unsupported channel order for saving");
+    csi->fatalAt(at, "unsupported channel order for saving");
   }
-  if (so->image_desc.image_depth != 0) {
-    csi->internalAt(at, "3D images not supported for saving");
+
+  switch (ch_type) {
+  case CL_FLOAT:
+  case CL_UNSIGNED_INT8:
+  case CL_UNORM_INT8:
+    break;
+  default:
+    csi->fatalAt(at, "unsupported channel type for saving");
   }
-  image img(
-    so->image_desc.image_width,
-    std::max(so->image_desc.image_height,(size_t)1),
-    fmt);
+  image img(width, std::max(height, (size_t)1), fmt);
   const uint8_t *host_src = (const uint8_t *)bits;
-  size_t img_row_pitch = img.width*image::bytes_per_pixel(fmt);
-  for (size_t h = 0, hlen = std::max(so->image_desc.image_height,(size_t)1);
-    h < hlen;
-    h++)
-  {
-    memcpy(
-      img.bits + h*img_row_pitch,
-      host_src + h*row_pitch,
-      img_row_pitch);
+  size_t dst_row_pitch = img.width * image::bytes_per_pixel(fmt);
+  for (size_t h = 0; h < img.height; h++) {
+    uint8_t *dst_row_start = img.bits + h*dst_row_pitch;
+    const uint8_t *src_row_start = host_src + h*row_pitch;
+    if (ch_type == CL_FLOAT) {
+      // convert each pixel from float to uchar
+      const float *pxs = (const float *)src_row_start;
+      for (size_t i = 0; i < width * cls::channels_per_pixel(ch_ord); i++) {
+        float px = std::clamp(pxs[i], 0.0f, 1.0f);
+        dst_row_start[i] =
+          (uint8_t)std::min<unsigned>(0xFF, (unsigned)round(255.0f * px));
+      }
+    } else {
+      // copy entire row
+      memcpy(dst_row_start, src_row_start, dst_row_pitch);
+    }
   }
 
   auto ext = sys::take_extension(file_name);
@@ -480,7 +497,13 @@ void compiled_script_impl::execute(dispatch_command &dc)
               saveImage(
                 ss.str(),
                 dc.spec->defined_at,
-                this, so, row_pitch, slice_pitch, host_ptr);
+                this, so,
+                so->image_desc.image_width,
+                so->image_desc.image_height,
+                row_pitch, slice_pitch,
+                so->image_format.image_channel_order,
+                so->image_format.image_channel_data_type,
+                host_ptr);
             }
           });
         } else {
@@ -786,19 +809,36 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
   std::cout << "\n";
 }
 
-void compiled_script_impl::execute(save_command &svc, const void *host_ptr)
+void compiled_script_impl::execute(saveb_command &svbc, const void *host_ptr)
 {
-  debugAt(svc.spec->defined_at, "executing save");
+  debugAt(svbc.spec->defined_at, "executing save");
 
-  std::ofstream of(svc.spec->file,std::ios::binary);
+  std::ofstream of(svbc.spec->file, std::ios::binary);
   if (!of.good()) {
-    fatalAt(svc.spec->defined_at,"failed to open file");
+    fatalAt(svbc.spec->defined_at, "failed to open file");
   }
-  of.write((const char *)host_ptr, svc.so->size_in_bytes);
+  of.write((const char *)host_ptr, svbc.so->size_in_bytes);
   if (!of) {
-    fatalAt(svc.spec->defined_at,"failed to write file");
+    fatalAt(svbc.spec->defined_at, "failed to write file");
   }
   of.flush();
+}
+void compiled_script_impl::execute(savei_command &svic, const void *host_ptr)
+{
+  debugAt(svic.spec->defined_at, "executing save_image");
+
+  size_t row_pitch = svic.width *
+    cls::channels_per_pixel(svic.channel_order) *
+    cls::bytes_per_channel(svic.channel_type);
+  saveImage(
+    svic.spec->file, svic.spec->defined_at, this,
+      svic.so,
+      svic.width, svic.height,
+      row_pitch,
+      svic.so->image_desc.image_slice_pitch,
+      svic.channel_order,
+      svic.channel_type,
+      host_ptr);
 }
 
 void cl_interface::withBufferMapRead(
@@ -868,22 +908,22 @@ void cl_interface::withImageMapRead(
   size_t origin[3]{0};
   size_t region[3];
   region[0] = so->image_desc.image_width;
-  region[1] = std::max(so->image_desc.image_height,(size_t)1);
-  region[2] = std::max(so->image_desc.image_depth,(size_t)1);
+  region[1] = std::max(so->image_desc.image_height, (size_t)1);
+  region[2] = std::max(so->image_desc.image_depth, (size_t)1);
   size_t row_pitch = 0, slice_pitch = 0;
-  CL_COMMAND_CREATE(host_ptr,at,
+  CL_COMMAND_CREATE(host_ptr, at,
     clEnqueueMapImage,
-    so->queue,
-    so->memobj,
-    CL_BLOCKING,
-    CL_MAP_READ,
-    origin,
-    region,
-    &row_pitch,
-    &slice_pitch,
-    0,nullptr,nullptr);
+      so->queue,
+      so->memobj,
+      CL_BLOCKING,
+      CL_MAP_READ,
+      origin,
+      region,
+      &row_pitch,
+      &slice_pitch,
+      0, nullptr, nullptr);
 
-  apply(row_pitch,slice_pitch,host_ptr);
+  apply(row_pitch, slice_pitch, host_ptr);
 
   CL_COMMAND(at,
     clEnqueueUnmapMemObject,
@@ -904,8 +944,8 @@ void cl_interface::withImageMapWrite(
   size_t origin[3] {0};
   size_t region[3];
   region[0] = so->image_desc.image_width;
-  region[1] = std::max(so->image_desc.image_height,(size_t)1);
-  region[2] = std::max(so->image_desc.image_depth,(size_t)1);
+  region[1] = std::max(so->image_desc.image_height, (size_t)1);
+  region[2] = std::max(so->image_desc.image_depth, (size_t)1);
 
   size_t row_pitch = 0, slice_pitch = 0;
   CL_COMMAND_CREATE(host_ptr,at,
@@ -1197,30 +1237,48 @@ void compiled_script::execute(int itr)
         [&] (const void *host_ptr) {csi->execute(*prc, host_ptr);});
       break;
     }
-    case script_instruction::SAVE: {
-      save_command *svc = (save_command *)si.svc;
-      if (svc->so->skind == surface_object::SO_IMAGE) {
+    case script_instruction::SAVEB: {
+      saveb_command *svbc = (saveb_command *)si.svbc;
+      if (svbc->so->skind == surface_object::SO_IMAGE) {
         csi->withImageMapRead(
-          svc->spec->defined_at,
-          svc->so,
+          svbc->spec->defined_at,
+          svbc->so,
           [&](size_t row_pitch, size_t slice_pitch, const void *host_ptr)
           {
             saveImage(
-              svc->spec->file,
-              svc->spec->defined_at,
-              csi, svc->so, row_pitch, slice_pitch, host_ptr);
+              svbc->spec->file,
+              svbc->spec->defined_at,
+              csi,
+              svbc->so,
+              svbc->so->image_desc.image_width,
+              svbc->so->image_desc.image_height,
+              row_pitch, slice_pitch,
+              svbc->so->image_format.image_channel_order,
+              svbc->so->image_format.image_channel_data_type,
+              host_ptr);
           });
       } else {
         csi->withBufferMapRead(
-          svc->spec->defined_at,
-          svc->so,
-          [&](const void *host_ptr) {csi->execute(*svc, host_ptr); });
+          svbc->spec->defined_at,
+          svbc->so,
+          [&](const void *host_ptr) {csi->execute(*svbc, host_ptr);});
       }
       break;
     }
+    case script_instruction::SAVEI: {
+      savei_command *svic = (savei_command *)si.svic;
+      if (svic->so->skind != surface_object::SO_BUFFER) {
+        csi->fatalAt(svic->spec->defined_at,
+          "save_image requires buffer argument");
+      }
+      csi->withBufferMapRead(
+        svic->spec->defined_at,
+        svic->so,
+        [&](const void *host_ptr) {csi->execute(*svic, host_ptr);});
+      break;
+    }
     default:
-      std::cerr << "UNSUPPORTED INSTRUCTION!\n";
-      exit(1);
+      csi->internal("unsupported instruction");
     }
   }
 }

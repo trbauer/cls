@@ -174,7 +174,7 @@ struct karg_parser : cls::parser
     pi.kernels.emplace_back();
     kernel_info &k = pi.kernels.back();
 
-    consumeIdentEq("void","void");
+    consumeIdentEq("void", "void");
     k.name = consumeIdent("kernel name");
     skipPreprocessorLineDirectives();
     consume(LPAREN);

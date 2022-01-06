@@ -30,6 +30,11 @@ namespace cls
     const cls::opts &os,
     const cls::script &s,
     diagnostics &ds);
+
+  // return 0 if unsupported or invalid input
+  size_t channels_per_pixel(cl_channel_order co);
+  size_t bytes_per_channel(cl_channel_type ct);
+
 } // namespace cls
 
 #endif

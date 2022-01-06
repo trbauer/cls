@@ -743,11 +743,27 @@ void script_compiler::compile()
     } else if (st->skind == statement_spec::PRINT) {
       print_command *pc = compilePrint((const print_spec *)st);
       csi->instructions.emplace_back(pc);
-    } else if (st->skind == statement_spec::SAVE) {
+    } else if (st->skind == statement_spec::SAVE_BUFFER) {
       const save_spec *ss = (const save_spec *)st;
-      // surface_object *so =  &csi->surfaces.get(ss->arg.value);
-      save_command *sc = new save_command(ss,nullptr);
+      saveb_command *sc = new saveb_command(ss, nullptr);
       csi->instructions.emplace_back(sc);
+    } else if (st->skind == statement_spec::SAVE_IMAGE) {
+      const save_image_spec *ss = (const save_image_spec *)st;
+      cl_channel_order ch_ord = CL_RGBA;
+      cl_channel_type ch_type = CL_UNSIGNED_INT8;
+      switch (ss->format) {
+      case save_image_spec::FLOAT4_RGBA:
+        ch_ord = CL_RGBA;
+        ch_type = CL_FLOAT;
+        break;
+      case save_image_spec::UCHAR4_RGBA:
+        ch_ord = CL_RGBA;
+        ch_type = CL_UNSIGNED_INT8;
+        break;
+      default: fatalAt(ss->defined_at, "unsupported channel order");
+      }
+      savei_command *sic = new savei_command(ss, nullptr, ch_ord, ch_type);
+      csi->instructions.emplace_back(sic);
     } else if (st->skind == statement_spec::LET) {
       ; // nop
     } else {
@@ -888,13 +904,61 @@ void script_compiler::compile()
             si.prc->element_type->syntax());
       }
       break;
-    case script_instruction::SAVE:
-      si.svc->so = lookupSurfaceObject(si.svc->spec->arg.value);
+    case script_instruction::SAVEB:
+      si.svbc->so = lookupSurfaceObject(si.svbc->spec->arg.value);
       debugAt(
-        si.svc->spec->defined_at, "bound surface to ", si.svc->so->str());
+        si.svbc->spec->defined_at, "bound surface to ", si.svbc->so->str());
       break;
+    case script_instruction::SAVEI:
+    {
+      si.svic->so = lookupSurfaceObject(si.svic->spec->arg.value);
+      debugAt(
+        si.svic->spec->defined_at, "bound surface to ", si.svic->so->str());
+      si.svic->width = si.svic->spec->width;
+      si.svic->height = si.svic->spec->height;
+      // deduce the image size if necessary (based on use)
+      if (si.svic->width == 0 || si.svic->height == 0) {
+        for (const surface_object::use &u : si.svic->so->dispatch_uses) {
+          const dispatch_command &dc = *std::get<0>(u);
+          if (dc.global_size.rank() != 2) {
+            fatalAt(si.svic->spec->defined_at,
+              "cannot infer image size from dispatch use "
+              "(used in non-2d kernel)");
+          }
+          if (si.svic->width != 0 &&
+            si.svic->width != dc.global_size.dims[0])
+          {
+            fatalAt(si.svic->spec->defined_at,
+              "cannot infer image width from dispatch use "
+              "(mismatch in size)");
+          } else if (si.svic->width == 0) {
+            si.svic->width = dc.global_size.dims[0];
+          }
+          if (si.svic->height != 0 &&
+            si.svic->height != dc.global_size.dims[1])
+          {
+            fatalAt(si.svic->spec->defined_at,
+              "cannot infer image height from dispatch use "
+              "(mismatch in size)");
+          } else if (si.svic->height == 0) {
+            si.svic->height = dc.global_size.dims[1];
+          }
+        }
+      }
+      size_t accessed_size =
+        si.svic->width * si.svic->height *
+        channels_per_pixel(si.svic->channel_order) *
+        bytes_per_channel(si.svic->channel_type);
+      if (accessed_size > si.svic->so->size_in_bytes) {
+        warningAt(si.svic->spec->defined_at,
+          "image access overflows buffer size");
+      }
+      break;
+    }
     } // switch
   } // for (binding surfaces to non-dispatch commands)
+
+
 
   /////////////////////////////////////////////////////////////////////////////
   // Ensure all surfaces are used within the same context
@@ -905,12 +969,10 @@ void script_compiler::compile()
       if (dobj == nullptr) {
         dobj = dc->dobj;
       } else if (dobj != dc->dobj) {
-        std::stringstream ss;
-        ss <<
-          "memory object used across cl_context's (c.f. lines " <<
-            dobj->spec->defined_at.line << " and " <<
-            dc->dobj->spec->defined_at.line << ")";
-        fatalAt(so->init->defined_at, ss.str());
+        fatalAt(so->init->defined_at,
+          "memory object used across cl_context's (c.f. lines ",
+          dobj->spec->defined_at.line, " and ",
+          dc->dobj->spec->defined_at.line, ")");
       }
     }
   }

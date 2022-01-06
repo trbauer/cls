@@ -74,13 +74,14 @@ std::string spec::name() const
   case spec::STATEMENT_LIST_SPEC:  return "statement list";
   case spec::STATEMENT_SPEC:
     switch (((const statement_spec *)this)->skind) {
-    case statement_spec::DISPATCH: return "dispatch";
-    case statement_spec::LET:      return "let";
-    case statement_spec::BARRIER:  return "barrier";
-    case statement_spec::DIFF:     return "diff";
-    case statement_spec::SAVE:     return "save";
-    case statement_spec::PRINT:    return "print";
-    default:                       return "unknown statement";
+    case statement_spec::DISPATCH:    return "dispatch";
+    case statement_spec::LET:         return "let";
+    case statement_spec::BARRIER:     return "barrier";
+    case statement_spec::DIFF:        return "diff";
+    case statement_spec::SAVE_BUFFER: return "save";
+    case statement_spec::SAVE_IMAGE:  return "save_image";
+    case statement_spec::PRINT:       return "print";
+    default:                          return "unknown statement";
     }
   case spec::INIT_SPEC:
     switch (((const init_spec *)this)->skind) {
@@ -185,13 +186,14 @@ void statement_list_spec::str(std::ostream &os, format_opts fopts) const {
 
 void statement_spec::str(std::ostream &os, format_opts fopts) const {
   switch (skind) {
-  case DISPATCH: ((const dispatch_spec*)this)->str(os,fopts); break;
-  case LET:      ((const let_spec     *)this)->str(os,fopts); break;
-  case BARRIER:  ((const barrier_spec *)this)->str(os,fopts); break;
-  case DIFF:     ((const diff_spec    *)this)->str(os,fopts); break;
-  case SAVE:     ((const save_spec    *)this)->str(os,fopts); break;
-  case PRINT:    ((const print_spec   *)this)->str(os,fopts); break;
-  default:       os << "statement_spec???"; break;
+  case DISPATCH:     ((const dispatch_spec   *)this)->str(os,fopts); break;
+  case LET:          ((const let_spec        *)this)->str(os,fopts); break;
+  case BARRIER:      ((const barrier_spec    *)this)->str(os,fopts); break;
+  case DIFF:         ((const diff_spec       *)this)->str(os,fopts); break;
+  case SAVE_BUFFER:  ((const save_spec       *)this)->str(os,fopts); break;
+  case SAVE_IMAGE:   ((const save_image_spec *)this)->str(os,fopts); break;
+  case PRINT:        ((const print_spec      *)this)->str(os,fopts); break;
+  default:           os << "statement_spec???"; break;
   }
 }
 

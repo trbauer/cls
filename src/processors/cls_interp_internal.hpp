@@ -108,7 +108,7 @@ struct surface_object {
   cl_image_desc             image_desc { };
   const void               *image_init_bytes = nullptr;
 
-  // e.g. if it's used in a diff command only diff(seq(1,2):w,...)
+  // e.g. if it's used in a diff command only; e.g. diff(seq(1,2):w,...)
   bool                      dummy_object = false;
 
   // - command used in (same command can appear multiple times if reused)
@@ -373,23 +373,42 @@ struct print_command {
   }
 };
 
-struct save_command {
+struct saveb_command {
   const save_spec            *spec;
   surface_object             *so;
-  save_command(const save_spec *_spec, surface_object *_so)
+  saveb_command(const save_spec *_spec, surface_object *_so)
     : spec(_spec), so(_so)
   {
   }
 };
 
+struct savei_command {
+  const save_image_spec            *spec;
+  surface_object                   *so;
+  size_t                            width, height;
+  cl_channel_order                  channel_order;
+  cl_channel_type                   channel_type;
+
+  savei_command(
+    const save_image_spec *_spec,
+    surface_object *_so,
+    cl_channel_order ch_ord,
+    cl_channel_type ch_type)
+    : spec(_spec), so(_so), width(0), height(0)
+    , channel_order(ch_ord), channel_type(ch_type)
+  {
+  }
+};
+
 struct script_instruction {
-  enum {DISPATCH, DIFFS, DIFFU, PRINT, SAVE} skind;
+  enum {DISPATCH, DIFFS, DIFFU, PRINT, SAVEB, SAVEI} skind;
   union {
-    dispatch_command *dsc;
-    diffs_command    *dfsc;
-    diffu_command    *dfuc;
-    print_command    *prc;
-    save_command     *svc;
+    dispatch_command    *dsc;
+    diffs_command       *dfsc;
+    diffu_command       *dfuc;
+    print_command       *prc;
+    saveb_command       *svbc;
+    savei_command       *svic;
   };
   loc defined_at() const {
     switch (skind) {
@@ -397,7 +416,8 @@ struct script_instruction {
     case DIFFS:    return dfsc->spec->defined_at;
     case DIFFU:    return dfuc->spec->defined_at;
     case PRINT:    return prc->spec->defined_at;
-    case SAVE:     return svc->spec->defined_at;
+    case SAVEB:    return svbc->spec->defined_at;
+    case SAVEI:    return svic->spec->defined_at;
     default:
       std::cerr <<
         "INTERNAL ERROR: script_instruction::defined_at() with " <<
@@ -409,7 +429,8 @@ struct script_instruction {
   script_instruction(diffs_command *_dc) : dfsc(_dc), skind(DIFFS) { }
   script_instruction(diffu_command *_dc) : dfuc(_dc), skind(DIFFU) { }
   script_instruction(print_command *_prc) : prc(_prc), skind(PRINT) { }
-  script_instruction(save_command *_svc) : svc(_svc), skind(SAVE) { }
+  script_instruction(saveb_command *_svc) : svbc(_svc), skind(SAVEB) { }
+  script_instruction(savei_command *_svc) : svic(_svc), skind(SAVEI) { }
 };
 
 
@@ -710,7 +731,8 @@ struct compiled_script_impl: cl_interface {
   void execute(diffu_command &dfc, const void *buf);
   void execute(diffs_command &dfc, const void *buf_ref, const void *buf_sut);
   void execute(print_command &prc, const void *buf);
-  void execute(save_command &svc, const void *buf);
+  void execute(saveb_command &svc, const void *buf);
+  void execute(savei_command &svc, const void *buf);
 private:
   void executeDiffElem(
     loc defined_at,

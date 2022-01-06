@@ -197,7 +197,7 @@ int main(int argc, const char **argv)
     return EXIT_FAILURE;
   }
   if (os.input_expr.size() > 0) {
-    runFile(os,"<interactive>",os.input_expr);
+    runFile(os, "<interactive>", os.input_expr);
   }
   for (std::string file : os.input_files) {
     if (!sys::file_exists(file)) {
@@ -245,7 +245,7 @@ static void runFile(
   const auto duration_setup =
     std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now() - start_setup);
-  const double duration_setup_s = duration_setup.count()/1000.0/1000.0;
+  const double duration_setup_s = duration_setup.count() / 1000.0 / 1000.0;
 
   auto start_compile = std::chrono::high_resolution_clock::now();
   cls::compiled_script cs;
@@ -371,4 +371,6 @@ static void runFile(
     }
   }
   t.str(std::cout);
+  std::cout.flush();
+  std::cerr.flush();
 }

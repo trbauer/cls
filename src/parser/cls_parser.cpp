@@ -128,50 +128,63 @@ std::string cls::CLS_SYN_ST()
     " = " SVAR("DiffSt")
     " | " SVAR("PrintSt")
     " | " SVAR("SaveSt")
+    " | " SVAR("SaveImgSt")
     "\n"
     "\n"
     "  " SVAR("DiffSt") "\n"
-    "  = " SLIT("diff")
+    "    = " SLIT("diff")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
+    "    | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
+    "    | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("diff")
+    "    | " SLIT("diff")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
-    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
+    "    | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(">")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
-    "  | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
+    "    | " SLIT("diff") SLIT("<") SVAR("TYPE") SLIT(", ") SVAR("FLOAT") SLIT(">")
     SLIT("(") SVAR("IDENT") SLIT(", ") SVAR("Expr") SLIT(")") "\n"
-    "  diffs two memory object or one against a replicated scalar value;\n"
-    "  if a type argument is present, CLS will reinterpret elements as that type\n"
-    "  NOTE: the program will exit with failure upon diff failure\n"
-    "        use -Xno-exit-on-diff-fail to override this\n"
-    "  e.g. " SLIT("let A=1:rw; #0`file.cl`kernel<1024>(A); diff<int>(A,0)") "\n"
-    "       diffs all elements of buffer " SLIT("A") " with zeros\n"
-    "  e.g. " SLIT("let A=1:rw; let B=2:rw; #0`file.cl`kernel<1024>(A,B); diff(A,B)") "\n"
-    "       diffs buffers " SLIT("A") " and " SLIT("B") " element by element\n"
+    "    diffs two memory object or one against a replicated scalar value;\n"
+    "    if a type argument is present, CLS will reinterpret elements as that type\n"
+    "    NOTE: the program will exit with failure upon diff failure\n"
+    "         use -Xno-exit-on-diff-fail to override this\n"
+    "    e.g. " SLIT("let A=1:rw; #0`file.cl`kernel<1024>(A); diff<int>(A,0)") "\n"
+    "         diffs all elements of buffer " SLIT("A") " with zeros\n"
+    "    e.g. " SLIT("let A=1:rw; let B=2:rw; #0`file.cl`kernel<1024>(A,B); diff(A,B)") "\n"
+    "         diffs buffers " SLIT("A") " and " SLIT("B") " element by element\n"
     "\n"
     "  " SVAR("PrintSt") "\n"
-    "  = " SLIT("print") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("print") SLIT("<") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
-    "  | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(",") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
-    "  prints a memory object; an optional type interprets the surface's elements;\n"
-    "  an optional integer argument overrides columns per line in output\n"
-    "  e.g. " SLIT("let A = 1:w; #0`file.cl`kernel<1024>(A); print<float4>(A)") "\n"
+    "    = " SLIT("print") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("print") SLIT("<") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(",") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "    prints a memory object; an optional type interprets the surface's elements;\n"
+    "    an optional integer argument overrides columns per line in output\n"
+    "    e.g. " SLIT("let A = 1:w; #0`file.cl`kernel<1024>(A); print<float4>(A)") "\n"
     "       prints buffer A as float4's\n"
     "\n"
     "  " SVAR("SaveSt") " = " SLIT("save(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
-    "   saves a surface referenced by an identifier\n"
+    "   saves a surface referenced by an identifier;\n"
+    "   if the surface is an image object, then this saves it to an image file;\n"
+    "   the format is based on the file extension\n"
+    "\n"
+    "  " SVAR("SaveImgSt") "\n"
+    "    = " SLIT("save_image<") SVAR("PxFmt") SLIT(">(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("save_image<") SVAR("PxFmt") SLIT(",") SVAR("INT x INT") SLIT(">(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
+    "   saves a buffer surface referenced by an identifier converting it to an image file;\n"
+    "   the file extension implies the image format (e.g. ppm, png, or bmp);\n"
+    "   the pixel format " SVAR("PxFmt") " can be " SLIT("uchar4") " or " SLIT("float4") ", and\n"
+    "   the channel order is always RGBA;\n"
+    "   the optional image size is inferred by the buffer's use in 2d kernels, but the\n"
+    "     optional dimension argument (INT x INT) overrides it\n"
     "\n"
     "************* LET STATEMENTS *************\n"
     SVAR("Let")  " = " SLIT("let") SVAR("LetBinding") " (" SLIT(",") SVAR("LetBinding") ")*" "\n"
     "  a comma-separated list of bindings;\n"
     "  use this to share buffers in multiple dispatch statements\n"
     "  " SVAR("Binding") " =\n"
-    "     " SVAR("IDENT") SLIT(" = ") SVAR("MemInitExpr") "\n"
-    "   | " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
+    "       " SVAR("IDENT") SLIT(" = ") SVAR("MemInitExpr") "\n"
+    "     | " SVAR("IDENT") SLIT(" = ") SVAR("Dispatch") "\n"
     ;
 }
 
@@ -1743,11 +1756,12 @@ struct cls_parser: parser
       elem_type.as<type_num>().skind == type_num::FLOATING;
   }
 
+
   // EXAMPLES
   // barrier
   // diff(X,Y) | diff<float>(X,Y) | diff<float,0.001> | diff<double2,0.0001>
   // print(X) | print<float>(X)
-  // save(sym,X)
+  // save(sym,X) | save_image<...>(...)
   bool parseBuiltIn()
   {
     auto loc = nextLoc();
@@ -1823,7 +1837,7 @@ struct cls_parser: parser
       s.statement_list.statements.push_back(
         new print_spec(loc, r_surf, elem_type, elems_per_row));
       return true;
-    } else if (lookingAtIdentEq("save")) {
+    } else if (lookingAtIdentEq("save_buffer") || lookingAtIdentEq("save")) {
       skip();
       consume(LPAREN);
       if (!lookingAt(STRLIT))
@@ -1835,6 +1849,60 @@ struct cls_parser: parser
       consume(RPAREN);
       loc.extend_to(nextLoc());
       s.statement_list.statements.push_back(new save_spec(loc, file, r_surf));
+      return true;
+    } else if (lookingAtIdentEq("save_image")) {
+      skip();
+      save_image_spec::data_format fmt = save_image_spec::data_format::INVALID;
+      consume(LANGLE);
+      bool float4 = false;
+      if (consumeIfIdentEq("float4")) {
+        float4 = true;
+      } else if (consumeIfIdentEq("uchar4")) {
+        float4 = false;
+      } else {
+        fatal("expected image format type (float4,rgba)");
+      }
+      if (lookingAt(COMMA) && lookingAtIdent(1)) {
+        skip();
+        if (!consumeIfIdentEq("rgba"))
+          fatal("expected rgba or width");
+        // only RGBA is supported
+      } // else implied
+      fmt = float4 ?
+        save_image_spec::data_format::FLOAT4_RGBA :
+        save_image_spec::data_format::UCHAR4_RGBA;
+      size_t width = 0, height = 0;
+      if (consumeIf(COMMA)) {
+        // "200x400" lexes as:   INT(200) IDENT("x400")
+        // "200 x 400" lexes as: INT(200) IDENT("x") INT(400)
+        width = consumeIntegral<size_t>("image width");
+        auto at = nextLoc();
+        std::string hstr = consumeIdent("image height"); // "x200" or "x 200"
+        if (hstr == "x") {
+          height = consumeIntegral<size_t>("image height");
+        } else {
+          if (hstr.size() < 2 || hstr[0] != 'x' || !isdigit(hstr[1]))
+            fatalAt(at, "malformed image height");
+          size_t off = 1;
+          while (off < hstr.size() && isdigit(hstr[off])) {
+            height = 10 * height + hstr[off++] - '0';
+          }
+          if (off != hstr.size())
+            fatalAt(at, "malformed image height");
+        }
+      }
+      consume(RANGLE);
+      consume(LPAREN);
+      if (!lookingAt(STRLIT))
+        fatal("expected file name (string literal)");
+      std::string file = tokenStringLiteral();
+      skip();
+      consume(COMMA);
+      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      consume(RPAREN);
+      loc.extend_to(nextLoc());
+      s.statement_list.statements.push_back(
+        new save_image_spec(loc, fmt, width, height, file, r_surf));
       return true;
     } else {
       return false;

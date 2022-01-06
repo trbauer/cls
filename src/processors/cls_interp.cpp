@@ -255,7 +255,7 @@ void evaluator::setKernelArgBuffer(
       fatalAt(
         ism->defined_at,
         "buffer/image size differs from uses "
-        "(see line ",so->init->defined_at.line,")");
+        "(see line ", so->init->defined_at.line, ")");
     }
   } else {
     // creating a new surface (buffer)
@@ -288,10 +288,8 @@ void evaluator::setKernelArgBuffer(
       arg_index,
       sizeof(cl_mem),
       (const void *)&so->memobj);
-  if (isDebug()) {
-    std::cout << " ==> ARG " <<
-      ai.arg_type->syntax() << " "  << ai.name << " = " << so->str() << "\n";
-  }
+  debugAt(at,
+    " ==> ARG ", ai.arg_type->syntax(), " ", ai.name, " = ", so->str());
 }
 
 
@@ -462,7 +460,7 @@ static void channelInfo(
   }
 }
 
-static size_t channelsPerPixel(evaluator *e, loc at, cl_channel_order co)
+size_t cls::channels_per_pixel(cl_channel_order co)
 {
   switch (co) {
   case CL_A:
@@ -491,11 +489,19 @@ static size_t channelsPerPixel(evaluator *e, loc at, cl_channel_order co)
   case CL_UNORM_INT_101010_2:
     return 4;
   default:
-    e->internalAt(at, "unsupported channel order");
     return 0;
   }
 }
-static size_t bytesPerChannel(evaluator *e, loc at, cl_channel_type ct)
+static size_t channelsPerPixel(evaluator *e, loc at, cl_channel_order co)
+{
+  size_t cpp = channels_per_pixel(co);
+  if (cpp == 0) {
+    e->internalAt(at, "unsupported channel order");
+  }
+  return cpp;
+}
+
+size_t cls::bytes_per_channel(cl_channel_type ct)
 {
   switch (ct) {
   case CL_SNORM_INT8:
@@ -516,11 +522,18 @@ static size_t bytesPerChannel(evaluator *e, loc at, cl_channel_type ct)
   case CL_UNSIGNED_INT32:
     return 4;
   default:
-    e->fatalAt(at, "unsupported channel data type");
     return 0;
   }
 }
+static size_t bytesPerChannel(evaluator *e, loc at, cl_channel_type ct)
+{
+  size_t bpc = bytes_per_channel(ct);
+  if (bpc == 0) {
+    e->fatalAt(at, "unsupported channel data type");
+  }
+  return bpc;
 
+}
 
 #if 0
 
@@ -615,12 +628,12 @@ void evaluator::setKernelArgImage(
 
   const init_spec_image *isi = (const init_spec_image*)ism->root;
 
-  int channels_per_pixel;
+  int chs_per_px;
   image::data_format native_format;
   channelInfo(this,
     isi->defined_at,isi->ch_order,
     &img_fmt.image_channel_order,
-    &channels_per_pixel,
+    &chs_per_px,
     &native_format);
 
   // TODO: merge with with bytesPerChannel (channelDataTypeInfo)
@@ -715,7 +728,7 @@ void evaluator::setKernelArgImage(
         total_pixels *= img_depth;
 
       auto binary = sys::read_file_binary(isi->path);
-      if (total_pixels*channels_per_pixel*bytes_per_channel != binary.size()) {
+      if (total_pixels * chs_per_px * bytes_per_channel != binary.size()) {
         fatalAt(ism->defined_at,
           "raw image file is wrong size for given image dimensions");
       }
@@ -860,7 +873,7 @@ void evaluator::setKernelArgImage(
     fatalAt(ism->defined_at, "unsupported image kernel argument type");
   }
 
-  size_t bytes_per_pixel = channels_per_pixel * bytes_per_channel;
+  size_t bytes_per_pixel = chs_per_px * bytes_per_channel;
 
   size_t image_row_packed = img_width*bytes_per_pixel;
   size_t image_row = image_row_packed;

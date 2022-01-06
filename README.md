@@ -265,10 +265,18 @@ The diff will succeed and the program will exit 0 with no error message.
 The `print` command, illustrated earlier, prints a surface's values.  The surface type can be overriden (re-interpreted) via an optional parameter.
 
 #
-## Saving Buffers With `save`
+## Saving Buffers and Images With `save`
 The `save` command saves a binary buffer.  For example, `save("foo.dat",A)` saves surface A.
+If the surface object is an image instead of a buffer, it will save as an image file.
+The file extension implies the image format.  Only a few formats are supported, but typically png is included.
 
 NOTE: binary buffers can be loaded from binary file via a surface initializer as in the example: `file<bin>("foo.dat")`.
+
+#
+## Saving Buffer With `save_image`
+The `save_image` command saves a *buffer* as an image file.
+The arguments to this command specify how to convert the underlying buffer to an RGBA image.
+Currently, `float4` and `uchar4`, both in RGBA order, are supported.
 
 
 #

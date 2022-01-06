@@ -287,9 +287,11 @@ namespace cls {
       if (!lookingAt(IDENT)) {
         fatal("expected \"", group, "\"");
       }
-      auto loc = nextLoc();
-      auto str = input().c_str() + loc.offset;
-      if (strncmp(str,kw,strlen(kw)) != 0) {
+      auto at = nextLoc();
+      if (at.extent != strlen(kw))
+        fatal("expected \"", group, "\"");
+      auto str = input().c_str() + at.offset;
+      if (strncmp(str, kw, at.extent) != 0) {
         fatal("expected \"", group, "\"");
       }
       skip();

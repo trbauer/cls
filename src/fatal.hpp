@@ -52,7 +52,7 @@ namespace cls
   }
 
   struct diagnostic : std::exception {
-    enum error_level {WARNING,ERROR,INTERNAL} level = ERROR;
+    enum error_level {WARNING, ERROR, INTERNAL} level = ERROR;
     loc           at;
     std::string   message;
     std::string   input;

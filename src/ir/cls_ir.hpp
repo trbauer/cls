@@ -502,12 +502,13 @@ namespace cls
   struct statement_spec : spec {
     enum statement_type {
       INVALID_STATEMENT = 0,
-      DISPATCH,  // #1`foo.cl`kernel<...>(...)
-      LET,       // let B = 0:w
-      BARRIER,   // barrier
-      DIFF,      // diff
-      SAVE,      // save('foo.bin',buffer)
-      PRINT,     // print(buffer)
+      DISPATCH,     // #1`foo.cl`kernel<...>(...)
+      LET,          // let B = 0:w
+      BARRIER,      // barrier
+      DIFF,         // diff
+      SAVE_BUFFER,  // save('foo.bin',buffer)
+      SAVE_IMAGE,   // save_image<float4,rgba>()
+      PRINT,        // print(buffer)
     } skind = INVALID_STATEMENT;
 
     statement_spec(loc at, enum statement_type k)
@@ -565,7 +566,7 @@ namespace cls
     size_t num_dims;
     size_t dims[3];
 
-    ndr();
+    ndr(); // null dimension (num_dims == 0)
     ndr(size_t x);
     ndr(size_t x, size_t y);
     ndr(size_t x, size_t y, size_t z);
@@ -575,6 +576,7 @@ namespace cls
 
     size_t rank() const {return num_dims;}
     size_t product() const;
+    bool is_null() const {return rank() == 0;}
 
     std::string str() const;
     void        str(std::ostream &os) const;
@@ -658,15 +660,51 @@ namespace cls
   };
   // save('foo.bmp',X)
   struct save_spec : statement_spec {
-    // init_spec_symbol *file; // foo.bpm
     std::string              file; // 'foo.bmp'
     refable<init_spec_mem>   arg;  // X
-    save_spec(loc loc, std::string _file, const refable<init_spec_mem> &_arg)
-      : statement_spec(loc, statement_spec::SAVE), file(_file), arg(_arg) { }
+    save_spec(loc at, std::string _file, const refable<init_spec_mem> &_arg)
+      : statement_spec(at, statement_spec::SAVE_BUFFER)
+      , file(_file), arg(_arg) { }
     void str(std::ostream &os,format_opts fopts) const {
       os << "save(" <<
         fopts.str_lit("'" + file + "'") << ", ";
-        arg.str(os,fopts); os << ")";
+      arg.str(os, fopts); os << ")";
+    }
+  };
+  // save_image<DATA>('foo.bmp',X) // implies RGBA and width use
+  // save_image<DATA,IMGFMT>('foo.bmp',X) // dimension implied by
+  // save_image<DATA,IMGFMT,WIDTH>('foo.bmp',X)
+  struct save_image_spec : statement_spec {
+    enum data_format {
+      INVALID = 0,
+      FLOAT4_RGBA,
+      UCHAR4_RGBA,
+    };
+    data_format              format; // FLOAT4,RGBA
+    size_t                   width, height;
+    std::string              file; // 'foo.bmp'
+    refable<init_spec_mem>   arg;  // X
+    save_image_spec(
+      loc at,
+      data_format fmt, size_t w, size_t h,
+      std::string _file, const refable<init_spec_mem> &_arg)
+      : statement_spec(at, statement_spec::SAVE_IMAGE)
+      , format(fmt)
+      , width(w), height(h)
+      , file(_file)
+      , arg(_arg) { }
+    void str(std::ostream &os,format_opts fopts) const {
+      os << "save_image<";
+      switch (format) {
+      case data_format::FLOAT4_RGBA: os << "float4"; break;
+      case data_format::UCHAR4_RGBA: os << "uchar4"; break;
+      default: os << "???";
+      }
+      if (width != 0 || height != 0) {
+        os << "," << width << "x" << height;
+      }
+      os << ">(" << fopts.str_lit("'" + file + "'") << ", ";
+      arg.str(os, fopts); os << ")";
     }
   };
 

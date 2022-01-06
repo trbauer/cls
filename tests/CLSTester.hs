@@ -76,6 +76,7 @@ help = do
     "  runPrintCommandTests\n" ++
     "  runPrintAttributeTests\n" ++
     "  runSaveTest\n" ++
+    "  runSaveImageTest\n" ++
     "  runSaveTestNegBadSurf\n" ++
     "  runDiffUniformTestMatch\n" ++
     "  runDiffUniformTestMismatch\n" ++
@@ -265,6 +266,7 @@ runWithOpts os = run_tests >> print_summary >> exit
           -- SAVE
           runSaveTest os
           runSaveTestNegBadSurf os
+          runSaveImageTest os
           --
           -- DIFF(U)
           runDiffUniformTestMatch os
@@ -733,6 +735,43 @@ runSaveTestNegBadSurf os = do
         ""
   runScript os "save command neg. test (unbound surf)" (mShouldExit 1 .&&. mStderrContains "non-existent surface object") script
 
+-------------------------------------------------------------------------------
+-- image saving
+runSaveImageTest :: Opts -> IO ()
+runSaveImageTest os = do
+  let mkScript :: String -> String
+      mkScript tystr =
+        "let A=0:w\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/save-image.cl`save_" ++ tystr ++ "<8x8>(A)\n" ++
+        "save_image<" ++ tystr ++ ">('save-image-" ++ tystr ++ "-sut.ppm',A)\n"
+
+      mkSutFile :: String -> FilePath
+      mkSutFile tystr = "save-image-" ++ tystr ++ "-sut.ppm"
+
+      mkOutputMatcher :: String -> Matcher
+      mkOutputMatcher tystr _ _ _ = do
+        let ref_file = "tests/save-image-" ++ tystr ++ "-ref.ppm"
+            sut_file = mkSutFile tystr
+        let fail msg = mFail (ref_file ++ ": " ++ msg)
+        zr <- doesFileExist ref_file
+        zs <- doesFileExist sut_file
+        if not zr then mFail (ref_file ++ ": output file not found")
+          else if not zs then mFail (sut_file ++ ": INTERNAL ERROR: reference file not found")
+          else do
+            bs1 <- BS.readFile sut_file
+            bs2 <- BS.readFile ref_file
+            if bs1 /= bs2 then mFail (sut_file ++ ": mismatch in image output")
+              else mSuccess
+
+  runScript os "save image command test (uchar4)"
+    (mShouldExit 0 .&&. mkOutputMatcher "uchar4") (mkScript "uchar4")
+  z <- doesFileExist (mkSutFile "uchar4")
+  when z (removeFile (mkSutFile "uchar4"))
+  --
+  runScript os "save image command test (float4)"
+    (mShouldExit 0 .&&. mkOutputMatcher "float4") (mkScript "float4")
+  z <- doesFileExist (mkSutFile "float4")
+  when z (removeFile (mkSutFile "float4"))
 
 -------------------------------------------------------------------------------
 -- MEM INIT
