@@ -272,6 +272,76 @@ static void fill_buffer_seq(
   }
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Finite sequence
+template <typename T>
+static void fill_buffer_fseq_loop(
+  evaluator *e,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_fseq *isc)
+{
+  std::vector<T> vals;
+  for (const auto *arg : isc->args) {
+    val v = e->evalTo<T>(ec, arg);
+    vals.emplace_back(v.as<T>());
+  }
+
+  size_t total_elems = ab.capacity / sizeof(T);
+  for (size_t i = 0; i < total_elems; i++) {
+    ab.write<T>(vals[std::min(i, vals.size() - 1)]);
+  }
+}
+
+static void fill_buffer_fseq(
+  compiled_script_impl &csi,
+  evaluator::context &ec,
+  arg_buffer &ab,
+  const init_spec_fseq *isf,
+  const type &t,
+  const loc &at)
+{
+  if (isf->args.empty()) {
+    csi.internalAt(at, "cyc requires at least one argument");
+    return;
+  }
+  if (t.is<type_num>()) {
+    const type_num &tn = t.as<type_num>();
+    switch (tn.skind) {
+    case type_num::SIGNED: {
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_fseq_loop<int8_t> (csi.e, ec, ab, isf); break;
+      case 2: fill_buffer_fseq_loop<int16_t>(csi.e, ec, ab, isf); break;
+      case 4: fill_buffer_fseq_loop<int32_t>(csi.e, ec, ab, isf); break;
+      case 8: fill_buffer_fseq_loop<int64_t>(csi.e, ec, ab, isf); break;
+      }
+      break;
+    }
+    case type_num::UNSIGNED:
+      switch (tn.size_in_bytes) {
+      case 1: fill_buffer_fseq_loop<uint8_t> (csi.e, ec, ab, isf); break;
+      case 2: fill_buffer_fseq_loop<uint16_t>(csi.e, ec, ab, isf); break;
+      case 4: fill_buffer_fseq_loop<uint32_t>(csi.e, ec, ab, isf); break;
+      case 8: fill_buffer_fseq_loop<uint64_t>(csi.e, ec, ab, isf); break;
+      }
+      break;
+    case type_num::FLOATING:
+      switch (tn.size_in_bytes) {
+      case 2: fill_buffer_fseq_loop<half>(csi.e, ec, ab, isf); break;
+      case 4: fill_buffer_fseq_loop<float> (csi.e, ec, ab, isf); break;
+      case 8: fill_buffer_fseq_loop<double>(csi.e, ec, ab, isf); break;
+      }
+      break;
+    }
+  } else if (t.is<type_vector>()) {
+    const type_vector &tv = t.as<type_vector>();
+    fill_buffer_fseq(csi, ec, ab, isf, tv.element_type, at);
+  } else {
+    csi.fatalAt(at, "unsupported type for sequence generator");
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Cycle
 template <typename T>
@@ -1114,6 +1184,22 @@ void compiled_script_impl::init_surface(
     } else {
       fatalAt(so.init->defined_at,
         "sequential inits can only apply to numeric element types");
+    }
+    break;
+  case init_spec::IS_FSQ:
+    if (elem_type == nullptr) {
+      fatalAt(so.init->defined_at, "unable to infer element type for cyc init");
+    } else if (elem_type->is<type_num>()) {
+      fill_buffer_fseq(
+        *this,
+        ec,
+        ab,
+        (const init_spec_fseq *)so.init->root,
+        *elem_type,
+        so.init->defined_at);
+    } else {
+      fatalAt(so.init->defined_at,
+        "cyc inits can only apply to numeric element types");
     }
     break;
   case init_spec::IS_CYC:

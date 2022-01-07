@@ -39,7 +39,7 @@ int main(int argc, const char **argv)
   );
   cmdspec.defineArg(
     "FILE", "a cls script file",
-    "A cls script.  Use -e to specify an expression "
+    "An OpenCL script file.  Use -e to specify an expression "
     "on the command line.  Use -h=syntax for cls syntax.", opts::NONE,
     os.input_files);
 

@@ -182,6 +182,7 @@ namespace cls
       // generators
       IS_RND,   // e.g. random, random<13>(0.0,1.0)
       IS_SEQ,  // "seq:r" or "seq(start,delta):r"
+      IS_FSQ,  // "fseq..."
       IS_CYC,  // "cyc(x1,x2,...)"
       ////////////////////////////////////
       // buffer initializers
@@ -488,6 +489,13 @@ namespace cls
     void str(std::ostream &os, format_opts fopts) const;
   };
 
+  // fseq(4,2)  => 4,2,2,2,...
+  struct init_spec_fseq : init_spec_atom {
+    std::vector<const init_spec_atom *> args;
+    init_spec_fseq(loc at) : init_spec_atom(at, IS_FSQ) { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
   // cyc(4)    => 4,4
   // cyc(4,2)  => 4,2,4,2,...
   struct init_spec_cyc : init_spec_atom {
@@ -495,8 +503,6 @@ namespace cls
     init_spec_cyc(loc at) : init_spec_atom(at, IS_CYC) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
-
-
 
 
   struct statement_spec : spec {

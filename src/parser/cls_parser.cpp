@@ -304,7 +304,7 @@ std::string cls::CLS_SYN_SEX()
     "    dimension (one element per global work item)\n"
     "\n"
     "  " SVAR("MemElementInitExpr") "\n"
-    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("CycExpr") " | " SVAR("RandExpr")
+    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("FiniteSeqExpr") " | " SVAR("CycExpr") " | " SVAR("RandExpr")
       " | " SVAR("FileExpr") " | " SVAR("ImgExpr") "\n"
     "    the memory object element initializer\n"
     "\n"
@@ -351,9 +351,17 @@ std::string cls::CLS_SYN_SEX()
     "  e.g. " SLIT("seq(17)") " generates 17, 18, ...\n"
     "  e.g. " SLIT("seq(1,3)") " generates 1, 4, 7, ...\n"
     "\n"
+    SVAR("FiniteSeqExpr")   " = "
+    SLIT("fseq(") SLIT(")")
+    " | " SLIT("fseq(") SVAR("Expr") SLIT(")")
+    " | " SLIT("fseq(") SVAR("Expr") SLIT(",") SVAR("Expr") SLIT(")") "\n"
+    "  initializes a memory object to a finite sequence of numbers;\n"
+    "  the tail clamps to the final value\n"
+    "  e.g. " SLIT("fseq(0,1,2)") " generates 0, 1, 2, 2, 2, ...\n"
+    "\n"
     SVAR("CycExpr")   " = "
     SLIT("cyc(") SVAR("Expr") "(" SLIT(",") SVAR("Expr") ")*" SLIT(")") "\n"
-    "  initializes a memory object to an arithmetic sequence of numbers;\n"
+    "  initializes a memory object to an cycle sequence of numbers;\n"
     "  an optional base and delta are permitted\n"
     "  e.g. " SLIT("cyc(1)") " generates 1, 1, 1, ...\n"
     "  e.g. " SLIT("cyc(0,1)") " generates 0, 1, 0, 1, ...\n"
@@ -610,7 +618,8 @@ struct cls_parser: parser
         return new init_spec_symbol(at, id);
       } else if (lookingAt(LPAREN) || lookingAt(LANGLE) ||
         id == "sizeof" || id == "random" ||
-        id == "seq" || id == "cyc" || id == "file" || id == "image")
+        id == "seq" || id == "aseq" || id == "fseq" || id == "cyc" ||
+        id == "file" || id == "image")
       {
         // foo<...  (e.g. random<12007>(...))
         // or
@@ -641,7 +650,7 @@ struct cls_parser: parser
 
           ///////////////////////////////////////////////////
           // special functions (pseudo functions)
-          if (id == "seq") {
+          if (id == "seq" || id == "aseq") {
             init_spec_seq *iss = nullptr;
             switch (args.size()) {
             case 0: iss = new init_spec_seq(at, nullptr, nullptr); break;
@@ -651,6 +660,16 @@ struct cls_parser: parser
             }
             iss->defined_at.extend_to(nextLoc());
             return iss;
+          } else if (id == "fseq") {
+            init_spec_fseq *isf = new init_spec_fseq(at);
+            if (args.empty()) {
+              fatalAt(at, "cyc args must be non-empty");
+            }
+            for (const auto *arg : args) {
+              isf->args.push_back(arg);
+            }
+            isf->defined_at.extend_to(nextLoc());
+            return isf;
           } else if (id == "cyc") {
             init_spec_cyc *isc = new init_spec_cyc(at);
             if (args.empty()) {

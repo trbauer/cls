@@ -95,7 +95,8 @@ std::string spec::name() const
     case init_spec::IS_UEX: return "unary expression initializer";
     case init_spec::IS_FIL: return "file initializer";
     case init_spec::IS_RND: return "random value initializer";
-    case init_spec::IS_SEQ: return "sequence initializer";
+    case init_spec::IS_SEQ: return "arithmetic sequence initializer";
+    case init_spec::IS_FSQ: return "finite sequence initializer";
     case init_spec::IS_CYC: return "cycle initializer";
     case init_spec::IS_MEM: return "memory initializer";
     default:                return "unknown initializer";
@@ -265,6 +266,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_IMG: fmt(os, fopts, (const init_spec_image         *)this); break;
   case IS_RND: fmt(os, fopts, (const init_spec_rng           *)this); break;
   case IS_SEQ: fmt(os, fopts, (const init_spec_seq           *)this); break;
+  case IS_FSQ: fmt(os, fopts, (const init_spec_fseq          *)this); break;
   case IS_CYC: fmt(os, fopts, (const init_spec_cyc           *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_mem           *)this); break;
   default: os << "init_spec?"; break;
@@ -917,6 +919,20 @@ void init_spec_seq::str(std::ostream &os, format_opts fopts) const
     }
     os << ")";
   }
+}
+
+void init_spec_fseq::str(std::ostream &os, format_opts fopts) const
+{
+  os << "fseq(";
+  bool first = true;
+  for (const auto *arg : args) {
+    if (first)
+      first = false;
+    else
+      os << ",";
+    arg->str(os, fopts);
+  }
+  os << ")";
 }
 
 void init_spec_cyc::str(std::ostream &os, format_opts fopts) const

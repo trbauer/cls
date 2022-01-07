@@ -89,6 +89,8 @@ help = do
     "  runInitConstWithDim\n" ++
     "  runInitRandomTests\n" ++
     "  runInitSequenceTests\n" ++
+    "  runInitFiniteSequenceTests\n" ++
+    "  runInitCycleTests\n" ++
     "  runInitFileBinTest\n" ++
     "  runSlmDynamicTest\n" ++
     "  runSlmStaticTest\n" ++
@@ -290,6 +292,8 @@ runWithOpts os = run_tests >> print_summary >> exit
           runInitRandomTests os
           --   SEQUENCE VARIABLES
           runInitSequenceTests os
+          --   FINITE SEQUENCE VARIABLES
+          runInitFiniteSequenceTests os
           --   CYCLE VARIABLES
           runInitCycleTests os
           --
@@ -896,6 +900,26 @@ runInitSequenceTests os = do
   runTest "int"    "seq(0,4)"  [0,4,8,12]
   runTest "int"    "seq(0,-1)" [0,-1,-2,-3]
   runTest "float"  "seq()"     [0,1,2,3 :: Float]
+
+-------------------------------------------------------------------------------
+--
+runInitFiniteSequenceTests :: Opts -> IO ()
+runInitFiniteSequenceTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<4>(A,0)\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
+  -- general testing
+  runTest "int"    "fseq(1)"     [(1 :: Int),1,1,1]
+  runTest "int"    "fseq(4,0)"   [(4 :: Int),0,0,0]
+  runTest "int"    "fseq(0,-1)"  [(0 :: Int),-1,-1,-1]
+  runTest "float"  "fseq(0,1,2)" [0,1,2,2 :: Float]
 
 -------------------------------------------------------------------------------
 --
