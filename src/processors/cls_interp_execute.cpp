@@ -770,16 +770,10 @@ void compiled_script_impl::executeDiffElem(
     if (extra_message)
       std::cerr << extra_message << "\n";
     std::cerr << "============== vs. (SUT) ==============\n";
-    formatBufferElement(
-      std::cerr,
-      elem_type,
-      elem_sut);
+    formatBufferElementExt(std::cerr, elem_type, elem_sut);
     std::cerr << "\n";
     std::cerr << "============== vs. (REF) ==============\n";
-    formatBufferElement(
-      std::cerr,
-      elem_type,
-      elem_ref);
+    formatBufferElementExt(std::cerr, elem_type, elem_ref);
     std::cerr << "\n";
     if (os.no_exit_on_diff_fail) {
       warningAt(
@@ -1199,7 +1193,7 @@ void compiled_script_impl::init_surface(
         so.init->defined_at);
     } else {
       fatalAt(so.init->defined_at,
-        "cyc inits can only apply to numeric element types");
+        "fseq inits can only apply to numeric element types");
     }
     break;
   case init_spec::IS_CYC:

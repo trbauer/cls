@@ -157,7 +157,8 @@ std::string cls::CLS_SYN_ST()
     "    = " SLIT("print") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
     "    | " SLIT("print") SLIT("<") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
     "    | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
-    "    | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(",") SVAR("INT") SLIT(">") SLIT("(") SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("print") SLIT("<") SVAR("TYPE") SLIT(",") SVAR("INT") SLIT(">")
+            SLIT("(") SVAR("IDENT") SLIT(")") "\n"
     "    prints a memory object; an optional type interprets the surface's elements;\n"
     "    an optional integer argument overrides columns per line in output\n"
     "    e.g. " SLIT("let A = 1:w; #0`file.cl`kernel<1024>(A); print<float4>(A)") "\n"
@@ -169,8 +170,10 @@ std::string cls::CLS_SYN_ST()
     "   the format is based on the file extension\n"
     "\n"
     "  " SVAR("SaveImgSt") "\n"
-    "    = " SLIT("save_image<") SVAR("PxFmt") SLIT(">(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
-    "    | " SLIT("save_image<") SVAR("PxFmt") SLIT(",") SVAR("INT x INT") SLIT(">(") SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
+    "    = " SLIT("save_image<") SVAR("PxFmt") SLIT(">(") SVAR("STRLIT") SLIT(",")
+              SVAR("IDENT") SLIT(")") "\n"
+    "    | " SLIT("save_image<") SVAR("PxFmt") SLIT(",") SVAR("INT x INT") SLIT(">(")
+              SVAR("STRLIT") SLIT(",") SVAR("IDENT") SLIT(")") "\n"
     "   saves a buffer surface referenced by an identifier converting it to an image file;\n"
     "   the file extension implies the image format (e.g. ppm, png, or bmp);\n"
     "   the pixel format " SVAR("PxFmt") " can be " SLIT("uchar4") " or " SLIT("float4") ", and\n"
@@ -304,7 +307,8 @@ std::string cls::CLS_SYN_SEX()
     "    dimension (one element per global work item)\n"
     "\n"
     "  " SVAR("MemElementInitExpr") "\n"
-    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | " SVAR("FiniteSeqExpr") " | " SVAR("CycExpr") " | " SVAR("RandExpr")
+    "    " " = " SVAR("ConstExpr") " | " SVAR("SeqExpr") " | "
+                SVAR("FiniteSeqExpr") " | " SVAR("CycExpr") " | " SVAR("RandExpr")
       " | " SVAR("FileExpr") " | " SVAR("ImgExpr") "\n"
     "    the memory object element initializer\n"
     "\n"
@@ -354,7 +358,7 @@ std::string cls::CLS_SYN_SEX()
     SVAR("FiniteSeqExpr")   " = "
     SLIT("fseq(") SLIT(")")
     " | " SLIT("fseq(") SVAR("Expr") SLIT(")")
-    " | " SLIT("fseq(") SVAR("Expr") SLIT(",") SVAR("Expr") SLIT(")") "\n"
+    " | " SLIT("fseq(") SVAR("Expr") "(" SLIT(",") SVAR("Expr") ")*" SLIT(")") "\n"
     "  initializes a memory object to a finite sequence of numbers;\n"
     "  the tail clamps to the final value\n"
     "  e.g. " SLIT("fseq(0,1,2)") " generates 0, 1, 2, 2, 2, ...\n"
@@ -363,8 +367,8 @@ std::string cls::CLS_SYN_SEX()
     SLIT("cyc(") SVAR("Expr") "(" SLIT(",") SVAR("Expr") ")*" SLIT(")") "\n"
     "  initializes a memory object to an cycle sequence of numbers;\n"
     "  an optional base and delta are permitted\n"
+    "  e.g. " SLIT("cyc(0,1,2)") " generates 0, 1, 2, 0, 1, 2, ...\n"
     "  e.g. " SLIT("cyc(1)") " generates 1, 1, 1, ...\n"
-    "  e.g. " SLIT("cyc(0,1)") " generates 0, 1, 0, 1, ...\n"
     "\n"
     SVAR("RandExpr")  " = "
     SLIT("random") SLIT("(") SVAR("RandBounds") "?" SLIT(")")

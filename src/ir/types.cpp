@@ -271,8 +271,110 @@ template <typename T>
 static T read_unaligned(const void *buf)
 {
   T val;
-  memcpy(&val,buf,sizeof(val));
+  memcpy(&val, buf, sizeof(val));
   return val;
+}
+
+static const int FLTPREC = 5;
+static const int DBLPREC = 8;
+
+static bool parsesBackIdentically(float x)
+{
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(FLTPREC) << x;
+  try {
+    float y = std::stof(ss.str());
+    return x == y;
+  } catch (...) {
+  }
+  return false;
+}
+static bool parsesBackIdentically(double x)
+{
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(DBLPREC) << x;
+  try {
+    double y = std::stod(ss.str());
+    return x == y;
+  } catch (...) {
+  }
+  return false;
+}
+
+static void emitFloatBits(std::ostream &os, uint64_t bits, int e, int m)
+{
+  os << "... (";
+  if ((1ull << (e + m)) & bits) {
+    os << '1';
+  } else {
+    os << '0';
+  }
+  os << '`';
+  for (int i = e + m - 1; i >= m; --i) {
+    if ((1ull << i) & bits) {
+      os << '1';
+    } else {
+      os << '0';
+    }
+  }
+  os << '`';
+  for (int i = m - 1; i >= 0; --i) {
+    if ((1ull << i) & bits) {
+      os << '1';
+    } else {
+      os << '0';
+    }
+  }
+  os << ')';
+}
+
+void cls::formatBufferElementExt(
+  std::ostream &os,
+  const type &t,
+  const void *ptr)
+{
+  if (t.is<type_num>()) {
+    const type_num &tn = t.as<type_num>();
+    bool emitted_exact = false;
+    uint64_t bits = 0;
+    int e = 0, m = 0;
+    switch (tn.skind) {
+    case type_num::FLOATING:
+      switch (tn.size()) {
+      case 2:
+      case 4:
+      {
+        float x;
+        if (tn.size() == 2) {
+          x = (float)read_unaligned<half>(ptr);
+          bits = read_unaligned<uint16_t>(ptr);
+          e = 5; m = 8;
+        } else {
+          x = (float)read_unaligned<float>(ptr);
+          bits = read_unaligned<uint32_t>(ptr);
+          e = 8; m = 23;
+        }
+        emitted_exact = parsesBackIdentically(x);
+        os << std::setw(8) << std::fixed << std::setprecision(FLTPREC) << x;
+        break;
+      }
+      case 8:
+        os << std::setw(12) << std::fixed << std::setprecision(DBLPREC) <<
+          read_unaligned<double>(ptr);
+        emitted_exact = parsesBackIdentically(read_unaligned<double>(ptr));
+        bits = read_unaligned<uint64_t>(ptr);
+        e = 11; m = 52;
+        break;
+      }
+      break;
+    default:
+      formatBufferElement(os, t, ptr);
+    }
+    if (!emitted_exact)
+      emitFloatBits(os, bits, e, m);
+  } else {
+    formatBufferElement(os, t, ptr);
+  }
 }
 
 void cls::formatBufferElement(

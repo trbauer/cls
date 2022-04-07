@@ -526,6 +526,10 @@ namespace cls
     std::ostream &os,
     const type &t,
     const void *ptr);
+  void formatBufferElementExt(
+    std::ostream &os,
+    const type &t,
+    const void *ptr);
 
 } // cls::
 
