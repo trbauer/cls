@@ -574,7 +574,7 @@ std::string sys::find_exe(const char *exe)
   std::string filename_exe = exe;
 #ifdef _WIN32
   // "foo" -> "foo.exe"
-  if (strlen(exe) < 4 && strncmp(".exe", exe + strlen(exe) - 4,4) != 0) {
+  if (strlen(exe) < 4 || strncmp(".exe", exe + strlen(exe) - 4,4) != 0) {
     filename_exe += ".exe";
   }
 #endif

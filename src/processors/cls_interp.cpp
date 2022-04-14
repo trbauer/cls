@@ -737,14 +737,14 @@ void evaluator::setKernelArgImage(
     } else {
       image *img = nullptr;
       if (ext == ".ppm" || ext == ".pp3" || ext == ".pp6") {
-        img = image::load_ppm(isi->path.c_str(),false);
+        img = image::load_ppm(isi->path.c_str(), false);
 #ifdef IMAGE_HPP_SUPPORTS_PNG
       } else if (ext == ".png") {
-        img = image::load_png(isi->path.c_str(),false);
+        img = image::load_png(isi->path.c_str(), false);
 #endif
 #ifdef IMAGE_HPP_SUPPORTS_BMP
       } else if (ext == ".bmp") {
-        img = image::load_bmp(isi->path.c_str(),false);
+        img = image::load_bmp(isi->path.c_str(), false);
 #endif
       } else {
         std::stringstream msg;

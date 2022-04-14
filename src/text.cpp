@@ -428,10 +428,18 @@ static std::string find_msvc()
 {
   // VS2017 and VS2019 have a versioned toolchain in the link
   // Try for VS2019
+  const char *msvc_2022_root =
+    "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\";
   const char *msvc_2019_root =
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Tools\\MSVC\\";
   // C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
   //                                                                                ^^^^^^^^^^^
+  if (sys::directory_exists(msvc_2022_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2022_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
+    }
+  }
   if (sys::directory_exists(msvc_2019_root)) {
     for (auto &p : sys::list_directory_full_paths(msvc_2019_root)) {
       RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
@@ -461,6 +469,7 @@ static std::string find_msvc()
 static std::string find_clang()
 {
 #ifdef _WIN32
+  RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
   //  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
@@ -506,6 +515,9 @@ text::cpp_result text::load_c_preprocessed(
   auto pp_exe = find_cpp();
   if (pp_exe.empty()) {
     pp_exe = sys::find_exe("cpp");
+    // if (pp_exe.empty()) {
+    //   pp_exe = sys::find_exe("mcpp");
+    // }
     if (pp_exe.empty()) {
       return cpp_result(cpp_result::status::CPP_NOT_FOUND, "cpp");
     }

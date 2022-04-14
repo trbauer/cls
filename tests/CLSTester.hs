@@ -49,10 +49,14 @@ mkOptsDev d = do
     , oClsExe = cls64_exe
     }
 
+build_root :: FilePath
+build_root = "builds/vs2022-64/Debug/"
+-- build_root = "builds/vs2019-64/Debug/"
+
 cls64_msvc_exe :: FilePath
-cls64_msvc_exe = "builds/vs2019-64/Debug/cls64.exe"
+cls64_msvc_exe = build_root ++ "cls64.exe"
 cls32_msvc_exe :: FilePath
-cls32_msvc_exe = "builds/vs2019-32/Debug/cls32.exe"
+cls32_msvc_exe = build_root ++ "cls32.exe"
 cls64_gnu_exe :: FilePath
 cls64_gnu_exe = "builds/gnu-64/Debug/cls"
 cls64_exe :: FilePath

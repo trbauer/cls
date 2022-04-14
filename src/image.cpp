@@ -211,9 +211,19 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
     FAIL("image::load_ppm: could not open file");
 
   std::string ln;
+  auto getLine = [&]() {
+    bool failed = !std::getline(ifs, ln);
+    if (failed)
+      return false;
+    if (!ln.empty() && ln[ln.size() - 1] == '\r') {
+      ln = ln.substr(0, ln.size() - 1);
+    }
+    return true;
+  };
+
   while (ifs.peek() == '#')
-    std::getline(ifs,ln);
-  if (!std::getline(ifs,ln)) {
+    getLine();
+  if (!getLine()) {
     FAIL("image::load_ppm: error parsing file");
   }
   bool is_p6 = ln == "P6";
@@ -223,7 +233,7 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
   }
 
   while (ifs.peek() == '#')
-    std::getline(ifs,ln);
+    getLine();
 
   int width, height, max_value;
   ifs >> width;
