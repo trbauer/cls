@@ -187,7 +187,9 @@ static void emitCompiledKernelProperties(
   if (hasExtension(device,"cl_intel_required_subgroup_size")) {
     KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
     //
+    std::cout << text::ANSI_FADED;
     emitParamName("CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL");
+    std::cout << text::ANSI_RESET;
     size_t sbsi = 0;
     auto cl_subgroup_function = findSubgroupFunction();
     if (cl_subgroup_function == nullptr) {
@@ -199,7 +201,7 @@ static void emitCompiledKernelProperties(
           0, nullptr,
           sizeof(size_t), &sbsi, nullptr);
       if (sbsi_err == CL_SUCCESS) {
-        std::cout << text::spans::YELLOW(sbsi);
+        std::cout << text::ANSI_FADED_YELLOW << sbsi << text::ANSI_RESET;
       } else {
         std::cout << text::spans::RED(status_to_symbol(sbsi_err));
       }
