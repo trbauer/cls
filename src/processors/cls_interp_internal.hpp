@@ -53,7 +53,7 @@ struct device_object {
         _spec->defined_at,
         "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
-    pointer_size = bytes_per_addr/8;
+    pointer_size = bytes_per_addr / 8;
   }
   // device_object(const device_object &) = delete;
   // device_object &operator=(const device_object &) = delete;
@@ -647,6 +647,12 @@ struct evaluator : cl_interface {
     const refable<init_spec> &ris,
     const arg_info &ai);
   void setKernelArgSLM(
+    cl_uint arg_index,
+    dispatch_command &dc,
+    std::stringstream &ss, // debug string for arg
+    const refable<init_spec> &ris,
+    const arg_info &ai);
+  void setKernelArgSampler(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg

@@ -1077,6 +1077,10 @@ dispatch_command *script_compiler::compileDispatchArgs(
     {
       csi->e->setKernelArgImage(
         arg_index, dc, ss, ris.defined_at, ris, ai);
+    } else if (ai.arg_type->is<type_builtin>() &&
+      ai.arg_type->as<type_builtin>().skind == type_builtin::SAMPLER)
+    {
+      csi->e->setKernelArgSampler(arg_index, dc, ss, ris, ai);
     } else {
       // A uniform argument
       csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);

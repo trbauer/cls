@@ -126,9 +126,13 @@ val evaluator::eval(
             return eval(ec, (init_spec_atom *)is);
         }
       }
+      internalAt(e->defined_at,
+        __FILE__, ":", __LINE__,
+        ": unable to bind init_spec::IS_SYM with symbol ", iss->identifier);
+    } else {
+      internalAt(e->defined_at,
+        __FILE__, ":", __LINE__, ": no compiled script attached to evaluator");
     }
-    internalAt(e->defined_at,
-      __FILE__, ":", __LINE__, ": nullptr compiled script");
   }
   default:
     internalAt(e->defined_at,
@@ -1007,6 +1011,70 @@ void evaluator::setKernelArgImage(
   }
   ss << ">";
   ss << "[" << so->memobj_index << "] (" << so->size_in_bytes << " B)";
+}
+void evaluator::setKernelArgSampler(
+  cl_uint arg_index,
+  dispatch_command &dc,
+  std::stringstream &ss,
+  const refable<init_spec> &ris,
+  const arg_info &ai)
+{
+  debugAt(ris.defined_at, "setting sampler for ",
+    ai.arg_type->syntax()," ",ai.name);
+  // expect to find something like
+  // CLK_NORMALIZED_COORDS_FALSE|CLK_ADDRESS_CLAMP_TO_EDGE|CLK_FILTER_NEAREST
+  // (we demand that ordering)
+  // init_spec_bex (symbol "|")
+  //   - init_spec_sym
+  //   - init_spec_bex (symbol "|")
+  //      - init_spec_sym
+  //      - init_spec_sym
+  if (ris.value->skind != init_spec::IS_SMP) {
+    fatalAt(ris.defined_at,
+      "invalid sampler_t kernel argument (c.f. ");
+  }
+  const init_spec_sampler &iss =
+    *(const init_spec_sampler *)ris.value;
+  cl_addressing_mode am = CL_ADDRESS_CLAMP;
+  cl_filter_mode fm = CL_FILTER_NEAREST;
+  switch (iss.addr_mode) {
+  case init_spec_sampler::AM_NONE:       am = CL_ADDRESS_NONE; break;
+  case init_spec_sampler::AM_CLAMP_EDGE: am = CL_ADDRESS_CLAMP_TO_EDGE; break;
+  case init_spec_sampler::AM_CLAMP:      am = CL_ADDRESS_CLAMP; break;
+  case init_spec_sampler::AM_REPEAT:     am = CL_ADDRESS_REPEAT; break;
+  case init_spec_sampler::AM_MIRRORED_REPEAT:
+    am = CL_ADDRESS_MIRRORED_REPEAT;
+    break;
+  default:
+    internalAt(ris.defined_at, "invalid address mode for sampler");
+  }
+  switch (iss.filter) {
+  case init_spec_sampler::FM_NEAREST: fm = CL_FILTER_NEAREST; break;
+  case init_spec_sampler::FM_LINEAR:  fm = CL_FILTER_LINEAR;  break;
+  default:
+    internalAt(ris.defined_at, "invalid address mode for sampler");
+  }
+  cl_bool ndc = (iss.normalized ? CL_TRUE : CL_FALSE);
+
+  cl_context context = dc.dobj->context;
+  cl_sampler sampler;
+  CL_COMMAND_CREATE(
+    sampler, ris.defined_at,
+    clCreateSampler,
+      context,
+      ndc,
+      am,
+      fm);
+  // minor FIXME: should clean up the sampler with clReleaseSampler
+  // at context destruction...., this creation only happens once;
+  // so we hope it's a minor leak
+  CL_COMMAND(
+    ris.defined_at,
+    clSetKernelArg,
+      dc.kernel->kernel,
+      arg_index,
+      sizeof(cl_sampler),
+      &sampler);
 }
 
 void evaluator::setKernelArgSLM(

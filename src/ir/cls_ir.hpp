@@ -176,6 +176,7 @@ namespace cls
       // Non-atoms
       IS_FIL, // e.g. "file<bin>('foo.dat'):w"
       IS_IMG, // e.g. "image<rgb>('foo.ppm'):r"
+      IS_SMP, // e.g. "sampler(CL_TRUE,CL_ADDRESS_CLAMP,CL_FILTER_LINEAR)"
       // TODO: there should be a second argument to specify the image type
       // If specified as an input, this loads as a buffer or image of
       // RGB24 or an intensity image if the BMP is monochrome.
@@ -455,6 +456,21 @@ namespace cls
       , slice_pitch(_slice_pitch)
       , depth(_depth)
     { }
+    void str(std::ostream &os, format_opts fopts) const;
+  };
+
+  struct init_spec_sampler : init_spec_atom {
+    bool normalized = true; // device coordinates
+    enum {
+      AM_NONE,
+      AM_CLAMP,
+      AM_CLAMP_EDGE,
+      AM_REPEAT,
+      AM_MIRRORED_REPEAT
+    } addr_mode = AM_CLAMP;
+    enum {FM_NEAREST,FM_LINEAR} filter = FM_NEAREST;
+
+    init_spec_sampler(loc at) : init_spec_atom(at, IS_SMP) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
 

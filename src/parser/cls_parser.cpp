@@ -114,6 +114,7 @@ std::string cls::CLS_SYN_ST()
     SVAR("KernelArgs") " = a comma separated list of " SVAR("KernelArg") "\n"
     SVAR("KernelArg") " = "
     SVAR("MemInitExpr") " | "
+    SVAR("SmplrExpr") " | "
     SVAR("Expr") " | "
     SVAR("LetVar") "\n"
     SVAR("LetVar") " = " SVAR("IDENT") "\n"
@@ -439,6 +440,13 @@ std::string cls::CLS_SYN_SEX()
 #else
     "       (compiled without .png support)\n"
 #endif
+    SVAR("SmplrExpr")
+    " = " SLIT("sampler") SLIT("(") SVAR("CL_BOOL")
+      SLIT(",") SVAR("cl_address_mode")
+      SLIT(",") SVAR("cl_filter_mode")
+      SLIT(")") "\n"
+    "    calls clCreateSampler with given arguments for a host-side sampler\n"
+    "    e.g. " SLIT("kernel(...,sampler(CL_FALSE,CL_ADDRMODE_CLAMP,CL_FILTER_LINEAR),...)") "\n"
     "\n"
   ;
 }
@@ -623,14 +631,12 @@ struct cls_parser: parser
       } else if (lookingAt(LPAREN) || lookingAt(LANGLE) ||
         id == "sizeof" || id == "random" ||
         id == "seq" || id == "aseq" || id == "fseq" || id == "cyc" ||
-        id == "file" || id == "image")
+        id == "file" || id == "image" || id == "sampler")
       {
         // foo<...  (e.g. random<12007>(...))
         // or
         // foo(...
         //
-        // TODO: generalize function parsing to
-        //    F<...>(....)
         // then match by template arguments
         if (id == "sizeof") {
           return parseInitAtomPrimSizeof(at);
@@ -640,6 +646,8 @@ struct cls_parser: parser
           return parseInitAtomPrimFile(at);
         } else if (id == "image") {
           return parseInitAtomPrimImage(at);
+        } else if (id == "sampler") {
+          return parseInitSampler(at);
         } else {
           ///////////////////////////////////////////////////
           // generic function syntax (could be seq still)
@@ -741,6 +749,9 @@ struct cls_parser: parser
         consume(RPAREN);
         return e;
       }
+    } else if (lookingAt(NEWLINE)){
+      fatal("unexpecetd newline initializer expression");
+      return nullptr;
     } else {
       fatal("syntax error in initializer expression");
       return nullptr;
@@ -1086,6 +1097,43 @@ struct cls_parser: parser
     }
     return vi;
   }
+
+  init_spec_atom *parseInitSampler(loc at) {
+    consume(LPAREN);
+    init_spec_sampler *iss = new init_spec_sampler(at);
+    if (consumeIfIdentEq("CL_FALSE") || consumeIfIdentEq("false")) {
+      iss->normalized = false;
+    } else if (consumeIfIdentEq("CL_TRUE") || consumeIfIdentEq("true")) {
+      iss->normalized = true;
+    } else {
+      fatal("expected CL_FALSE or CL_TRUE for normalized device coordinates");
+    }
+    consume(COMMA);
+    if (consumeIfIdentEq("CL_ADDRESS_NONE")) {
+      iss->addr_mode = init_spec_sampler::AM_NONE;
+    } else if (consumeIfIdentEq("CL_ADDRESS_CLAMP_TO_EDGE")) {
+      iss->addr_mode = init_spec_sampler::AM_CLAMP_EDGE;
+    } else if (consumeIfIdentEq("CL_ADDRESS_CLAMP")) {
+      iss->addr_mode = init_spec_sampler::AM_CLAMP;
+    } else if (consumeIfIdentEq("CL_ADDRESS_REPEAT")) {
+      iss->addr_mode = init_spec_sampler::AM_REPEAT;
+    } else if (consumeIfIdentEq("CL_ADDRESS_MIRRORED_REPEAT")) {
+      iss->addr_mode = init_spec_sampler::AM_MIRRORED_REPEAT;
+    } else {
+      fatal("expected cl_address_mode (e.g. CL_ADDRESS_CLAMP)");
+    }
+    consume(COMMA);
+    if (consumeIfIdentEq("CL_FILTER_NEAREST")) {
+      iss->filter = init_spec_sampler::FM_NEAREST;
+    } else if (consumeIfIdentEq("CL_FILTER_LINEAR")) {
+      iss->filter = init_spec_sampler::FM_LINEAR;
+    } else {
+      fatal("expected cl_filter_mode (e.g. CL_FILTER_NEAREST)");
+    }
+    consume(RPAREN);
+    return iss;
+  }
+
   init_spec_atom *parseInitAtomPrimSymbol(loc at, const std::string &id)
   {
     auto mv = lookup_builtin_symbol(id);

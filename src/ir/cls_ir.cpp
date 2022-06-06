@@ -99,6 +99,8 @@ std::string spec::name() const
     case init_spec::IS_FSQ: return "finite sequence initializer";
     case init_spec::IS_CYC: return "cycle initializer";
     case init_spec::IS_MEM: return "memory initializer";
+    case init_spec::IS_IMG: return "image initializer";
+    case init_spec::IS_SMP: return "sampler initializer";
     default:                return "unknown initializer";
     }
   case spec::DEVICE_SPEC:  return "device";
@@ -269,6 +271,7 @@ void init_spec::str(std::ostream &os, format_opts fopts) const
   case IS_FSQ: fmt(os, fopts, (const init_spec_fseq          *)this); break;
   case IS_CYC: fmt(os, fopts, (const init_spec_cyc           *)this); break;
   case IS_MEM: fmt(os, fopts, (const init_spec_mem           *)this); break;
+  case IS_SMP: fmt(os, fopts, (const init_spec_sampler       *)this); break;
   default: os << "init_spec?"; break;
   }
 }
@@ -690,6 +693,47 @@ void init_spec_image::str(std::ostream &os, format_opts fopts) const
   os << ">";
   if (!path.empty())
     os << "(\"" << path << "\")";
+}
+
+void init_spec_sampler::str(std::ostream &os, format_opts fopts) const
+{
+  os << "sampler(";
+  os << (normalized ? "CL_TRUE" : "CL_FALSE");
+  os << ", ";
+  switch (addr_mode) {
+  case init_spec_sampler::AM_NONE:
+    os << "CL_ADDRESS_NONE";
+    break;
+  case init_spec_sampler::AM_CLAMP_EDGE:
+    os << "CL_ADDRESS_CLAMP_EDGE";
+    break;
+  case init_spec_sampler::AM_CLAMP:
+    os << "CL_ADDRESS_CLAMP";
+    break;
+  case init_spec_sampler::AM_REPEAT:
+    os << "CL_ADDRESS_REPEAT";
+    break;
+  case init_spec_sampler::AM_MIRRORED_REPEAT:
+    os << "CL_ADDRESS_MIRRORED_REPEAT";
+    break;
+  default:
+    os << "???";
+    break;
+  }
+  os << ",";
+  switch (addr_mode) {
+  case init_spec_sampler::FM_NEAREST:
+    os << "CL_FILTER_NEAREST";
+    break;
+  case init_spec_sampler::FM_LINEAR:
+    os << "CL_FILTER_LINEAR";
+    break;
+  default:
+    os << "???";
+    break;
+  }
+  os << ")";
+
 }
 
 
