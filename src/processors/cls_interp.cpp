@@ -22,6 +22,48 @@ compiled_script_impl::compiled_script_impl(
   , s(_s)
   , e(new evaluator(this)) { }
 
+compiled_script_impl::~compiled_script_impl()
+{
+  // deletes OpenCL driver resources
+  for (surface_object *so : surfaces) {
+    CL_COMMAND(so->init->defined_at,
+      clReleaseMemObject,
+        so->memobj);
+  }
+  for (kernel_object *ko : kernels) {
+    CL_COMMAND(ko->spec->defined_at,
+      clReleaseKernel,
+        ko->kernel);
+  }
+  for (program_object *po : programs) {
+    CL_COMMAND(po->spec->defined_at,
+      clReleaseProgram,
+        po->program);
+  }
+  for (device_object *dobj : devices) {
+    CL_COMMAND(dobj->spec->defined_at,
+      clReleaseCommandQueue,
+        dobj->queue);
+    CL_COMMAND(dobj->spec->defined_at,
+      clReleaseContext,
+        dobj->context);
+  }
+
+  for (const auto &s : samplers) {
+    CL_COMMAND(std::get<0>(s),
+      clReleaseSampler,
+        std::get<1>(s));
+  }
+
+  delete e;
+
+  surfaces.clear();
+  kernels.clear();
+  programs.clear();
+  devices.clear();
+  dispatches.clear();
+  samplers.clear();
+}
 surface_object *compiled_script_impl::define_surface(
   const init_spec_mem *_spec,
   enum surface_object::skind _kind,
@@ -1065,9 +1107,7 @@ void evaluator::setKernelArgSampler(
       ndc,
       am,
       fm);
-  // minor FIXME: should clean up the sampler with clReleaseSampler
-  // at context destruction...., this creation only happens once;
-  // so we hope it's a minor leak
+  csi->samplers.emplace_back(ris.defined_at, sampler);
   CL_COMMAND(
     ris.defined_at,
     clSetKernelArg,

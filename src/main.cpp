@@ -177,6 +177,13 @@ int main(int argc, const char **argv)
     opts::OptAttrs::NONE,
     os.cpp_override_path);
   xGrp.defineFlag(
+    "no-cleanup",
+    nullptr,
+    "do no deallocate OpenCL driver objects before exit",
+    "Do not explicitly release OpenCL driver objects created before exit.",
+    opts::OptAttrs::NONE,
+    os.no_cleanup);
+  xGrp.defineFlag(
     "no-exit-on-diff-fail",
     nullptr,
     "diff commands will not trigger an exit failure",
@@ -211,6 +218,8 @@ int main(int argc, const char **argv)
   // funky stuff happens with ANSI coloring without explicit flushing
   std::cout.flush();
   std::cerr.flush();
+
+  return EXIT_SUCCESS;
 }
 
 static void runFile(
@@ -237,7 +246,7 @@ static void runFile(
       cls::format_opts fopts;
       fopts.opts = cls::format_opts::USE_COLOR;
       s.str(std::cout, fopts);
-      exit(EXIT_SUCCESS);
+      return;
     }
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
@@ -373,4 +382,6 @@ static void runFile(
   t.str(std::cout);
   std::cout.flush();
   std::cerr.flush();
+  if (!os.no_cleanup)
+    cs.destroy();
 }

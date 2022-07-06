@@ -20,6 +20,7 @@ struct opts {
   int                         iterations = 1;
   bool                        list_devices = false;
   std::vector<cl_device_id>   list_devices_specific;
+  bool                        no_cleanup = false;
   bool                        no_exit_on_diff_fail = false;
   bool                        parse_only = false;
   bool                        prof_time = false;

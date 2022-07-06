@@ -607,50 +607,6 @@ static void CL_CALLBACK dispatchContextNotify(
   dobj->contextNotify(errinfo, private_info, cb, user_data);
 }
 
-/*
-static void test(cl_context ctx, cl_command_queue cq)
-{
-  cl_image_format img_fmt{0};
-  img_fmt.image_channel_data_type = CL_UNSIGNED_INT8;
-  img_fmt.image_channel_order = CL_RGBA;
-
-  const size_t W = 600, H = 400;
-  cl_image_desc img_desc{0};
-  img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
-  img_desc.image_width = W;
-  img_desc.image_height = H;
-
-  cl_int err = 0;
-  cl_mem img = clCreateImage(
-    ctx,
-    // CL_MEM_WRITE_ONLY,
-    CL_MEM_READ_WRITE,
-    &img_fmt,
-    &img_desc,
-    nullptr,
-    &err);
-  if (err != CL_SUCCESS)
-    exit(EXIT_FAILURE);
-
-  void *host_ptr = nullptr;
-  size_t origin[3] {0};
-  size_t region[3] {W,H,1};
-  size_t row_pitch = 0, slice_pitch = 0;
-  host_ptr = clEnqueueMapImage(
-    cq, img, CL_BLOCKING, CL_MAP_WRITE|CL_MAP_READ,
-    origin, region,
-    &row_pitch, &slice_pitch,
-    0, nullptr, nullptr,
-    &err);
-  if (err == CL_INVALID_VALUE)
-    exit(EXIT_FAILURE);
-  else if (err != CL_SUCCESS)
-    exit(EXIT_FAILURE);
-  else
-    exit(EXIT_SUCCESS);
-}
-*/
-
 device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
   cl_device_id dev_id;
@@ -677,39 +633,39 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   auto dev_key = device_key(dev_id, ds->instance);
   auto itr = csi->devices.find(dev_key);
   if (itr != csi->devices.find_end()) {
-    return **itr->second;
+    return *itr->second;
   }
 
-  device_object *dobj =
-    new device_object(getDiagnostics(), ds, dev_id);
-  csi->devices.emplace_back(dev_key, dobj);
+  device_object &dobj =
+    csi->devices.emplace_back(dev_key,
+      getDiagnostics(), ds, dev_id);
   cl_context context;
-  // const cl_context_properties props{...};
+  // const cl_context_properties props {...};
   CL_COMMAND_CREATE(context, ds->defined_at,
     clCreateContext,
       nullptr,
       1,
       &dev_id,
       dispatchContextNotify,
-      (void *)dobj);
-  dobj->context = context;
+      (void *)&dobj);
+  dobj.context = context;
   if (os.verbosity >= 2) {
     std::string dev_nm;
-    getDeviceInfo(dobj->device, CL_DEVICE_NAME, dev_nm);
+    getDeviceInfo(dobj.device, CL_DEVICE_NAME, dev_nm);
     debugAt(ds->defined_at, "created context on ", dev_nm);
   }
 
   cl_command_queue cq;
-  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj->context, cq);
+  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj.context, cq);
   if (cl_err != CL_SUCCESS) {
     fatalAt(
       ds->defined_at,
       "clCreateCommandQueue: failed to create command queue for device "
       "(", status_to_symbol(cl_err), ")");
   }
-  dobj->queue = cq;
+  dobj.queue = cq;
   // test((*dobj.context)(),cq);
-  return *dobj;
+  return dobj;
 }
 
 

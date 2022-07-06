@@ -8,9 +8,15 @@
 #include <cmath>
 #include <fstream>
 
+void compiled_script::destroy()
+{
+  delete (compiled_script_impl *)impl;
+  impl = nullptr;
+}
 
 disp_times compiled_script::get_wall_times() const
 {
+
   disp_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const dispatch_command *dc : csi->dispatches)

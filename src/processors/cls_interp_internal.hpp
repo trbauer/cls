@@ -57,7 +57,13 @@ struct device_object {
   }
   // device_object(const device_object &) = delete;
   // device_object &operator=(const device_object &) = delete;
-  ~device_object() {std::cerr << "destructing!\n";}
+  ~device_object() {
+    if (queue) {
+
+    }
+    if (context) {
+    }
+  }
 
   cl_context context = nullptr;
   cl_command_queue queue = nullptr;
@@ -99,9 +105,9 @@ struct surface_object {
 
   const init_spec_mem      *init;
   size_t                    size_in_bytes;
-  cl_mem                    memobj = nullptr;
+  cl_mem                    memobj = nullptr; // we own
   int                       memobj_index;
-  cl_command_queue          queue = nullptr;
+  cl_command_queue          queue = nullptr; // we don't own
 
   // only non-zero if it's an image
   cl_image_format           image_format { };
@@ -224,6 +230,13 @@ struct mapped_objects {
   list_const_iterator begin() const {return list.begin();}
   list_const_iterator end() const {return list.end();}
   size_t size() const {return list.size();}
+
+  void clear() {
+    for (V* v : list)
+      delete v;
+    list.clear();
+    map.clear();
+  }
 
   template <typename...As>
   V& emplace_back(K k, As...as) {
@@ -704,21 +717,17 @@ struct compiled_script_impl: cl_interface {
   struct evaluator                                       *e;
 
   mapped_objects<const dispatch_spec*,dispatch_command>   dispatches;
-  // mapped_objects<const device_spec*,device_object>        devices;
-  mapped_objects<device_key,device_object*>               devices;
+  mapped_objects<device_key,device_object>                devices;
   mapped_objects<const program_spec*,program_object>      programs;
   mapped_objects<const kernel_spec*,kernel_object>        kernels;
 
   mapped_objects<const init_spec_mem*,surface_object>     surfaces;
+  std::vector<std::tuple<loc,cl_sampler>>                 samplers;
 
   std::vector<script_instruction>                         instructions;
 
   compiled_script_impl(diagnostics &ds, const opts &os, const script &_s);
-  ~compiled_script_impl() {
-    for (auto d : devices) {
-      delete *d;
-    }
-  }
+  ~compiled_script_impl();
 
   surface_object *define_surface(
     const init_spec_mem *_spec,

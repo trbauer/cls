@@ -15,10 +15,13 @@ namespace cls
 
   struct compiled_script {
     // various CL objects
-    void *impl;
+    void *impl = nullptr;
 
     // intializer buffer values from whatever backing store
     void execute(int iteration);
+
+    // explicitly destroy this object
+    void destroy();
 
     disp_times get_wall_times() const;
     disp_times get_prof_times() const;
