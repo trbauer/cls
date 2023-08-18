@@ -815,12 +815,12 @@ void listDeviceInfoForDevice(
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("IMAGES");
   DEVICE_INFO_BOOL(CL_DEVICE_IMAGE_SUPPORT);
+  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
   DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_HEIGHT,size_t,"px");
   DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_WIDTH,size_t,"px");
   DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_HEIGHT,size_t,"px");
   DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_WIDTH,size_t,"px");
   DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_DEPTH,size_t,"px");
-  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
   if (is_2_0_plus) {
     DEVICE_INFO(CL_DEVICE_IMAGE_PITCH_ALIGNMENT,cl_uint);
     DEVICE_INFO(CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT,cl_uint);
@@ -828,7 +828,6 @@ void listDeviceInfoForDevice(
 
   DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS,cl_uint);
   DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS,cl_uint);
-  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
 
   if (hasExtension("cl_intel_planar_yuv")) {
     START_GROUP("cl_intel_planar_yuv");
