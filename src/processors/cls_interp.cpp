@@ -1231,6 +1231,7 @@ void evaluator::evalIntoT(
   switch (is->skind) {
   case init_spec::IS_INT:
   case init_spec::IS_FLT:
+  case init_spec::IS_SZO:
   case init_spec::IS_BEX:
   case init_spec::IS_UEX:
   case init_spec::IS_BIV: {

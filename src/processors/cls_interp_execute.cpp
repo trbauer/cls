@@ -642,6 +642,8 @@ void compiled_script_impl::execute(dispatch_command &dc)
       clGetEventProfilingInfo,
         enq_evt, CL_PROFILING_COMMAND_END, sizeof(en), &en, nullptr);
     dc.prof_times.add((en - st)/1000.0/1000.0/1000.0);
+    debugAt(dc_at,
+      "CL_PROFILING_COMMAND_START: ", en, "; CL_PROFILING_COMMAND_END: ", en);
   }
 
   cl_int enq_evt_st = 0;
