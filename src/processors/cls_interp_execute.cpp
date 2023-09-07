@@ -309,7 +309,7 @@ static void fill_buffer_fseq(
   const loc &at)
 {
   if (isf->args.empty()) {
-    csi.internalAt(at, "cyc requires at least one argument");
+    csi.internalAt(at, "fseq requires at least one argument");
     return;
   }
   if (t.is<type_num>()) {
@@ -1191,7 +1191,7 @@ void compiled_script_impl::init_surface(
   case init_spec::IS_FSQ:
     if (elem_type == nullptr) {
       fatalAt(so.init->defined_at, "unable to infer element type for cyc init");
-    } else if (elem_type->is<type_num>()) {
+    } else if (elem_type->is<type_num>() || elem_type->is<type_vector>()) {
       fill_buffer_fseq(
         *this,
         ec,
