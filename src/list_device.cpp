@@ -829,6 +829,42 @@ void listDeviceInfoForDevice(
   DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS,cl_uint);
   DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS,cl_uint);
 
+  /////////////////////////////////////////////////////////////////////////////
+  if (hasExtension("cl_intel_device_attribute_query")) {
+    // https://registry.khronos.org/OpenCL/extensions/intel/cl_intel_device_attribute_query.html
+    START_GROUP("cl_intel_device_attribute_query");
+    DEVICE_INFO(CL_DEVICE_IP_VERSION_INTEL,cl_uint); // cl_version
+    DEVICE_INFO(CL_DEVICE_ID_INTEL,cl_uint);
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL,cl_uint,"slices");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SUB_SLICES_PER_SLICE_INTEL,cl_uint,"subslices");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL,cl_uint,"slices");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_EUS_PER_SUB_SLICE_INTEL,cl_uint,"eus");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_THREADS_PER_EU_INTEL,cl_uint,"threads");
+    // cl_device_feature_capabilities_intel
+    DEVICE_INFO_WITH(CL_DEVICE_FEATURE_CAPABILITIES_INTEL,cl_uint,
+      [&] (std::ostream &os, cl_uint v) {
+        bool printed = false;
+        if (v & CL_DEVICE_FEATURE_FLAG_DP4A_INTEL) {
+          os << "CL_DEVICE_FEATURE_FLAG_DP4A_INTEL";
+          v &= ~CL_DEVICE_FEATURE_FLAG_DP4A_INTEL;
+          printed = true;
+        }
+        if (v & CL_DEVICE_FEATURE_FLAG_DPAS_INTEL) {
+          if (printed)
+            os << "|";
+          os << "CL_DEVICE_FEATURE_FLAG_DPAS_INTEL";
+          printed = true;
+          v &= ~CL_DEVICE_FEATURE_FLAG_DPAS_INTEL;
+        }
+        if (v) {
+          if (printed)
+            os << "|";
+          os << "0x" << std::hex << std::uppercase << v;
+        }
+      });
+  }
+
+  /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_planar_yuv")) {
     START_GROUP("cl_intel_planar_yuv");
     DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL,size_t,"px");

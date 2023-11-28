@@ -49,6 +49,7 @@ enum class cl_spec {
   CL_2_0 = 200,
   CL_2_1 = 210,
   CL_2_2 = 220,
+  CL_3_0 = 300,
 };
 cl_spec           getDeviceSpec(cl_device_id dev_id);
 

@@ -132,6 +132,37 @@
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
+// cl_intel_device_attribute_query
+#ifndef CL_DEVICE_IP_VERSION_INTEL
+#define CL_DEVICE_IP_VERSION_INTEL                0x4250
+#endif
+#ifndef CL_DEVICE_ID_INTEL
+#define CL_DEVICE_ID_INTEL                        0x4251
+#endif
+#ifndef CL_DEVICE_NUM_SLICES_INTEL
+#define CL_DEVICE_NUM_SLICES_INTEL                0x4252
+#endif
+#ifndef CL_DEVICE_NUM_SUB_SLICES_PER_SLICE_INTEL
+#define CL_DEVICE_NUM_SUB_SLICES_PER_SLICE_INTEL  0x4253
+#endif
+#ifndef CL_DEVICE_NUM_EUS_PER_SUB_SLICE_INTEL
+#define CL_DEVICE_NUM_EUS_PER_SUB_SLICE_INTEL     0x4254
+#endif
+#ifndef CL_DEVICE_NUM_THREADS_PER_EU_INTEL
+#define CL_DEVICE_NUM_THREADS_PER_EU_INTEL        0x4255
+#endif
+#ifndef CL_DEVICE_FEATURE_CAPABILITIES_INTEL
+#define CL_DEVICE_FEATURE_CAPABILITIES_INTEL      0x4256
+#endif
+// typedef cl_bitfield         cl_device_feature_capabilities_intel;
+#ifndef CL_DEVICE_FEATURE_FLAG_DP4A_INTEL
+#define CL_DEVICE_FEATURE_FLAG_DP4A_INTEL         (1 << 0)
+#endif
+#ifndef CL_DEVICE_FEATURE_FLAG_DPAS_INTEL
+#define CL_DEVICE_FEATURE_FLAG_DPAS_INTEL         (1 << 1)
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
 // cl_intel_planar_yuv
 #ifndef CL_NV12_INTEL
 #define CL_NV12_INTEL                                                0x410E
