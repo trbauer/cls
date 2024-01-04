@@ -493,13 +493,15 @@ static std::string find_msvc()
 static std::string find_clang()
 {
 #ifdef _WIN32
-  RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
+  RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang++.exe");
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
+  RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang++.exe");
   //  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
   //  RETURN_IF_EXISTS("C:\\Progra~2\\LLVM\\bin\\clang.exe");
 #else
   RETURN_IF_EXISTS("/usr/bin/clang");
+  RETURN_IF_EXISTS("/usr/bin/clang++");
 #endif
   return search_env("clang");
 }

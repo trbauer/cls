@@ -69,7 +69,7 @@ int main(int argc, const char **argv)
       "EXPR", "pass an expression as an argument",
       "Execute the given expression on the command line "
       "(instead of using the script file argument).  "
-      "Use -h=syntax for a cls syntax cheatsheet.",
+      "Use -h=syn for a cls syntax cheatsheet.",
       opts::NONE,
     os.input_expr);
   cmdspec.defineOpt(
