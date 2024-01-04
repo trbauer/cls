@@ -428,30 +428,54 @@ static std::string find_msvc()
 {
   // VS2017 and VS2019 have a versioned toolchain in the link
   // Try for VS2019
-  const char *msvc_2022_root =
-    "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\";
-  const char *msvc_2019_root =
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Tools\\MSVC\\";
   // C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.14.26428\bin\HostX86\x86\cl.exe
   //                                                                                ^^^^^^^^^^^
-  if (sys::directory_exists(msvc_2022_root)) {
-    for (auto &p : sys::list_directory_full_paths(msvc_2022_root)) {
+  const char *msvc_2022_prof_root =
+    "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2022_prof_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2022_prof_root)) {
       RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
       RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
     }
   }
-  if (sys::directory_exists(msvc_2019_root)) {
-    for (auto &p : sys::list_directory_full_paths(msvc_2019_root)) {
+  const char *msvc_2022_comm_root =
+    "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2022_comm_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2022_prof_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
+    }
+  }
+  const char *msvc_2019_prof_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2019_prof_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2019_prof_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
+    }
+  }
+  const char *msvc_2019_comm_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2019_comm_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2019_comm_root)) {
       RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
       RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
     }
   }
   //
   // Try VS2017
-  const char *msvc_2017_root =
+  const char *msvc_2017_prof_root =
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Tools\\MSVC\\";
-  if (sys::directory_exists(msvc_2017_root)) {
-    for (auto &p : sys::list_directory_full_paths(msvc_2017_root)) {
+  if (sys::directory_exists(msvc_2017_prof_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2017_prof_root)) {
+      RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
+      RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
+    }
+  }
+  const char *msvc_2017_comm_root =
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Tools\\MSVC\\";
+  if (sys::directory_exists(msvc_2017_comm_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2017_comm_root)) {
       RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
       RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
     }
