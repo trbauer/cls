@@ -8,8 +8,6 @@
 
 #include <string>
 
-// define an ostream operator
-
 namespace cls
 {
   std::string     status_to_symbol(cl_int error);
