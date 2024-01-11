@@ -385,7 +385,7 @@ static cls::k::program_info *parseProgramInfoText(
     d.str(ss, cpp_inp);
     ss << "\n";
     ss << "SEE: debug-out.cl";
-    ds.fatalAt(at,ss.str());
+    ds.fatalAt(at, ss.str());
   }
   return pi;
 }
@@ -509,7 +509,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
     }
     ki.name = knm;
 
-    memset(ki.reqd_word_group_size,0,sizeof(ki.reqd_word_group_size));
+    memset(ki.reqd_word_group_size, 0, sizeof(ki.reqd_word_group_size));
     err = clGetKernelWorkGroupInfo(
       ks[k_ix],
       dev_id,

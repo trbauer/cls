@@ -1,18 +1,17 @@
 ///////////////////////////////////////////////////////////////////////////////
 //
 #include "devices.hpp"
-#include "text.hpp"
 #include "system.hpp"
+#include "text.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <iterator>
-#include <functional>
 
-
-#define DEVICE_INFO_KEY           ANSI_WHITE
-#define DEVICE_INFO_VALUE_COLOR   ANSI_YELLOW
-#define DEVICE_INFO_COLS          24
+#define DEVICE_INFO_KEY ANSI_WHITE
+#define DEVICE_INFO_VALUE_COLOR ANSI_YELLOW
+#define DEVICE_INFO_COLS 24
 
 using namespace text;
 
@@ -20,7 +19,7 @@ using namespace text;
 // specific value type formatters
 // NOTE: we cannot use any form of polymorphism because many types are aliased
 // E.g. cl_bool = cl_uint
-static void formatDeviceType(std::ostream &os, cl_device_type value)
+static void format_device_type(std::ostream &os, cl_device_type value)
 {
   switch (value) {
   case CL_DEVICE_TYPE_CPU: os << "CL_DEVICE_TYPE_CPU"; break;
@@ -31,7 +30,8 @@ static void formatDeviceType(std::ostream &os, cl_device_type value)
   }
 }
 
-static void formatDeviceLocalMemType(std::ostream &os, cl_device_local_mem_type value)
+static void
+format_device_local_mem_type(std::ostream &os, cl_device_local_mem_type value)
 {
   switch (value) {
   case CL_LOCAL: os << "CL_LOCAL"; break;
@@ -40,7 +40,7 @@ static void formatDeviceLocalMemType(std::ostream &os, cl_device_local_mem_type 
   }
 }
 
-static void formatCacheType(std::ostream &os, cl_device_mem_cache_type value)
+static void format_cache_type(std::ostream &os, cl_device_mem_cache_type value)
 {
   switch (value) {
   case CL_NONE: os << "CL_NONE"; break;
@@ -50,7 +50,7 @@ static void formatCacheType(std::ostream &os, cl_device_mem_cache_type value)
   }
 }
 
-static void formatBool(std::ostream &os, cl_bool value)
+static void format_bool(std::ostream &os, cl_bool value)
 {
   if (value == CL_FALSE)
     os << "CL_FALSE";
@@ -61,157 +61,140 @@ static void formatBool(std::ostream &os, cl_bool value)
 }
 // assumes     value
 // assumes     const char *sep ...;
-#define BITSET_CASE(X) \
-  { \
-    if (value & X) { \
-      os << sep << #X; \
-      sep = "|"; \
-      value &= ~(X); \
-    } \
+#define BITSET_CASE(X)                                                         \
+  {                                                                            \
+    if (value & X) {                                                           \
+      os << sep << #X;                                                         \
+      sep = "|";                                                               \
+      value &= ~(X);                                                           \
+    }                                                                          \
   }
-#define BITSET_FINISH() \
-    if (value != 0) { \
-      os << sep << "0x" << std::hex << value; \
-    }
-static void formatCommandQueueProperties(
+#define BITSET_FINISH()                                                        \
+  if (value != 0) {                                                            \
+    os << sep << "0x" << std::hex << value;                                    \
+  }
+static void format_command_queue_properties(
     std::ostream &os, cl_command_queue_properties value)
 {
-    const char *sep = ""; // "|";
-    BITSET_CASE(CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE);
-    BITSET_CASE(CL_QUEUE_PROFILING_ENABLE);
-    BITSET_CASE(CL_QUEUE_ON_DEVICE);
-    BITSET_CASE(CL_QUEUE_ON_DEVICE_DEFAULT);
-    BITSET_FINISH();
+  const char *sep = ""; // "|";
+  BITSET_CASE(CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE);
+  BITSET_CASE(CL_QUEUE_PROFILING_ENABLE);
+  BITSET_CASE(CL_QUEUE_ON_DEVICE);
+  BITSET_CASE(CL_QUEUE_ON_DEVICE_DEFAULT);
+  BITSET_FINISH();
 }
-static void formatDeviceFpConfig(
-  std::ostream &os, cl_device_fp_config value)
+static void format_device_fp_config(std::ostream &os, cl_device_fp_config value)
 {
-    const char *sep = ""; // "|";
-    BITSET_CASE(CL_FP_DENORM);
-    BITSET_CASE(CL_FP_INF_NAN);
-    BITSET_CASE(CL_FP_ROUND_TO_NEAREST);
-    BITSET_CASE(CL_FP_ROUND_TO_ZERO);
-    BITSET_CASE(CL_FP_ROUND_TO_INF);
-    BITSET_CASE(CL_FP_FMA);
-    BITSET_CASE(CL_FP_SOFT_FLOAT);
-    BITSET_CASE(CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT);
-    BITSET_FINISH();
+  const char *sep = ""; // "|";
+  BITSET_CASE(CL_FP_DENORM);
+  BITSET_CASE(CL_FP_INF_NAN);
+  BITSET_CASE(CL_FP_ROUND_TO_NEAREST);
+  BITSET_CASE(CL_FP_ROUND_TO_ZERO);
+  BITSET_CASE(CL_FP_ROUND_TO_INF);
+  BITSET_CASE(CL_FP_FMA);
+  BITSET_CASE(CL_FP_SOFT_FLOAT);
+  BITSET_CASE(CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT);
+  BITSET_FINISH();
 }
-static void formatDeviceExecCapabilities(
-  std::ostream &os, cl_device_exec_capabilities value)
+static void format_device_exec_capabilities(
+    std::ostream &os, cl_device_exec_capabilities value)
 {
-    const char *sep = ""; // "|";
-    BITSET_CASE(CL_EXEC_KERNEL);
-    BITSET_CASE(CL_EXEC_NATIVE_KERNEL);
-    BITSET_FINISH();
+  const char *sep = ""; // "|";
+  BITSET_CASE(CL_EXEC_KERNEL);
+  BITSET_CASE(CL_EXEC_NATIVE_KERNEL);
+  BITSET_FINISH();
 }
-static void formatDeviceSvmCapabilities(
-  std::ostream &os, cl_device_svm_capabilities value)
+static void format_device_svm_capabilities(
+    std::ostream &os, cl_device_svm_capabilities value)
 {
-    const char *sep = ""; // "|";
-    BITSET_CASE(CL_DEVICE_SVM_COARSE_GRAIN_BUFFER);
-    BITSET_CASE(CL_DEVICE_SVM_FINE_GRAIN_BUFFER);
-    BITSET_CASE(CL_DEVICE_SVM_FINE_GRAIN_SYSTEM);
-    BITSET_CASE(CL_DEVICE_SVM_ATOMICS);
-    BITSET_FINISH();
+  const char *sep = ""; // "|";
+  BITSET_CASE(CL_DEVICE_SVM_COARSE_GRAIN_BUFFER);
+  BITSET_CASE(CL_DEVICE_SVM_FINE_GRAIN_BUFFER);
+  BITSET_CASE(CL_DEVICE_SVM_FINE_GRAIN_SYSTEM);
+  BITSET_CASE(CL_DEVICE_SVM_ATOMICS);
+  BITSET_FINISH();
 }
 
-template <typename T,int W>
-static void fmtHex(
-  std::ostream &os,
-  T value)
+template<typename T, int W>
+static void fmt_hex(std::ostream &os, T value)
 {
   std::stringstream ss;
   ss << "0x" << std::setfill('0') << std::hex << std::setw(W) << value;
   os << ss.str();
 }
-static void fmtDeviceId(
-  std::ostream &os,
-  cl_uint x)
+static void fmt_device_id(std::ostream &os, cl_uint x)
 {
-  fmtHex<cl_uint,4>(os,x);
+  fmt_hex<cl_uint, 4>(os, x);
 }
 ///////////////////////////////////////////////////////////////////////////////
 // new approach
 
+template<typename T>
+using Formatter = std::function<void(std::ostream &, T)>;
 
-template <typename T>
-using Formatter = std::function<void(std::ostream&,T)>;
-
-template <typename T>
+template<typename T>
 static Formatter<T> default_formatter =
-  [] (std::ostream& os, T value) {
-      os << value;
-  };
+    [](std::ostream &os, T value) { os << value; };
 
-template <typename T>
-static Formatter<T> mem_size_formatter =
-  [] (std::ostream &os,T value) {
-    const char *units = "B";
-    if (value % (1024 * 1024) == 0) {
-      value = (value >> 20);
-      units = "MB";
-    } else if (value % 1024 == 0) {
-      value = (value >> 10);
-      units = "KB";
-    }
-    default_formatter<T>(os, value);
-    os << ANSI_RESET;
-    os << " " << units;
-  };
+template<typename T>
+static Formatter<T> mem_size_formatter = [](std::ostream &os, T value) {
+  const char *units = "B";
+  if (value % (1024 * 1024) == 0) {
+    value = (value >> 20);
+    units = "M";
+  } else if (value % 1024 == 0) {
+    value = (value >> 10);
+    units = "K";
+  }
+  default_formatter<T>(os, value);
+  os << ANSI_RESET;
+  os << " " << units;
+};
 
-template <typename T>
-static void emitDeviceInfo(
-  std::ostream &os,
-  cl_device_id dev_id,
-  cl_device_info param,
-  Formatter<T> format_value,
-  const char *units = nullptr)
+template<typename T>
+static void emit_device_info(
+    std::ostream  &os,
+    cl_device_id   dev_id,
+    cl_device_info param,
+    Formatter<T>   format_value,
+    const char    *units = nullptr)
 {
   T value;
 
   auto err = clGetDeviceInfo(dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+       << ANSI_RESET;
     return;
   }
 
   std::stringstream ss;
   format_value(ss, value);
 
-  os << DEVICE_INFO_VALUE_COLOR <<
-    std::setw(DEVICE_INFO_COLS) <<
-    std::right <<
-    ss.str();
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right
+     << ss.str();
   os << ANSI_RESET;
 
   if (units)
     std::cout << " " << units;
 }
 
-template <typename T>
-static void emitDeviceInfoMem(
-  std::ostream &os,
-  cl_device_id dev_id,
-  cl_device_info param)
+template<typename T>
+static void emit_device_info_mem(
+    std::ostream &os, cl_device_id dev_id, cl_device_info param)
 {
-  T value;
+  T    value;
   auto err = clGetDeviceInfo(dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+       << ANSI_RESET;
     return;
   }
 
-  const char *units = "";
+  const char       *units = "";
   std::stringstream ss;
-  if (value % (1024*1024) == 0) {
-    value /= (1024*1024);
+  if (value % (1024 * 1024) == 0) {
+    value /= (1024 * 1024);
     units = "MB";
   } else if (value % 1024 == 0) {
     value /= 1024;
@@ -220,39 +203,33 @@ static void emitDeviceInfoMem(
     units = "B";
   }
   ss << value;
-  os << DEVICE_INFO_VALUE_COLOR <<
-    std::setw(DEVICE_INFO_COLS) <<
-    std::right <<
-    ss.str();
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right
+     << ss.str();
   os << ANSI_RESET;
   std::cout << " " << units;
 }
 
-template <>
-void emitDeviceInfo(
-  std::ostream &os,
-  cl_device_id dev_id,
-  cl_device_info param,
-  Formatter<char*> format_value,
-  const char *units)
+template<>
+void emit_device_info(
+    std::ostream     &os,
+    cl_device_id      dev_id,
+    cl_device_info    param,
+    Formatter<char *> format_value,
+    const char       *units)
 {
   size_t size;
-  auto err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
+  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
+       << ANSI_RESET;
     return;
   }
 
   char *value = (char *)alloca(size + 1);
-  auto err2 = clGetDeviceInfo(dev_id, param, size, value, nullptr);
+  auto  err2  = clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+       << ANSI_RESET;
     return;
   }
   value[size] = 0;
@@ -265,62 +242,53 @@ void emitDeviceInfo(
     std::cout << " " << units;
 }
 
-
-template <typename T>
-static void emitPlatformInfo(
-  std::ostream &os,
-  cl_platform_id plt_id,
-  cl_platform_info param,
-  Formatter<T> format_value,
-  const char *units = nullptr)
+template<typename T>
+static void emit_platform_info(
+    std::ostream    &os,
+    cl_platform_id   plt_id,
+    cl_platform_info param,
+    Formatter<T>     format_value,
+    const char      *units = nullptr)
 {
-  T value;
+  T    value;
   auto err = clGetPlatformInfo(plt_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+       << ANSI_RESET;
     return;
   }
 
   std::stringstream ss;
   format_value(ss, value);
-  os << DEVICE_INFO_VALUE_COLOR <<
-    std::setw(DEVICE_INFO_COLS) <<
-    std::right <<
-    ss.str();
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right
+     << ss.str();
   os << ANSI_RESET;
 
   if (units)
     std::cout << " " << units;
 }
 
-template <>
-void emitPlatformInfo(
-  std::ostream &os,
-  cl_platform_id plt_id,
-  cl_platform_info param,
-  Formatter<char*> format_value,
-  const char *units)
+template<>
+void emit_platform_info(
+    std::ostream     &os,
+    cl_platform_id    plt_id,
+    cl_platform_info  param,
+    Formatter<char *> format_value,
+    const char       *units)
 {
   size_t size;
-  auto err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  auto   err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
+       << ANSI_RESET;
     return;
   }
 
   char *value = (char *)alloca(size + 1);
-  auto err2 = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  auto  err2  = clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+       << ANSI_RESET;
     return;
   }
   value[size] = 0;
@@ -334,34 +302,30 @@ void emitPlatformInfo(
 }
 
 // array version
-template <typename T>
-static void emitDeviceInfo(
-  std::ostream &os,
-  cl_device_id dev_id,
-  cl_device_info param,
-  cl_device_info param_len,
-  Formatter<T> format_value,
-  const char *units = nullptr)
+template<typename T>
+static void emit_device_info(
+    std::ostream  &os,
+    cl_device_id   dev_id,
+    cl_device_info param,
+    cl_device_info param_len,
+    Formatter<T>   format_value,
+    const char    *units = nullptr)
 {
   cl_uint array_length;
-  auto err1 = clGetDeviceInfo(
-    dev_id, param_len, sizeof(array_length), &array_length, nullptr);
+  auto    err1 = clGetDeviceInfo(
+      dev_id, param_len, sizeof(array_length), &array_length, nullptr);
   if (err1 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << " (size query)]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1)
+       << " (size query)]" << ANSI_RESET;
     return;
   }
 
-  T *value = (T *)alloca(array_length * sizeof(T));
-  auto err2 = clGetDeviceInfo(
-    dev_id, param, array_length * sizeof(T), value, nullptr);
+  T   *value = (T *)alloca(array_length * sizeof(T));
+  auto err2 =
+      clGetDeviceInfo(dev_id, param, array_length * sizeof(T), value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+       << ANSI_RESET;
     return;
   }
 
@@ -373,36 +337,33 @@ static void emitDeviceInfo(
     format_value(ss, value[i]);
   }
   ss << "}";
-  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right <<
-    ss.str() << ANSI_RESET;
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right
+     << ss.str() << ANSI_RESET;
 
   if (units)
     std::cout << " " << units;
 }
 
 // array version that uses returned size to infer
-template <typename T>
-static void emitDeviceInfoArray(
-  std::ostream &os,
-  cl_device_id dev_id,
-  cl_device_info param,
-//  cl_device_info param_length,
-  const char *list_delimiter,
-  Formatter<T> format_element_value)
+template<typename T>
+static void emit_device_info_array(
+    std::ostream  &os,
+    cl_device_id   dev_id,
+    cl_device_info param,
+    //  cl_device_info param_length,
+    const char  *list_delimiter,
+    Formatter<T> format_element_value)
 {
   size_t bytes_needed = 0;
-  auto err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
+  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
   if (err1 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << " (query)]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << " (query)]"
+       << ANSI_RESET;
     return;
   } else if (bytes_needed % sizeof(T) != 0) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: array size returned is not a multiple of element type]" <<
-      ANSI_RESET;
+    os << ANSI_RED
+       << "[ERROR: array size returned is not a multiple of element type]"
+       << ANSI_RESET;
     return;
   }
 
@@ -411,99 +372,83 @@ static void emitDeviceInfoArray(
 
   auto err2 = clGetDeviceInfo(dev_id, param, bytes_needed, values, nullptr);
   if (err2 != CL_SUCCESS) {
-    os <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+       << ANSI_RESET;
     return;
   }
 
   std::stringstream ss;
   if (list_delimiter)
     ss << "{";
-  for (cl_uint i = 0; i < bytes_needed/sizeof(T); i++) {
+  for (cl_uint i = 0; i < bytes_needed / sizeof(T); i++) {
     if (i > 0 && list_delimiter)
       ss << list_delimiter << " ";
     format_element_value(ss, values[i]);
   }
   if (list_delimiter)
     ss << "}";
-  os << DEVICE_INFO_VALUE_COLOR <<
-    std::setw(DEVICE_INFO_COLS) <<
-    std::right <<
-    ss.str() << ANSI_RESET;
+  os << DEVICE_INFO_VALUE_COLOR << std::setw(DEVICE_INFO_COLS) << std::right
+     << ss.str() << ANSI_RESET;
 }
 
-static void emitParamName(const char *prop)
+static void emit_param_name(const char *prop)
 {
   std::cout << "    " << DEVICE_INFO_KEY << prop << ANSI_RESET << ": ";
   for (int i = 0, len = 48 - (int)strlen(prop); i < len; i++)
     std::cout << ' ';
 }
 
-static std::string getDeviceInfoString(
-  cl_device_id dev_id,
-  const char *what,
-  cl_device_info param)
+static std::string get_device_info_string(
+    cl_device_id dev_id, const char *what, cl_device_info param)
 {
   size_t size = 0;
-  auto err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
+  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    std::cerr << "clGetDeviceInfo(" << what << "): " <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
-      ANSI_RESET;
+    std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
+              << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
     return "";
   }
 
   char *value = (char *)alloca(size + 1);
-  auto err2 = clGetDeviceInfo(dev_id, param, size, value, nullptr);
+  auto  err2  = clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    std::cerr << "clGetDeviceInfo(" << what << "): " <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
+              << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
     return "";
   }
   value[size] = 0;
   return std::string(value);
 }
-static std::string getPlatformInfoString(
-  cl_platform_id plt_id,
-  const char *what,
-  cl_platform_info param)
+static std::string get_platform_info_string(
+    cl_platform_id plt_id, const char *what, cl_platform_info param)
 {
   size_t size = 0;
-  auto err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  auto   err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    std::cerr << "clGetPlatformInfo(" << what << "): " <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err1) << "]" <<
-      ANSI_RESET;
+    std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
+              << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
     return "";
   }
 
   char *value = (char *)alloca(size + 1);
-  auto err2 = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  auto  err2  = clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    std::cerr << "clGetPlatformInfo(" << what << "): " <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(err2) << "]" <<
-      ANSI_RESET;
+    std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
+              << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
     return "";
   }
   value[size] = 0;
   return std::string(value);
 }
 
-static void listExtensions(std::ostream &os, std::string exts)
+static void list_extensions(std::ostream &os, std::string exts)
 {
-  std::istringstream iss(exts);
+  std::istringstream       iss(exts);
   std::vector<std::string> extensions;
   std::copy(
-    std::istream_iterator<std::string>(iss),
-    std::istream_iterator<std::string>(),
-    std::back_inserter(extensions));
+      std::istream_iterator<std::string>(iss),
+      std::istream_iterator<std::string>(),
+      std::back_inserter(extensions));
   std::sort(extensions.begin(), extensions.end());
 
   for (auto ext : extensions) {
@@ -521,33 +466,32 @@ static void listExtensions(std::ostream &os, std::string exts)
   os << ANSI_RESET;
 }
 
-void listDeviceInfoForDevice(
-  const cls::opts &os, cl_device_id dev_id, int dev_ix)
+void list_device_info_for_device(
+    const cls::opts &os, cl_device_id dev_id, int dev_ix)
 {
-  cl_platform_id plt_id = nullptr;
-  auto plt_res =
-    clGetDeviceInfo(dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
+  cl_platform_id plt_id  = nullptr;
+  auto           plt_res = clGetDeviceInfo(
+      dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
 
-#if defined(__GNUC__) && __GNUC__>=6
+#if defined(__GNUC__) && __GNUC__ >= 6
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
-  // TODO: https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/clGetPlatformInfo.html
+  // TODO:
+  // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/clGetPlatformInfo.html
 
-#define PLATFORM_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
-  do { \
-    emitParamName(PARAM_STR); \
-    emitPlatformInfo<TYPE>(std::cout,plt_id,PARAM,FORMATTER,UNITS); \
-    std::cout << "\n"; \
+#define PLATFORM_INFO_WITH0(PARAM_STR, PARAM, TYPE, FORMATTER, UNITS)          \
+  do {                                                                         \
+    emit_param_name(PARAM_STR);                                                \
+    emit_platform_info<TYPE>(std::cout, plt_id, PARAM, FORMATTER, UNITS);      \
+    std::cout << "\n";                                                         \
   } while (0)
-#define PLATFORM_INFO_STRING(PARAM) \
-  PLATFORM_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>,nullptr)
-#define PLATFORM_INFO_UNITS(PARAM,TYPE,UNITS) \
-  PLATFORM_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,UNITS)
-#define PLATFORM_INFO(PARAM,TYPE) \
-  PLATFORM_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,nullptr)
-#define GET_PLATFORM_INFO_STRING(P)\
-  getPlatformInfoString(plt_id,#P,P)
-
+#define PLATFORM_INFO_STRING(PARAM)                                            \
+  PLATFORM_INFO_WITH0(#PARAM, PARAM, char *, default_formatter<char *>, nullptr)
+#define PLATFORM_INFO_UNITS(PARAM, TYPE, UNITS)                                \
+  PLATFORM_INFO_WITH0(#PARAM, PARAM, TYPE, default_formatter<TYPE>, UNITS)
+#define PLATFORM_INFO(PARAM, TYPE)                                             \
+  PLATFORM_INFO_WITH0(#PARAM, PARAM, TYPE, default_formatter<TYPE>, nullptr)
+#define GET_PLATFORM_INFO_STRING(P) get_platform_info_string(plt_id, #P, P)
 
   // This was really sexy until I tried to support GCC
   // I had a cool overloading trick with __VA_ARGS__, but GCC
@@ -557,60 +501,59 @@ void listDeviceInfoForDevice(
   //                     ^^ doesn't work on GNU since __VA_ARGS__
   //                        must capture something and we need cl_int bound
   //                        to a macro arg so we can use it as template arg
-#define DEVICE_INFO_WITH0(PARAM_STR,PARAM,TYPE,FORMATTER,UNITS) \
-  do { \
-    emitParamName(PARAM_STR); \
-    emitDeviceInfo<TYPE>(std::cout,dev_id,PARAM,FORMATTER,UNITS); \
-    std::cout << "\n"; \
+#define DEVICE_INFO_WITH0(PARAM_STR, PARAM, TYPE, FORMATTER, UNITS)            \
+  do {                                                                         \
+    emit_param_name(PARAM_STR);                                                \
+    emit_device_info<TYPE>(std::cout, dev_id, PARAM, FORMATTER, UNITS);        \
+    std::cout << "\n";                                                         \
   } while (0)
-#define DEVICE_INFO(PARAM,TYPE) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,nullptr)
-#define DEVICE_INFO_UNITS(PARAM,TYPE,UNITS) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,default_formatter<TYPE>,UNITS)
-#define DEVICE_INFO_WITH(PARAM,TYPE,FORMATTER) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,TYPE,FORMATTER,nullptr)
-#define DEVICE_INFO_MEMSIZE(PARAM,TYPE) \
-  do { \
-    emitParamName(#PARAM); \
-    emitDeviceInfoMem<TYPE>(std::cout,dev_id,PARAM); \
-    std::cout << "\n"; \
+#define DEVICE_INFO(PARAM, TYPE)                                               \
+  DEVICE_INFO_WITH0(#PARAM, PARAM, TYPE, default_formatter<TYPE>, nullptr)
+#define DEVICE_INFO_UNITS(PARAM, TYPE, UNITS)                                  \
+  DEVICE_INFO_WITH0(#PARAM, PARAM, TYPE, default_formatter<TYPE>, UNITS)
+#define DEVICE_INFO_WITH(PARAM, TYPE, FORMATTER)                               \
+  DEVICE_INFO_WITH0(#PARAM, PARAM, TYPE, FORMATTER, nullptr)
+#define DEVICE_INFO_MEMSIZE(PARAM, TYPE)                                       \
+  do {                                                                         \
+    emit_param_name(#PARAM);                                                   \
+    emit_device_info_mem<TYPE>(std::cout, dev_id, PARAM);                      \
+    std::cout << "\n";                                                         \
   } while (0)
 
-#define DEVICE_INFO_BOOL(PARAM) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,cl_bool,formatBool,nullptr)
-#define DEVICE_INFO_STRING(PARAM) \
-  DEVICE_INFO_WITH0(#PARAM,PARAM,char*,default_formatter<char*>,nullptr)
-#define GET_DEVICE_INFO_STRING(P)\
-  getDeviceInfoString(dev_id,#P,P)
+#define DEVICE_INFO_BOOL(PARAM)                                                \
+  DEVICE_INFO_WITH0(#PARAM, PARAM, cl_bool, format_bool, nullptr)
+#define DEVICE_INFO_STRING(PARAM)                                              \
+  DEVICE_INFO_WITH0(#PARAM, PARAM, char *, default_formatter<char *>, nullptr)
+#define GET_DEVICE_INFO_STRING(P) get_device_info_string(dev_id, #P, P)
 
-#define DEVICE_INFO_ARRAY_WITH0(PARAM_STR,PARAM,TYPE,DELIM,FORMATTER) \
-  do { \
-    emitParamName(PARAM_STR); \
-    emitDeviceInfoArray<TYPE>(std::cout,dev_id,PARAM,DELIM,FORMATTER); \
-    std::cout << "\n"; \
+#define DEVICE_INFO_ARRAY_WITH0(PARAM_STR, PARAM, TYPE, DELIM, FORMATTER)      \
+  do {                                                                         \
+    emit_param_name(PARAM_STR);                                                \
+    emit_device_info_array<TYPE>(std::cout, dev_id, PARAM, DELIM, FORMATTER);  \
+    std::cout << "\n";                                                         \
   } while (0)
 // #define DEVICE_INFO_ARRAY_WITH(PARAM,TYPE,FORMATTER) \
 //  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,",",FORMATTER)
-#define DEVICE_INFO_ARRAY(PARAM,TYPE) \
-  DEVICE_INFO_ARRAY_WITH0(#PARAM,PARAM,TYPE,",",default_formatter<TYPE>)
-/*
-#define DEVICE_INFO_ARRAY_WITH_DELIM(PARAM,TYPE,DELIM) \
-  do { \
-    emitParamName(#PARAM); \
-    emitDeviceInfoArray<TYPE>(\
-      std::cout, dev_id, PARAM, DELIM, default_formatter<TYPE>); \
-    std::cout << "\n"; \
-  } while (0)
-*/
+#define DEVICE_INFO_ARRAY(PARAM, TYPE)                                         \
+  DEVICE_INFO_ARRAY_WITH0(#PARAM, PARAM, TYPE, ",", default_formatter<TYPE>)
+  /*
+  #define DEVICE_INFO_ARRAY_WITH_DELIM(PARAM,TYPE,DELIM) \
+    do { \
+      emit_param_name(#PARAM); \
+      emit_device_info_array<TYPE>(\
+        std::cout, dev_id, PARAM, DELIM, default_formatter<TYPE>); \
+      std::cout << "\n"; \
+    } while (0)
+  */
   //
   //
   if (dev_ix >= 0) {
     std::cout << "DEVICE[" << dev_ix << "]: ";
   }
-  auto vend = getDeviceVendor(dev_id);
+  auto vend    = getDeviceVendor(dev_id);
   bool is_intc = vend == vendor::INTEL;
   bool is_nvda = vend == vendor::NVIDIA;
-  bool is_amd =  vend == vendor::AMD;
+  bool is_amd  = vend == vendor::AMD;
 
   if (is_intc) {
     std::cout << ANSI_COLOR_INTEL_BLUE;
@@ -624,18 +567,17 @@ void listDeviceInfoForDevice(
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
     cl_device_type dev_type;
-    auto dt_err =
-      clGetDeviceInfo(dev_id,CL_DEVICE_TYPE,sizeof(dev_type),&dev_type,nullptr);
+    auto           dt_err = clGetDeviceInfo(
+        dev_id, CL_DEVICE_TYPE, sizeof(dev_type), &dev_type, nullptr);
     if (dt_err) {
-      std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " <<
-        ANSI_RED <<
-        "[ERROR: " << cls::status_to_symbol(dt_err) << "]" <<
-        ANSI_RESET;
+      std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " << ANSI_RED
+                << "[ERROR: " << cls::status_to_symbol(dt_err) << "]"
+                << ANSI_RESET;
     } else {
       std::cout << " " << std::setw(4);
       std::stringstream ss;
-      cl_device_type bits = dev_type;
-      auto checkBit = [&](cl_device_type bit, const char *what) {
+      cl_device_type    bits     = dev_type;
+      auto              checkBit = [&](cl_device_type bit, const char *what) {
         if (bit & bits) {
           if (ss.tellp() > 0)
             ss << "|";
@@ -654,9 +596,8 @@ void listDeviceInfoForDevice(
       }
       std::cout << ss.str();
     }
-    std::cout <<
-      "    " <<
-      GET_DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION) << "\n";
+    std::cout << "    " << GET_DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION)
+              << "\n";
     return;
   }
   std::cout << "\n";
@@ -670,20 +611,19 @@ void listDeviceInfoForDevice(
   bool is_1_1_plus = spec >= cl_spec::CL_1_1;
 
   std::string extensions_string = GET_DEVICE_INFO_STRING(CL_DEVICE_EXTENSIONS);
-  auto hasExtension = [&](const char *ext) {
+  auto        hasExtension      = [&](const char *ext) {
     return extensions_string.find(ext) != std::string::npos;
   };
 
   auto START_GROUP = [](const char *name) {
-    std::cout << "  === " <<  name << ":\n";
+    std::cout << "  === " << name << ":\n";
   };
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("SYSTEM");
-  emitParamName("MICRO_ARCHITECTURE");
+  emit_param_name("MICRO_ARCHITECTURE");
   std::cout << format(getDeviceMicroArchitecture(dev_id)) << "\n";
-  // emitParamName("DRIVER_PATH");
+  // emit_param_name("DRIVER_PATH");
   // std::cout << getDriverPath(dev_id) << "\n";
-
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("PLATFORM");
@@ -692,38 +632,37 @@ void listDeviceInfoForDevice(
     PLATFORM_INFO_STRING(CL_PLATFORM_VERSION);
     PLATFORM_INFO_STRING(CL_PLATFORM_NAME);
     PLATFORM_INFO_STRING(CL_PLATFORM_VENDOR);
-    emitParamName("CL_PLATFORM_EXTENSIONS"); std::cout << "\n";
+    emit_param_name("CL_PLATFORM_EXTENSIONS");
+    std::cout << "\n";
     auto platform_exts = GET_PLATFORM_INFO_STRING(CL_PLATFORM_EXTENSIONS);
-    listExtensions(std::cout,platform_exts);
+    list_extensions(std::cout, platform_exts);
     if (is_2_1_plus)
-      PLATFORM_INFO_UNITS(CL_PLATFORM_HOST_TIMER_RESOLUTION,cl_ulong,"ns");
+      PLATFORM_INFO_UNITS(CL_PLATFORM_HOST_TIMER_RESOLUTION, cl_ulong, "ns");
     if (is_2_0_plus || platform_exts.find("cl_khr_icd") != std::string::npos)
       PLATFORM_INFO_STRING(CL_PLATFORM_ICD_SUFFIX_KHR);
   } else {
-    std::cout <<
-      ANSI_RED <<
-      "[ERROR: " << cls::status_to_symbol(plt_res) << "]" <<
-      ANSI_RESET;
+    std::cout << ANSI_RED << "[ERROR: " << cls::status_to_symbol(plt_res) << "]"
+              << ANSI_RESET;
   }
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("DEVICE");
-  DEVICE_INFO_WITH(CL_DEVICE_TYPE,cl_device_type,formatDeviceType);
+  DEVICE_INFO_WITH(CL_DEVICE_TYPE, cl_device_type, format_device_type);
   DEVICE_INFO_STRING(CL_DEVICE_VERSION);
   DEVICE_INFO_STRING(CL_DEVICE_VENDOR);
-  DEVICE_INFO_WITH(CL_DEVICE_VENDOR_ID,cl_uint,(fmtHex<cl_uint,4>));
+  DEVICE_INFO_WITH(CL_DEVICE_VENDOR_ID, cl_uint, (fmt_hex<cl_uint, 4>));
   DEVICE_INFO_STRING(CL_DEVICE_OPENCL_C_VERSION);
   DEVICE_INFO_BOOL(CL_DEVICE_AVAILABLE);
   DEVICE_INFO_STRING(CL_DRIVER_VERSION);
   DEVICE_INFO_BOOL(CL_DEVICE_PREFERRED_INTEROP_USER_SYNC);
   DEVICE_INFO_STRING(CL_DEVICE_PROFILE);
   if (is_1_2_plus) {
-    DEVICE_INFO(CL_DEVICE_PARTITION_MAX_SUB_DEVICES,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PARTITION_MAX_SUB_DEVICES, cl_uint);
   }
   if (is_2_0_plus) {
-   DEVICE_INFO_WITH(
-     CL_DEVICE_QUEUE_ON_HOST_PROPERTIES, // CL_DEVICE_QUEUE_PROPERTIES
-     cl_command_queue_properties,
-     formatCommandQueueProperties);
+    DEVICE_INFO_WITH(
+        CL_DEVICE_QUEUE_ON_HOST_PROPERTIES, // CL_DEVICE_QUEUE_PROPERTIES
+        cl_command_queue_properties,
+        format_command_queue_properties);
   }
   if (is_2_1_plus || hasExtension("cl_khr_il_program")) {
     DEVICE_INFO_STRING(CL_DEVICE_IL_VERSION);
@@ -732,46 +671,46 @@ void listDeviceInfoForDevice(
     DEVICE_INFO_STRING(CL_DEVICE_SPIR_VERSIONS);
   }
 
-
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("COMPUTE");
-  DEVICE_INFO_UNITS(CL_DEVICE_MAX_CLOCK_FREQUENCY,cl_uint,"MHz");
-  DEVICE_INFO(CL_DEVICE_MAX_COMPUTE_UNITS,cl_uint);
-  DEVICE_INFO_UNITS(CL_DEVICE_PROFILING_TIMER_RESOLUTION,size_t,"ns");
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint, "MHz");
+  DEVICE_INFO(CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
+  DEVICE_INFO_UNITS(CL_DEVICE_PROFILING_TIMER_RESOLUTION, size_t, "ns");
   DEVICE_INFO_BOOL(CL_DEVICE_ENDIAN_LITTLE);
   // e.g. block_motion_estimate_intel;...
   DEVICE_INFO_STRING(CL_DEVICE_BUILT_IN_KERNELS);
   DEVICE_INFO_WITH(
-    CL_DEVICE_SINGLE_FP_CONFIG, cl_device_fp_config, formatDeviceFpConfig);
+      CL_DEVICE_SINGLE_FP_CONFIG, cl_device_fp_config, format_device_fp_config);
   if (hasExtension("cl_khr_fp16")) {
     DEVICE_INFO_WITH(
-      CL_DEVICE_HALF_FP_CONFIG, cl_device_fp_config, formatDeviceFpConfig);
+        CL_DEVICE_HALF_FP_CONFIG, cl_device_fp_config, format_device_fp_config);
   }
   if (hasExtension("cl_khr_fp64")) {
     DEVICE_INFO_WITH(
-      CL_DEVICE_DOUBLE_FP_CONFIG, cl_device_fp_config, formatDeviceFpConfig);
+        CL_DEVICE_DOUBLE_FP_CONFIG,
+        cl_device_fp_config,
+        format_device_fp_config);
   }
   if (hasExtension("cl_khr_fp16")) {
-    DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF,cl_uint);
-    DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF, cl_uint);
+    DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF, cl_uint);
   }
-  DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT,cl_uint);
-  DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT,cl_uint);
+  DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT, cl_uint);
+  DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT, cl_uint);
   if (hasExtension("cl_khr_fp64")) {
-    DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE,cl_uint);
-    DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, cl_uint);
+    DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE, cl_uint);
   }
-  DEVICE_INFO_UNITS(CL_DEVICE_MAX_PARAMETER_SIZE,size_t,"B");
-  DEVICE_INFO(CL_DEVICE_MAX_CONSTANT_ARGS,cl_uint);
-
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_PARAMETER_SIZE, size_t, "B");
+  DEVICE_INFO(CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("WORKGROUPS");
-  DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_GROUP_SIZE,size_t,"items");
-  // DEVICE_INFO(CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS,cl_uint,"dimensions");
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t, "items");
+  DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint, "dimensions");
   DEVICE_INFO_ARRAY(CL_DEVICE_MAX_WORK_ITEM_SIZES, size_t);
   if (is_2_1_plus || hasExtension("cl_khr_subgroups")) {
-    DEVICE_INFO(CL_DEVICE_MAX_NUM_SUB_GROUPS,cl_uint);
+    DEVICE_INFO(CL_DEVICE_MAX_NUM_SUB_GROUPS, cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS);
   }
   if (hasExtension("cl_intel_required_subgroup_size")) {
@@ -781,130 +720,142 @@ void listDeviceInfoForDevice(
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("MEMORY");
   if (is_1_2_plus)
-    DEVICE_INFO_MEMSIZE(CL_DEVICE_PRINTF_BUFFER_SIZE,size_t);
-  DEVICE_INFO_UNITS(CL_DEVICE_ADDRESS_BITS,cl_uint,"b");
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_MEM_BASE_ADDR_ALIGN,cl_uint);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE,cl_ulong);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_LOCAL_MEM_SIZE,cl_ulong);
+    DEVICE_INFO_MEMSIZE(CL_DEVICE_PRINTF_BUFFER_SIZE, size_t);
+  DEVICE_INFO_UNITS(CL_DEVICE_ADDRESS_BITS, cl_uint, "b");
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_MEM_BASE_ADDR_ALIGN, cl_uint);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, cl_ulong);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_LOCAL_MEM_SIZE, cl_ulong);
   DEVICE_INFO_WITH(
-    CL_DEVICE_LOCAL_MEM_TYPE,
-    cl_device_local_mem_type,
-    formatDeviceLocalMemType);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_SIZE,cl_ulong);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_MAX_MEM_ALLOC_SIZE,cl_ulong);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_CACHE_SIZE,cl_ulong);
+      CL_DEVICE_LOCAL_MEM_TYPE,
+      cl_device_local_mem_type,
+      format_device_local_mem_type);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_MAX_MEM_ALLOC_SIZE, cl_ulong);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, cl_ulong);
   DEVICE_INFO_WITH(
-    CL_DEVICE_GLOBAL_MEM_CACHE_TYPE,
-    cl_device_mem_cache_type,
-    formatCacheType);
-  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE,cl_uint);
+      CL_DEVICE_GLOBAL_MEM_CACHE_TYPE,
+      cl_device_mem_cache_type,
+      format_cache_type);
+  DEVICE_INFO_MEMSIZE(CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, cl_uint);
   DEVICE_INFO_BOOL(CL_DEVICE_ERROR_CORRECTION_SUPPORT);
   if (is_2_0_plus) {
     DEVICE_INFO_WITH(
-      CL_DEVICE_SVM_CAPABILITIES,
-      cl_device_svm_capabilities,
-      formatDeviceSvmCapabilities);
-    DEVICE_INFO_UNITS(CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT,cl_uint,"B");
-    DEVICE_INFO_UNITS(CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT,cl_uint,"B");
+        CL_DEVICE_SVM_CAPABILITIES,
+        cl_device_svm_capabilities,
+        format_device_svm_capabilities);
+    DEVICE_INFO_UNITS(CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT, cl_uint, "B");
+    DEVICE_INFO_UNITS(
+        CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT, cl_uint, "B");
 
-    DEVICE_INFO(CL_DEVICE_MAX_PIPE_ARGS,cl_uint);
-    DEVICE_INFO(CL_DEVICE_PIPE_MAX_ACTIVE_RESERVATIONS,cl_uint);
-    DEVICE_INFO_MEMSIZE(CL_DEVICE_PIPE_MAX_PACKET_SIZE,cl_uint);
+    DEVICE_INFO(CL_DEVICE_MAX_PIPE_ARGS, cl_uint);
+    DEVICE_INFO(CL_DEVICE_PIPE_MAX_ACTIVE_RESERVATIONS, cl_uint);
+    DEVICE_INFO_MEMSIZE(CL_DEVICE_PIPE_MAX_PACKET_SIZE, cl_uint);
   }
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("IMAGES");
   DEVICE_INFO_BOOL(CL_DEVICE_IMAGE_SUPPORT);
-  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS,cl_uint);
-  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_HEIGHT,size_t,"px");
-  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_WIDTH,size_t,"px");
-  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_HEIGHT,size_t,"px");
-  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_WIDTH,size_t,"px");
-  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_DEPTH,size_t,"px");
+  DEVICE_INFO(CL_DEVICE_MAX_SAMPLERS, cl_uint);
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_HEIGHT, size_t, "px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE2D_MAX_WIDTH, size_t, "px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_HEIGHT, size_t, "px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_WIDTH, size_t, "px");
+  DEVICE_INFO_UNITS(CL_DEVICE_IMAGE3D_MAX_DEPTH, size_t, "px");
   if (is_2_0_plus) {
-    DEVICE_INFO(CL_DEVICE_IMAGE_PITCH_ALIGNMENT,cl_uint);
-    DEVICE_INFO(CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT,cl_uint);
+    DEVICE_INFO(CL_DEVICE_IMAGE_PITCH_ALIGNMENT, cl_uint);
+    DEVICE_INFO(CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT, cl_uint);
   }
 
-  DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS,cl_uint);
-  DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS,cl_uint);
+  DEVICE_INFO(CL_DEVICE_MAX_READ_IMAGE_ARGS, cl_uint);
+  DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS, cl_uint);
 
   /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_device_attribute_query")) {
     // https://registry.khronos.org/OpenCL/extensions/intel/cl_intel_device_attribute_query.html
     START_GROUP("cl_intel_device_attribute_query");
-    DEVICE_INFO(CL_DEVICE_IP_VERSION_INTEL,cl_uint); // cl_version
-    DEVICE_INFO(CL_DEVICE_ID_INTEL,cl_uint);
-    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL,cl_uint,"slices");
-    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SUB_SLICES_PER_SLICE_INTEL,cl_uint,"subslices");
-    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL,cl_uint,"slices");
-    DEVICE_INFO_UNITS(CL_DEVICE_NUM_EUS_PER_SUB_SLICE_INTEL,cl_uint,"eus");
-    DEVICE_INFO_UNITS(CL_DEVICE_NUM_THREADS_PER_EU_INTEL,cl_uint,"threads");
+    DEVICE_INFO(CL_DEVICE_IP_VERSION_INTEL, cl_uint); // cl_version
+    DEVICE_INFO(CL_DEVICE_ID_INTEL, cl_uint);
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL, cl_uint, "slices");
+    DEVICE_INFO_UNITS(
+        CL_DEVICE_NUM_SUB_SLICES_PER_SLICE_INTEL, cl_uint, "subslices");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_SLICES_INTEL, cl_uint, "slices");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_EUS_PER_SUB_SLICE_INTEL, cl_uint, "eus");
+    DEVICE_INFO_UNITS(CL_DEVICE_NUM_THREADS_PER_EU_INTEL, cl_uint, "threads");
     // cl_device_feature_capabilities_intel
-    DEVICE_INFO_WITH(CL_DEVICE_FEATURE_CAPABILITIES_INTEL,cl_uint,
-      [&] (std::ostream &os, cl_uint v) {
-        bool printed = false;
-        if (v & CL_DEVICE_FEATURE_FLAG_DP4A_INTEL) {
-          os << "CL_DEVICE_FEATURE_FLAG_DP4A_INTEL";
-          v &= ~CL_DEVICE_FEATURE_FLAG_DP4A_INTEL;
-          printed = true;
-        }
-        if (v & CL_DEVICE_FEATURE_FLAG_DPAS_INTEL) {
-          if (printed)
-            os << "|";
-          os << "CL_DEVICE_FEATURE_FLAG_DPAS_INTEL";
-          printed = true;
-          v &= ~CL_DEVICE_FEATURE_FLAG_DPAS_INTEL;
-        }
-        if (v) {
-          if (printed)
-            os << "|";
-          os << "0x" << std::hex << std::uppercase << v;
-        }
-      });
+    DEVICE_INFO_WITH(
+        CL_DEVICE_FEATURE_CAPABILITIES_INTEL,
+        cl_uint,
+        [&](std::ostream &os, cl_uint v) {
+          bool printed = false;
+          if (v & CL_DEVICE_FEATURE_FLAG_DP4A_INTEL) {
+            os << "CL_DEVICE_FEATURE_FLAG_DP4A_INTEL";
+            v &= ~CL_DEVICE_FEATURE_FLAG_DP4A_INTEL;
+            printed = true;
+          }
+          if (v & CL_DEVICE_FEATURE_FLAG_DPAS_INTEL) {
+            if (printed)
+              os << "|";
+            os << "CL_DEVICE_FEATURE_FLAG_DPAS_INTEL";
+            printed = true;
+            v &= ~CL_DEVICE_FEATURE_FLAG_DPAS_INTEL;
+          }
+          if (v) {
+            if (printed)
+              os << "|";
+            os << "0x" << std::hex << std::uppercase << v;
+          }
+        });
   }
 
   /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_planar_yuv")) {
     START_GROUP("cl_intel_planar_yuv");
-    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL,size_t,"px");
-    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_HEIGHT_INTEL,size_t,"px");
+    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL, size_t, "px");
+    DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_HEIGHT_INTEL, size_t, "px");
   }
 
   /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_simultaneous_sharing")) {
     START_GROUP("cl_intel_simultaneous_sharing");
     DEVICE_INFO(CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL, cl_uint);
-    DEVICE_INFO_ARRAY(
-      CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL,
-      cl_uint);
+    DEVICE_INFO_ARRAY(CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL, cl_uint);
   }
 
   /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_advanced_motion_estimation")) {
     START_GROUP("cl_intel_advanced_motion_estimation");
 
-    DEVICE_INFO_WITH(CL_DEVICE_ME_VERSION_INTEL,cl_uint,
-      [&] (std::ostream &os, cl_uint v) {
-        switch (v) {
-        case CL_ME_VERSION_LEGACY_INTEL: os << "CL_ME_VERSION_LEGACY_INTEL"; break;
-        case CL_ME_VERSION_ADVANCED_VER_1_INTEL: os << "CL_ME_VERSION_ADVANCED_VER_1_INTEL"; break;
-        case CL_ME_VERSION_ADVANCED_VER_2_INTEL: os << "CL_ME_VERSION_ADVANCED_VER_2_INTEL"; break;
-        default: os << v << " (unknown version code)"; break;
-        }
-      });
+    DEVICE_INFO_WITH(
+        CL_DEVICE_ME_VERSION_INTEL, cl_uint, [&](std::ostream &os, cl_uint v) {
+          switch (v) {
+          case CL_ME_VERSION_LEGACY_INTEL:
+            os << "CL_ME_VERSION_LEGACY_INTEL";
+            break;
+          case CL_ME_VERSION_ADVANCED_VER_1_INTEL:
+            os << "CL_ME_VERSION_ADVANCED_VER_1_INTEL";
+            break;
+          case CL_ME_VERSION_ADVANCED_VER_2_INTEL:
+            os << "CL_ME_VERSION_ADVANCED_VER_2_INTEL";
+            break;
+          default: os << v << " (unknown version code)"; break;
+          }
+        });
   }
   /////////////////////////////////////////////////////////////////////////////
   if (hasExtension("cl_intel_device_side_avc_motion_estimation")) {
     START_GROUP("cl_intel_device_side_avc_motion_estimation");
 
-    DEVICE_INFO_WITH(CL_DEVICE_AVC_ME_VERSION_INTEL,cl_uint,
-      [&] (std::ostream &os, cl_uint v) {
-        switch (v) {
-        case CL_AVC_ME_VERSION_1_INTEL: os << "CL_AVC_ME_VERSION_1_INTEL"; break;
-        default: os << v << " (unknown version code)"; break;
-        }
-      });
+    DEVICE_INFO_WITH(
+        CL_DEVICE_AVC_ME_VERSION_INTEL,
+        cl_uint,
+        [&](std::ostream &os, cl_uint v) {
+          switch (v) {
+          case CL_AVC_ME_VERSION_1_INTEL:
+            os << "CL_AVC_ME_VERSION_1_INTEL";
+            break;
+          default: os << v << " (unknown version code)"; break;
+          }
+        });
     DEVICE_INFO_BOOL(CL_DEVICE_AVC_ME_SUPPORTS_TEXTURE_SAMPLER_USE_INTEL);
     DEVICE_INFO_BOOL(CL_DEVICE_AVC_ME_SUPPORTS_PREEMPTION_INTEL);
   }
@@ -913,7 +864,6 @@ void listDeviceInfoForDevice(
     START_GROUP("cl_arm_core_id");
     DEVICE_INFO(CL_DEVICE_COMPUTE_UNITS_BITFIELD_ARM, cl_ulong);
   }
-
 
   /////////////////////////////////////////////////////////////////////////////
   // if (hasExtension("cl_intel_XXXXX")) {
@@ -942,16 +892,16 @@ void listDeviceInfoForDevice(
     // NVidia device properties
     // https://www.khronos.org/registry/cl/extensions/nv/cl_nv_device_attribute_query.txt
     START_GROUP("cl_nv_device_attribute_query");
-    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV,cl_uint);
-    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV,cl_uint);
-    DEVICE_INFO_UNITS(CL_DEVICE_WARP_SIZE_NV,cl_uint,"channels");
-    DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV, cl_uint);
+    DEVICE_INFO(CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV, cl_uint);
+    DEVICE_INFO_UNITS(CL_DEVICE_WARP_SIZE_NV, cl_uint, "channels");
+    DEVICE_INFO(CL_DEVICE_REGISTERS_PER_BLOCK_NV, cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_GPU_OVERLAP_NV);
     DEVICE_INFO_BOOL(CL_DEVICE_KERNEL_EXEC_TIMEOUT_NV);
     DEVICE_INFO_BOOL(CL_DEVICE_INTEGRATED_MEMORY_NV);
-    DEVICE_INFO(CL_DEVICE_PCI_BUS_ID_NV,cl_uint);
-    DEVICE_INFO(CL_DEVICE_PCI_SLOT_ID_NV,cl_uint);
-    DEVICE_INFO(CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV,cl_uint);
+    DEVICE_INFO(CL_DEVICE_PCI_BUS_ID_NV, cl_uint);
+    DEVICE_INFO(CL_DEVICE_PCI_SLOT_ID_NV, cl_uint);
+    DEVICE_INFO(CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV, cl_uint);
   }
 
   if (hasExtension("cl_amd_device_attribute_query")) {
@@ -981,35 +931,43 @@ void listDeviceInfoForDevice(
   }
   if (hasExtension("cl_altera_device_temperature")) {
     // https://www.khronos.org/registry/OpenCL/extensions/altera/cl_altera_device_temperature.txt
-    DEVICE_INFO_UNITS(CL_DEVICE_CORE_TEMPERATURE_ALTERA,cl_int,"degrees C");
+    DEVICE_INFO_UNITS(CL_DEVICE_CORE_TEMPERATURE_ALTERA, cl_int, "degrees C");
   }
 
   if (hasExtension("cl_ext_device_fission")) {
     // https://www.khronos.org/registry/OpenCL/extensions/ext/cl_ext_device_fission.txt
     // CL_DEVICE_PARENT_DEVICE_EXT
-    DEVICE_INFO_WITH(CL_DEVICE_PARENT_DEVICE_EXT,cl_device_id,
-      [&] (std::ostream &os, cl_device_id par_dev) {
-        os << "0x" << std::hex << (const void *)par_dev;
-        os << "(" << getDeviceInfoString(par_dev,"CL_DEVICE_NAME",CL_DEVICE_NAME) << ")";
-      });
+    DEVICE_INFO_WITH(
+        CL_DEVICE_PARENT_DEVICE_EXT,
+        cl_device_id,
+        [&](std::ostream &os, cl_device_id par_dev) {
+          os << "0x" << std::hex << (const void *)par_dev;
+          os << "("
+             << get_device_info_string(
+                    par_dev, "CL_DEVICE_NAME", CL_DEVICE_NAME)
+             << ")";
+        });
     // CL_DEVICE_PARTITION_TYPES_EXT
     /*
     auto formatDPPE = [](std::ostream &os, cl_device_partition_property_ext p) {
         switch (p) {
-        case CL_DEVICE_PARTITION_EQUALLY_EXT: os << "CL_DEVICE_PARTITION_EQUALLY_EXT"; break;
-        case CL_DEVICE_PARTITION_BY_COUNTS_EXT: os << "CL_DEVICE_PARTITION_BY_COUNTS_EXT"; break;
-        case CL_DEVICE_PARTITION_BY_NAMES_EXT: os << "CL_DEVICE_PARTITION_BY_NAMES_EXT"; break;
+        case CL_DEVICE_PARTITION_EQUALLY_EXT: os <<
+    "CL_DEVICE_PARTITION_EQUALLY_EXT"; break; case
+    CL_DEVICE_PARTITION_BY_COUNTS_EXT: os <<
+    "CL_DEVICE_PARTITION_BY_COUNTS_EXT"; break; case
+    CL_DEVICE_PARTITION_BY_NAMES_EXT: os << "CL_DEVICE_PARTITION_BY_NAMES_EXT";
+    break;
         // is an alias of above
-        // case CL_DEVICE_PARTITION_BY_NAMES_INTEL: os << "CL_DEVICE_PARTITION_BY_NAMES_INTEL"; break;
-        case CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT: os << "CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT"; break;
-        default: os << (int)p << "?";
+        // case CL_DEVICE_PARTITION_BY_NAMES_INTEL: os <<
+    "CL_DEVICE_PARTITION_BY_NAMES_INTEL"; break; case
+    CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT: os <<
+    "CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT"; break; default: os << (int)p
+    << "?";
         }
     };*/
   }
 
   /////////////////////////////////////////////////////////////////////////////
   std::cout << "  === DEVICE EXTENSIONS:\n";
-  listExtensions(std::cout, extensions_string);
+  list_extensions(std::cout, extensions_string);
 }
-
-

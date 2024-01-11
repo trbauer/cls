@@ -95,12 +95,6 @@ enum class microarch {
   OTHER       = 0x7FFF0000,
 };
 
-static inline bool isIntelGEN(microarch p) {
-  return
-    static_cast<int>(p) >= static_cast<int>(microarch::INTEL_GEN7P5) &&
-    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_XE2HPG);
-}
-
 microarch   getDeviceMicroArchitecture(cl_device_id d);
 
 static const char *format(microarch ma)
@@ -129,6 +123,15 @@ static const char *format(microarch ma)
   default:
     return "?";
   }
+}
+
+static inline bool isIntelGEN(microarch p) {
+  return
+    static_cast<int>(p) >= static_cast<int>(microarch::INTEL_GEN7P5) &&
+    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_XE2HPG);
+}
+static inline bool isIntelGEN(cl_device_id d) {
+  return isIntelGEN(getDeviceMicroArchitecture(d));
 }
 
 // const char *getDriverPath(cl_device_id d);

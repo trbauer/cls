@@ -21,7 +21,7 @@ struct opts {
   bool                        list_devices = false;
   std::vector<cl_device_id>   list_devices_specific;
   std::vector<std::string>    list_metrics; // -lm
-  enum {NAT,TRANS,CSV}        metric_format = NAT;
+  enum {NAT,TRANS,CSV}        metric_format = TRANS;
   bool                        no_cleanup = false;
   bool                        no_exit_on_diff_fail = false;
   bool                        parse_only = false;

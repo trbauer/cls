@@ -96,10 +96,45 @@ static void emitCompiledKernelPropertyDims(
 }
 #endif
 
-static void emitParamName(const char *param_name)
+static void emit_param_name(const char *param_name)
 {
   std::cout << std::left <<
     std::setw(48) << (std::string(param_name) + ':') << " ";
+}
+
+template <typename T>
+static void emitCompiledKernelWorkgroupProperty(
+  cl_kernel kernel,
+  cl_device_id device,
+  cl_int param,
+  const char *param_name,
+  bool is_mem,
+  const char *units = nullptr)
+{
+  std::cout << text::ANSI_FADED;
+  emit_param_name(param_name);
+  T val;
+  auto err =
+    clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
+  if (err != CL_SUCCESS) {
+    std::cout << text::ANSI_RED << status_to_symbol(err);
+  } else {
+    std::cout << text::ANSI_FADED_YELLOW;
+    if (is_mem && !units) {
+      if (val % 1024 == 0)
+        std::cout << (val / 1024) << " K";
+      else
+        std::cout << val << " B";
+    // } else if (std::is_unsigned<T>()) {
+    //  std::cout << "0x" << std::hex << std::uppercase << val;
+    } else {
+      std::cout << val;
+      if (units)
+        std::cout << units;
+    }
+  }
+  std::cout << text::ANSI_RESET;
+  std::cout << "\n";
 }
 
 template <typename T>
@@ -112,19 +147,21 @@ static void emitCompiledKernelProperty(
   const char *units = nullptr)
 {
   std::cout << text::ANSI_FADED;
-  emitParamName(param_name);
+  emit_param_name(param_name);
   T val;
   auto err =
-    clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
+    clGetKernelInfo(kernel, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
     std::cout << text::ANSI_RED << status_to_symbol(err);
   } else {
     std::cout << text::ANSI_FADED_YELLOW;
     if (is_mem && !units) {
       if (val % 1024 == 0)
-        std::cout << (val/1024) << " K";
+        std::cout << (val / 1024) << " K";
       else
         std::cout << val << " B";
+    } else if (std::is_unsigned<T>()) {
+      std::cout << "0x" << std::hex << std::uppercase << val;
     } else {
       std::cout << val;
       if (units)
@@ -135,28 +172,96 @@ static void emitCompiledKernelProperty(
   std::cout << "\n";
 }
 
-typedef cl_int (*clGetKernelSubGroupInfo_TYPE) (
-  cl_kernel,
-  cl_device_id,
-  cl_kernel_sub_group_info,
-  size_t, const void *,
-  size_t, void * , size_t *);
-
-clGetKernelSubGroupInfo_TYPE findSubgroupFunction()
+static void emitCompiledKernelPropertyStr(
+  cl_kernel kernel,
+  cl_device_id device,
+  cl_int param,
+  const char *param_name)
 {
-  static clGetKernelSubGroupInfo_TYPE function;
+  std::cout << text::ANSI_FADED;
+  emit_param_name(param_name);
+  size_t n;
+  auto err = clGetKernelInfo(kernel, param, 0, nullptr, &n);
+  if (err != CL_SUCCESS) {
+    std::cout << text::ANSI_RED << status_to_symbol(err);
+  } else {
+    std::vector<char> cs;
+    cs.resize(n + 1, 0);
+    err =
+        clGetKernelInfo(kernel, param, n, cs.data(), nullptr);
+    if (err != CL_SUCCESS) {
+      std::cout << text::ANSI_RED << status_to_symbol(err);
+    } else {
+      const char *val = cs.data();
+      std::cout << text::ANSI_FADED_YELLOW;
+      std::cout << val;
+    }
+  }
+  std::cout << text::ANSI_RESET;
+  std::cout << "\n";
+}
+
+using clGetSubgroupInfo_Fn = cl_int (*)(
+    cl_kernel                /* kernel */,
+    cl_device_id             /* device */,
+    cl_kernel_sub_group_info /* param_name */,
+    size_t                   /* input_value_size */,
+    const void              */* input_value */,
+    size_t                   /* param_value_size */,
+    void                    */* param_value */,
+    size_t                  */* param_value_size_ret*/);
+
+clGetSubgroupInfo_Fn findSubgroupFunction()
+{
+  static clGetSubgroupInfo_Fn function;
   if (function == nullptr) {
     void *lib = sys::load_library("OpenCL");
-    function = (clGetKernelSubGroupInfo_TYPE)
+    function = (clGetSubgroupInfo_Fn)
       sys::get_symbol_address(lib, "clGetKernelSubGroupInfo");
     if (function == nullptr)
-      function = (clGetKernelSubGroupInfo_TYPE)
+      function = (clGetSubgroupInfo_Fn)
         sys::get_symbol_address(lib, "clGetKernelSubGroupInfoKHR");
     if (function == nullptr)
-      function = (clGetKernelSubGroupInfo_TYPE)
+      function = (clGetSubgroupInfo_Fn)
         sys::get_symbol_address(lib, "clGetKernelSubGroupInfoIntel");
   }
   return function;
+}
+
+template <typename T>
+static void emitCompiledKernelSubgroupProperty(
+  clGetSubgroupInfo_Fn fn,
+  cl_kernel kernel,
+  cl_device_id device,
+  cl_kernel_sub_group_info param,
+  const char *param_name,
+  size_t inp_size,
+  const void *inp,
+  bool is_mem,
+  const char *units = nullptr)
+{
+  std::cout << text::ANSI_FADED;
+  emit_param_name(param_name);
+  T val;
+  auto err =
+    fn(kernel, device, param, inp_size, inp, sizeof(T), &val, nullptr);
+  if (err != CL_SUCCESS) {
+    std::cout << text::ANSI_RED << status_to_symbol(err);
+  } else {
+    std::cout << text::ANSI_FADED_YELLOW;
+    if (is_mem && !units) {
+      if (val % 1024 == 0)
+        std::cout << (val / 1024) << " K";
+      else
+        std::cout << val << " B";
+    } else {
+      std::cout << val;
+      if (units)
+        std::cout << " " << units;
+    }
+  }
+  std::cout << text::ANSI_RESET;
+  std::cout << "\n";
 }
 
 static void emitCompiledKernelProperties(
@@ -166,53 +271,90 @@ static void emitCompiledKernelProperties(
   cl_device_id device = ko.program->device->device;
   cl_spec spec = getDeviceSpec(device);
 
-  // units are an optional last parameter
-#define KERNEL_PROPERTY(MINSPEC,PARAM,TYPE) \
+
+#define KERNEL_WORKGROUP_PROPERTY(MINSPEC,PARAM,TYPE) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelProperty<TYPE>(\
+    emitCompiledKernelWorkgroupProperty<TYPE>(\
       kernel, device, PARAM, #PARAM, false, nullptr)
-#define KERNEL_PROPERTY_DIM(MINSPEC,PARAM) \
+#define KERNEL_WORKGROUP_PROPERTY_DIM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelPropertyDims(\
+    emitCompiledKernelWorkgroupProperty(\
       kernel, device, PARAM, #PARAM)
-#define KERNEL_PROPERTY_MEM(MINSPEC,PARAM) \
+#define KERNEL_WORKGROUP_PROPERTY_MEM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelProperty<cl_ulong>(\
+    emitCompiledKernelWorkgroupProperty<cl_ulong>(\
       kernel, device, PARAM, #PARAM, true, nullptr)
 
+  std::cout << text::ANSI_FADED << "=== clGetKernelWorkGroupInfo\n"
+            << text::ANSI_RESET;
+
   // only valid if it's a builtin kernel
-  // KERNEL_PROPERTY(cl_spec::CL_1_2, CL_KERNEL_GLOBAL_WORK_SIZE, ndr_temp);
-  KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
-  // KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
-  KERNEL_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
-  KERNEL_PROPERTY(
+  // KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_2, CL_KERNEL_GLOBAL_WORK_SIZE, ndr_temp);
+  KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
+  KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
+  KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
+  KERNEL_WORKGROUP_PROPERTY(
     cl_spec::CL_1_1, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, size_t);
-  KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
-  KERNEL_PROPERTY_MEM(cl_spec::CL_1_1, CL_KERNEL_PRIVATE_MEM_SIZE);
-  if (hasExtension(device,"cl_intel_required_subgroup_size")) {
-    KERNEL_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
-    //
-    std::cout << text::ANSI_FADED;
-    emitParamName("CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL");
-    std::cout << text::ANSI_RESET;
-    size_t sbsi = 0;
-    auto cl_subgroup_function = findSubgroupFunction();
-    if (cl_subgroup_function == nullptr) {
-      std::cout << text::spans::RED("unable to load clGetKernelSubGroupInfo*");
-    } else {
-      auto sbsi_err =
-        (*cl_subgroup_function)(kernel, device,
+  KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
+  KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_1, CL_KERNEL_PRIVATE_MEM_SIZE);
+
+  if (hasExtension(device, "cl_khr_subgroups")) {
+    std::cout << text::ANSI_FADED << "=== clGetKernelSubGroupInfo\n"
+              << text::ANSI_RESET;
+    auto cl_subgroup_fn = findSubgroupFunction();
+#define SUBGROUP_PROPERTY(PARAM, TYPE, INPSZ, INP, UNITS) \
+  emitCompiledKernelSubgroupProperty<TYPE>(\
+    cl_subgroup_fn, kernel, device, PARAM, #PARAM, INPSZ, INP, false, UNITS)
+
+    // requires input of dispatch size or some other input we won't have here
+    // CL_KERNEL_MAX_SUB_GROUP_SIZE_FOR_NDRANGE
+    // CL_KERNEL_SUB_GROUP_COUNT_FOR_NDRANGE
+    // CL_KERNEL_LOCAL_SIZE_FOR_SUB_GROUP_COUNT - local size to create num sgs
+    SUBGROUP_PROPERTY(
+        CL_KERNEL_MAX_NUM_SUB_GROUPS, size_t, 0, nullptr, "sub groups");
+    SUBGROUP_PROPERTY(
+        CL_KERNEL_COMPILE_NUM_SUB_GROUPS, size_t, 0, nullptr, "sub groups");
+    if (hasExtension(device, "cl_intel_required_subgroup_size")) {
+      SUBGROUP_PROPERTY(
           CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL,
-          0, nullptr,
-          sizeof(size_t), &sbsi, nullptr);
-      if (sbsi_err == CL_SUCCESS) {
-        std::cout << text::ANSI_FADED_YELLOW << sbsi << text::ANSI_RESET;
-      } else {
-        std::cout << text::spans::RED(status_to_symbol(sbsi_err));
-      }
+          size_t,
+          0,
+          nullptr,
+          "work items");
     }
-    std::cout << "\n";
   }
+
+  if (hasExtension(device, "cl_intel_required_subgroup_size")) {
+    std::cout << text::ANSI_FADED << "=== clGetKernelSubGroupInfoINTEL\n"
+              << text::ANSI_RESET;
+    KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
+    //
+  }
+
+  // units are an optional last parameter
+#define KERNEL_PROPERTY(MINSPEC, PARAM, TYPE, UNITS) \
+  if (spec >= (MINSPEC)) \
+    emitCompiledKernelProperty<TYPE>(\
+      kernel, device, PARAM, #PARAM, false, UNITS)
+#define KERNEL_PROPERTY_STR(MINSPEC, PARAM) \
+  if (spec >= (MINSPEC)) \
+    emitCompiledKernelPropertyStr(\
+      kernel, device, PARAM, #PARAM)
+  std::cout << text::ANSI_FADED << "=== clGetKernelInfo\n"
+            << text::ANSI_RESET;
+
+  // currently always returns INVALID_VALUE... (also tested priming call with big string)
+  KERNEL_PROPERTY_STR(cl_spec::CL_1_0, CL_KERNEL_ATTRIBUTES);
+  if (isIntelGEN(device)) {
+    // always returns INVALID_VALUE
+    KERNEL_PROPERTY(
+        cl_spec::CL_1_0, CL_KERNEL_BINARY_GPU_ADDRESS_INTEL, cl_ulong, nullptr);
+  }
+  // CL_KERNEL_BINARY_PROGRAM_INTEL should return bits
+
+#undef KERNEL_WORKGROUP_PROPERTY
+#undef SUBGROUP_PROPERTY
+#undef KERNEL_PROPERTY
 }
 
 kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
@@ -231,7 +373,7 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
   //
   // NOTE: avoid CL_COMMAND_CREATE macro because we want error code
   cl_int err_ck = 0;
-  auto k = clCreateKernel(ko.program->program,ks->name.c_str(),&err_ck);
+  auto k = clCreateKernel(ko.program->program, ks->name.c_str(), &err_ck);
   if (err_ck == CL_SUCCESS) {
     ko.kernel = k;
   } else if (err_ck == CL_INVALID_KERNEL_NAME) {
@@ -259,9 +401,9 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
         fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
           status_to_symbol(err));
 
-      char *name = (char *)alloca(n+1);
-      memset(name, 0, n+1);
-      err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n+1, name, nullptr);
+      char *name = (char *)alloca(n + 1);
+      memset(name, 0, n + 1);
+      err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n + 1, name, nullptr);
       if (err != CL_SUCCESS)
         fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
           status_to_symbol(err));

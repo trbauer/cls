@@ -197,6 +197,17 @@
 #ifndef CL_KERNEL_BINARY_SIZES_INTEL
 #define CL_KERNEL_BINARY_SIZES_INTEL               0x4103
 #endif
+#ifndef CL_KERNEL_BINARY_GPU_ADDRESS_INTEL
+#define CL_KERNEL_BINARY_GPU_ADDRESS_INTEL         0x10010
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+// found in the open source intel runtime
+#define CL_DEVICE_DRIVER_VERSION_INTEL             0x10010
+#define CL_DEVICE_DRIVER_VERSION_INTEL_NEO1 0x454E4831 // Driver version is ENH1
+#ifndef CL_PROFILING_COMMAND_PERFCOUNTERS_INTEL
+#define CL_PROFILING_COMMAND_PERFCOUNTERS_INTEL    0x407F
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_nv_device_attribute_query

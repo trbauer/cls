@@ -159,18 +159,18 @@ cl_device_id getDeviceDefault()
 }
 
 // list_device.cpp
-void listDeviceInfoForDevice(const cls::opts &os, cl_device_id d, int devIx);
+void list_device_info_for_device(const cls::opts &os, cl_device_id d, int devIx);
 
 void listDeviceInfo(const cls::opts &os)
 {
   if (!os.list_devices_specific.empty()) {
     for (auto &d : os.list_devices_specific) {
-      listDeviceInfoForDevice(os, d, -1);
+      list_device_info_for_device(os, d, -1);
     }
   } else {
     auto ds = getDeviceIds();
     for (int ix = 0; ix < (int)ds.size(); ix++) {
-      listDeviceInfoForDevice(os, ds[ix], ix);
+      list_device_info_for_device(os, ds[ix], ix);
     }
   }
   std::cout.flush();
