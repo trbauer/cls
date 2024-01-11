@@ -397,7 +397,7 @@ static program_info *parseProgramInfoBinary(
   cl_device_id dev_id)
 {
   // auto bits = sys::read_file_binary(path);
-  auto ma = getDeviceMicroArchitecture(dev_id);
+  auto ma = get_device_microarch(dev_id);
   if (isIntelGEN(ma)) {
     return parseProgramInfoBinaryGEN(os, ds, at, path);
   } else {
@@ -427,7 +427,7 @@ program_info *cls::k::parseProgramInfo(
     // (i.e. there's nothing to check); however, we do store the value
     // in the program_info structure for consistency
     cl_uint bytes_per_addr;
-    if (getDeviceInfo(
+    if (get_device_info(
       dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
     {
       ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
@@ -464,7 +464,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
   pi->kernels.reserve(ks_len);
 
   cl_uint bytes_per_addr;
-  if (getDeviceInfo(
+  if (get_device_info(
     dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
   {
     ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");

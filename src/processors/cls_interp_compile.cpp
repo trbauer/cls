@@ -269,7 +269,7 @@ static void emitCompiledKernelProperties(
 {
   cl_kernel kernel = ko.kernel;
   cl_device_id device = ko.program->device->device;
-  cl_spec spec = getDeviceSpec(device);
+  cl_spec spec = get_device_spec(device);
 
 
 #define KERNEL_WORKGROUP_PROPERTY(MINSPEC,PARAM,TYPE) \
@@ -298,7 +298,7 @@ static void emitCompiledKernelProperties(
   KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
   KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_1, CL_KERNEL_PRIVATE_MEM_SIZE);
 
-  if (hasExtension(device, "cl_khr_subgroups")) {
+  if (device_has_extension(device, "cl_khr_subgroups")) {
     std::cout << text::ANSI_FADED << "=== clGetKernelSubGroupInfo\n"
               << text::ANSI_RESET;
     auto cl_subgroup_fn = findSubgroupFunction();
@@ -314,7 +314,7 @@ static void emitCompiledKernelProperties(
         CL_KERNEL_MAX_NUM_SUB_GROUPS, size_t, 0, nullptr, "sub groups");
     SUBGROUP_PROPERTY(
         CL_KERNEL_COMPILE_NUM_SUB_GROUPS, size_t, 0, nullptr, "sub groups");
-    if (hasExtension(device, "cl_intel_required_subgroup_size")) {
+    if (device_has_extension(device, "cl_intel_required_subgroup_size")) {
       SUBGROUP_PROPERTY(
           CL_KERNEL_COMPILE_SUB_GROUP_SIZE_INTEL,
           size_t,
@@ -324,7 +324,7 @@ static void emitCompiledKernelProperties(
     }
   }
 
-  if (hasExtension(device, "cl_intel_required_subgroup_size")) {
+  if (device_has_extension(device, "cl_intel_required_subgroup_size")) {
     std::cout << text::ANSI_FADED << "=== clGetKernelSubGroupInfoINTEL\n"
               << text::ANSI_RESET;
     KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_SPILL_MEM_SIZE_INTEL);
@@ -527,7 +527,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     [&](const char *do_what, const char *with_what, cl_int err) {
       std::string dev_nm;
       cl_int errd;
-      if ((errd = getDeviceInfo(
+      if ((errd = get_device_info(
         po.device->device, CL_DEVICE_NAME, dev_nm)) != CL_SUCCESS)
       {
         dev_nm = status_to_symbol(errd);
@@ -539,7 +539,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
 
   std::string build_opts = ps->build_options;
   std::string build_opts_with_arg_info = build_opts;
-  auto vend = getDeviceVendor(po.device->device);
+  auto vend = get_device_vendor(po.device->device);
   if (os.use_kernel_arg_info) {
     if (is_bin && vend != vendor::INTEL) {
       // according to the OpenCL rules argument info doesn't have to be there
@@ -548,7 +548,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
         "trying to use kernel argument info on non-Intel binary "
         "(this may not work)");
     }
-    if (getDeviceSpec(po.device->device) <  cl_spec::CL_1_2)
+    if (get_device_spec(po.device->device) <  cl_spec::CL_1_2)
       fatalAt(ps->defined_at,"kernel argument info needs OpenCL 1.2+");
     if (build_opts.empty()) {
       build_opts_with_arg_info = "-cl-kernel-arg-info";
@@ -689,7 +689,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   }
 
   cl_uint bytes_per_addr;
-  if (getDeviceInfo(
+  if (get_device_info(
     po.device->device, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
   {
     fatalAt(ps->defined_at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
@@ -779,7 +779,7 @@ static cl_command_queue makeCommandQueue(
   const char *cl_function = "clCreateCommandQueue";
   if (!metric_counter_set.empty()) {
     props |= CL_QUEUE_PROFILING_ENABLE; // -tMD implies -tCL?
-    if (!isIntelGEN(getDeviceMicroArchitecture(dev_id))) {
+    if (!isIntelGEN(get_device_microarch(dev_id))) {
       ds.fatalAt(at, "-tMD=.. set, but device does not support MDAPI");
     }
     if (md == nullptr) {
@@ -813,16 +813,16 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   cl_device_id dev_id;
   switch (ds->skind) {
   case device_spec::BY_DEFAULT:
-    dev_id = getDeviceDefault();
+    dev_id = get_device_default();
     break;
   case device_spec::BY_INDEX:
-    if (!getDeviceByIndex(os, ds->by_index_value, dev_id)) {
+    if (!get_device_by_index(os, ds->by_index_value, dev_id)) {
       fatalAt(ds->defined_at,"invalid device index");
     }
     break;
   case device_spec::BY_NAME: {
     std::string err_msg;
-    if (!getDeviceByName(os, ds->by_name_value, dev_id, err_msg))
+    if (!get_device_by_name(os, ds->by_name_value, dev_id, err_msg))
       fatalAt(ds->defined_at, "invalid device specification ", err_msg);
     break;
   }
@@ -840,7 +840,7 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   device_object &dobj =
       csi->devices.emplace_back(dev_key, getDiagnostics(), ds, dev_id, os.verbosity);
   if (!os.metric_counter_set.empty()) {
-    if (!isIntelGEN(getDeviceMicroArchitecture(dev_id))) {
+    if (!isIntelGEN(get_device_microarch(dev_id))) {
       fatalAt(ds->defined_at, "-tMD=.. set but device does not support MDAPI");
     }
     dobj.md = new mdapi_lib();
@@ -869,7 +869,7 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   dobj.context = context;
   if (os.verbosity >= 2) {
     std::string dev_nm;
-    getDeviceInfo(dobj.device, CL_DEVICE_NAME, dev_nm);
+    get_device_info(dobj.device, CL_DEVICE_NAME, dev_nm);
     debugAt(ds->defined_at, "created context on ", dev_nm);
   }
 

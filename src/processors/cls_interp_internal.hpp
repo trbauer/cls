@@ -48,12 +48,12 @@ struct device_object {
         md(nullptr)
   {
     std::stringstream ss;
-    ss << "[" << spec->defined_at.line << "." <<
-      spec->defined_at.column << "]: ";
+    ss << "[" << spec->defined_at.line << "." << spec->defined_at.column
+       << "]: ";
     callback_prefix = ss.str();
 
     cl_uint bytes_per_addr;
-    if (getDeviceInfo(
+    if (get_device_info(
       dev_id,
       CL_DEVICE_ADDRESS_BITS,
       bytes_per_addr) != CL_SUCCESS)
@@ -183,7 +183,7 @@ struct dispatch_command {
     std::stringstream ss;
     ss << "#";
     std::string dev_name;
-    if (getDeviceInfo(
+    if (get_device_info(
       kernel->program->device->device,
       CL_DEVICE_NAME,
       dev_name) != CL_SUCCESS)

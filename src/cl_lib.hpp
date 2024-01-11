@@ -18,6 +18,8 @@ private:
   void *lib = nullptr;
 
 public:
+  static const cl_lib DEFAULT;
+
   bool is_valid() const {return lib;}
 
   void load_extensions(cl_device_id id);

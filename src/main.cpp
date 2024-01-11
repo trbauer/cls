@@ -119,9 +119,9 @@ int main(int argc, const char **argv)
         return;
       int dev_ix = 0;
       if (opts::readDecInt(value, dev_ix)) {
-        os.list_devices_specific.push_back(getDeviceByIndex(os, dev_ix));
+        os.list_devices_specific.push_back(get_device_by_index(os, dev_ix));
       } else {
-        os.list_devices_specific.push_back(getDeviceByName(os, value));
+        os.list_devices_specific.push_back(get_device_by_name(os, value));
       }
   });
   cmdspec.defineOpt(
@@ -298,7 +298,7 @@ int main(int argc, const char **argv)
     list_mdapi_metrics(os.verbosity, os.list_metrics);
     return EXIT_SUCCESS;
   } else if (os.list_devices) {
-    listDeviceInfo(os);
+    list_device_info(os);
     return EXIT_SUCCESS;
   }
   if (os.input_expr.size() == 0 && os.input_files.empty()) {

@@ -20,7 +20,7 @@
     } \
   } while(0)
 
-static std::vector<cl_device_id> getDeviceIds()
+static std::vector<cl_device_id> get_device_ids()
 {
   cl_platform_id *ps;
   cl_uint nps = 0;
@@ -46,7 +46,7 @@ static std::vector<cl_device_id> getDeviceIds()
   return ds;
 }
 
-cl_int getDeviceInfo(
+cl_int get_device_info(
   cl_device_id d, cl_device_info info, std::string &value)
 {
   size_t n;
@@ -64,7 +64,7 @@ cl_int getDeviceInfo(
   return err;
 }
 
-std::string getDeviceInfo(
+std::string get_device_info(
   cl_device_id d, cl_device_info info)
 {
   size_t n;
@@ -79,29 +79,29 @@ std::string getDeviceInfo(
   return std::string(str);
 }
 
-std::string getDeviceName(cl_device_id d)
+std::string get_device_name(cl_device_id d)
 {
-  return getDeviceInfo(d, CL_DEVICE_NAME);
+  return get_device_info(d, CL_DEVICE_NAME);
 }
-cl_int getDeviceInfo(cl_device_id d, cl_device_info info, cl_uint &value)
+cl_int get_device_info(cl_device_id d, cl_device_info info, cl_uint &value)
 {
   auto err = clGetDeviceInfo(d, info, sizeof(value), &value, nullptr);
   return err;
 }
 
-bool getDeviceByName(
+bool get_device_by_name(
   const cls::opts &opts,
   std::string substr,
   cl_device_id &dev_id,
   std::string &err_msg)
 {
-  auto ds = getDeviceIds();
+  auto ds = get_device_ids();
 
   std::vector<cl_device_id> matching;
   std::stringstream ss;
 
   for (size_t i = 0; i < ds.size(); i++) {
-    auto dev_nm = getDeviceName(ds[i]);
+    auto dev_nm = get_device_name(ds[i]);
     if (dev_nm.find(substr) != std::string::npos) {
       matching.push_back(ds[i]);
     }
@@ -119,41 +119,41 @@ bool getDeviceByName(
   }
 }
 
-cl_device_id getDeviceByName(
+cl_device_id get_device_by_name(
   const cls::opts &os,
   std::string substr)
 {
   cl_device_id dev_id;
   std::string err_msg;
-  if (!getDeviceByName(os,substr,dev_id,err_msg)) {
-    FATAL("%s",err_msg.c_str());
+  if (!get_device_by_name(os,substr,dev_id,err_msg)) {
+    FATAL("%s", err_msg.c_str());
   }
   return dev_id;
 }
 
-bool getDeviceByIndex(const cls::opts &os, int dev_ix, cl_device_id &dev_id)
+bool get_device_by_index(const cls::opts &os, int dev_ix, cl_device_id &dev_id)
 {
-  auto ds = getDeviceIds();
+  auto ds = get_device_ids();
   if (dev_ix >= (int)ds.size())
     return false;
   dev_id = ds[dev_ix];
   return true;
 }
 
-cl_device_id getDeviceByIndex(const cls::opts &os, int dev_ix)
+cl_device_id get_device_by_index(const cls::opts &os, int dev_ix)
 {
   cl_device_id dev_id;
-  if (!getDeviceByIndex(os, dev_ix, dev_id)) {
+  if (!get_device_by_index(os, dev_ix, dev_id)) {
     FATAL("device index out of bounds");
   }
   return dev_id;
 }
 
-cl_device_id getDeviceDefault()
+cl_device_id get_device_default()
 {
-  auto ds = getDeviceIds();
+  auto ds = get_device_ids();
   if (ds.empty()) {
-    std::cerr << "getDeviceDefault: no devices found\n";
+    std::cerr << "get_device_default: no devices found\n";
   }
   return ds[0];
 }
@@ -161,14 +161,14 @@ cl_device_id getDeviceDefault()
 // list_device.cpp
 void list_device_info_for_device(const cls::opts &os, cl_device_id d, int devIx);
 
-void listDeviceInfo(const cls::opts &os)
+void list_device_info(const cls::opts &os)
 {
   if (!os.list_devices_specific.empty()) {
     for (auto &d : os.list_devices_specific) {
       list_device_info_for_device(os, d, -1);
     }
   } else {
-    auto ds = getDeviceIds();
+    auto ds = get_device_ids();
     for (int ix = 0; ix < (int)ds.size(); ix++) {
       list_device_info_for_device(os, ds[ix], ix);
     }
@@ -176,8 +176,8 @@ void listDeviceInfo(const cls::opts &os)
   std::cout.flush();
 }
 
-cl_spec getDeviceSpec(cl_device_id d) {
-  std::string cl_version = getDeviceInfo(d, CL_DEVICE_OPENCL_C_VERSION);
+cl_spec get_device_spec(cl_device_id d) {
+  std::string cl_version = get_device_info(d, CL_DEVICE_OPENCL_C_VERSION);
   if (cl_version.find("2.2") != std::string::npos) {
     return cl_spec::CL_2_2;
   } else if (cl_version.find("2.1") != std::string::npos) {
@@ -193,7 +193,7 @@ cl_spec getDeviceSpec(cl_device_id d) {
   }
 }
 
-vendor getDeviceVendor(cl_device_id d)
+vendor get_device_vendor(cl_device_id d)
 {
   cl_uint vendor = 0;
   CL_COMMAND(clGetDeviceInfo,
@@ -203,7 +203,7 @@ vendor getDeviceVendor(cl_device_id d)
   } else if (vendor == 0x10DE) {
     return vendor::NVIDIA;
   } else {
-    std::string nm = getDeviceName(d);
+    std::string nm = get_device_name(d);
     if (nm.find("AMD") != std::string::npos ||
       nm.find("Raedeon") != std::string::npos)
     {
@@ -219,10 +219,10 @@ vendor getDeviceVendor(cl_device_id d)
   }
 }
 
-microarch getDeviceMicroArchitecture(cl_device_id d)
+microarch get_device_microarch(cl_device_id d)
 {
-  const auto vend = getDeviceVendor(d);
-  std::string nm = getDeviceName(d);
+  const auto vend = get_device_vendor(d);
+  std::string nm = get_device_name(d);
   auto nameHas = [&] (const char *substr) {
     return nm.find(substr) != std::string::npos;
   };
@@ -302,42 +302,13 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
   return arch;
 }
 
-
-bool hasExtension(cl_device_id dev, const char *ext)
+bool device_has_extension(cl_device_id dev, const char *ext)
 {
-  std::string exts = getDeviceInfo(dev, CL_DEVICE_EXTENSIONS);
+  std::string exts = get_device_info(dev, CL_DEVICE_EXTENSIONS);
   return exts.find(ext) != std::string::npos;
 }
 
 #if 0
-// TODO: this function is supposed to resolve a device to the DLL/SO
-// implementing that device.
-//
-// Ideas:
-//  1. Use clGetExtensionFunctionAddressForPlatform to fetch a pointer to
-//     a given driver function (hoping to get the driver's copy of the
-//     function, not the KHR dispatcher).  The hoping to use some system
-//     call (on Windows) to get an HMODULE and then resolve to a path.
-//     Can use /proc on Linux
-//     FAILED: clGetExtensionFunctionAddressForPlatform doesn't skip the KHR
-//     dispatcher as I hoped, and just returns nullptr on nonext functions.
-//
-//  2. Use cl_device_id as a pointer?  Assuming it's global memory in the
-//     .data section, it should be within the DLL/SO.  Use the same approach
-//     as 1.
-//     FAILED: Pointers don't appear to in image range.
-//
-
-const char *getDriverPath(cl_device_id d)
-{
-  cl_platform_id p;
-  auto err = clGetDeviceInfo(d, CL_DEVICE_PLATFORM, sizeof(p), &p, nullptr);
-  if (err != CL_SUCCESS)
-    return "?";
-
-
-  void *ptr = clGetExtensionFunctionAddressForPlatform(p, "clGetDeviceInfo");
-
-  return "?";
-}
+// need some sort of approach here
+std::string device_driver_path(cl_device_id dev);
 #endif

@@ -550,7 +550,7 @@ void list_device_info_for_device(
   if (dev_ix >= 0) {
     std::cout << "DEVICE[" << dev_ix << "]: ";
   }
-  auto vend    = getDeviceVendor(dev_id);
+  auto vend    = get_device_vendor(dev_id);
   bool is_intc = vend == vendor::INTEL;
   bool is_nvda = vend == vendor::NVIDIA;
   bool is_amd  = vend == vendor::AMD;
@@ -602,7 +602,7 @@ void list_device_info_for_device(
   }
   std::cout << "\n";
 
-  auto spec = getDeviceSpec(dev_id);
+  auto spec = get_device_spec(dev_id);
 
   bool is_2_2_plus = spec >= cl_spec::CL_2_2;
   bool is_2_1_plus = spec >= cl_spec::CL_2_1;
@@ -611,7 +611,7 @@ void list_device_info_for_device(
   bool is_1_1_plus = spec >= cl_spec::CL_1_1;
 
   std::string extensions_string = GET_DEVICE_INFO_STRING(CL_DEVICE_EXTENSIONS);
-  auto        hasExtension      = [&](const char *ext) {
+  auto        device_has_extension      = [&](const char *ext) {
     return extensions_string.find(ext) != std::string::npos;
   };
 
@@ -621,7 +621,7 @@ void list_device_info_for_device(
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("SYSTEM");
   emit_param_name("MICRO_ARCHITECTURE");
-  std::cout << format(getDeviceMicroArchitecture(dev_id)) << "\n";
+  std::cout << format(get_device_microarch(dev_id)) << "\n";
   // emit_param_name("DRIVER_PATH");
   // std::cout << getDriverPath(dev_id) << "\n";
 
@@ -664,10 +664,10 @@ void list_device_info_for_device(
         cl_command_queue_properties,
         format_command_queue_properties);
   }
-  if (is_2_1_plus || hasExtension("cl_khr_il_program")) {
+  if (is_2_1_plus || device_has_extension("cl_khr_il_program")) {
     DEVICE_INFO_STRING(CL_DEVICE_IL_VERSION);
   }
-  if (hasExtension("cl_khr_spir")) {
+  if (device_has_extension("cl_khr_spir")) {
     DEVICE_INFO_STRING(CL_DEVICE_SPIR_VERSIONS);
   }
 
@@ -681,23 +681,23 @@ void list_device_info_for_device(
   DEVICE_INFO_STRING(CL_DEVICE_BUILT_IN_KERNELS);
   DEVICE_INFO_WITH(
       CL_DEVICE_SINGLE_FP_CONFIG, cl_device_fp_config, format_device_fp_config);
-  if (hasExtension("cl_khr_fp16")) {
+  if (device_has_extension("cl_khr_fp16")) {
     DEVICE_INFO_WITH(
         CL_DEVICE_HALF_FP_CONFIG, cl_device_fp_config, format_device_fp_config);
   }
-  if (hasExtension("cl_khr_fp64")) {
+  if (device_has_extension("cl_khr_fp64")) {
     DEVICE_INFO_WITH(
         CL_DEVICE_DOUBLE_FP_CONFIG,
         cl_device_fp_config,
         format_device_fp_config);
   }
-  if (hasExtension("cl_khr_fp16")) {
+  if (device_has_extension("cl_khr_fp16")) {
     DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_HALF, cl_uint);
     DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF, cl_uint);
   }
   DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT, cl_uint);
   DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT, cl_uint);
-  if (hasExtension("cl_khr_fp64")) {
+  if (device_has_extension("cl_khr_fp64")) {
     DEVICE_INFO(CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, cl_uint);
     DEVICE_INFO(CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE, cl_uint);
   }
@@ -709,11 +709,11 @@ void list_device_info_for_device(
   DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t, "items");
   DEVICE_INFO_UNITS(CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint, "dimensions");
   DEVICE_INFO_ARRAY(CL_DEVICE_MAX_WORK_ITEM_SIZES, size_t);
-  if (is_2_1_plus || hasExtension("cl_khr_subgroups")) {
+  if (is_2_1_plus || device_has_extension("cl_khr_subgroups")) {
     DEVICE_INFO(CL_DEVICE_MAX_NUM_SUB_GROUPS, cl_uint);
     DEVICE_INFO_BOOL(CL_DEVICE_SUB_GROUP_INDEPENDENT_FORWARD_PROGRESS);
   }
-  if (hasExtension("cl_intel_required_subgroup_size")) {
+  if (device_has_extension("cl_intel_required_subgroup_size")) {
     DEVICE_INFO_ARRAY(CL_DEVICE_SUB_GROUP_SIZES_INTEL, size_t);
   }
 
@@ -770,7 +770,7 @@ void list_device_info_for_device(
   DEVICE_INFO(CL_DEVICE_MAX_WRITE_IMAGE_ARGS, cl_uint);
 
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_intel_device_attribute_query")) {
+  if (device_has_extension("cl_intel_device_attribute_query")) {
     // https://registry.khronos.org/OpenCL/extensions/intel/cl_intel_device_attribute_query.html
     START_GROUP("cl_intel_device_attribute_query");
     DEVICE_INFO(CL_DEVICE_IP_VERSION_INTEL, cl_uint); // cl_version
@@ -808,21 +808,21 @@ void list_device_info_for_device(
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_intel_planar_yuv")) {
+  if (device_has_extension("cl_intel_planar_yuv")) {
     START_GROUP("cl_intel_planar_yuv");
     DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_WIDTH_INTEL, size_t, "px");
     DEVICE_INFO_UNITS(CL_DEVICE_PLANAR_YUV_MAX_HEIGHT_INTEL, size_t, "px");
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_intel_simultaneous_sharing")) {
+  if (device_has_extension("cl_intel_simultaneous_sharing")) {
     START_GROUP("cl_intel_simultaneous_sharing");
     DEVICE_INFO(CL_DEVICE_NUM_SIMULTANEOUS_INTEROPS_INTEL, cl_uint);
     DEVICE_INFO_ARRAY(CL_DEVICE_SIMULTANEOUS_INTEROPS_INTEL, cl_uint);
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_intel_advanced_motion_estimation")) {
+  if (device_has_extension("cl_intel_advanced_motion_estimation")) {
     START_GROUP("cl_intel_advanced_motion_estimation");
 
     DEVICE_INFO_WITH(
@@ -842,7 +842,7 @@ void list_device_info_for_device(
         });
   }
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_intel_device_side_avc_motion_estimation")) {
+  if (device_has_extension("cl_intel_device_side_avc_motion_estimation")) {
     START_GROUP("cl_intel_device_side_avc_motion_estimation");
 
     DEVICE_INFO_WITH(
@@ -860,13 +860,13 @@ void list_device_info_for_device(
     DEVICE_INFO_BOOL(CL_DEVICE_AVC_ME_SUPPORTS_PREEMPTION_INTEL);
   }
   /////////////////////////////////////////////////////////////////////////////
-  if (hasExtension("cl_arm_core_id")) {
+  if (device_has_extension("cl_arm_core_id")) {
     START_GROUP("cl_arm_core_id");
     DEVICE_INFO(CL_DEVICE_COMPUTE_UNITS_BITFIELD_ARM, cl_ulong);
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // if (hasExtension("cl_intel_XXXXX")) {
+  // if (device_has_extension("cl_intel_XXXXX")) {
   //     START_GROUP("cl_intel_XXXXX");
   // #ifndef CL_DEVICE_TRANSFORM_MASK_MAX_WIDTH_INTEL
   // #define CL_DEVICE_TRANSFORM_MASK_MAX_WIDTH_INTEL        0x409C
@@ -888,7 +888,7 @@ void list_device_info_for_device(
   //  DEVICE_INFO(CL_DEVICE_TRANSFORM_FILTER_MAX_HEIGHT_INTEL,cl_uint);
   // }
 
-  if (hasExtension("cl_nv_device_attribute_query")) {
+  if (device_has_extension("cl_nv_device_attribute_query")) {
     // NVidia device properties
     // https://www.khronos.org/registry/cl/extensions/nv/cl_nv_device_attribute_query.txt
     START_GROUP("cl_nv_device_attribute_query");
@@ -904,7 +904,7 @@ void list_device_info_for_device(
     DEVICE_INFO(CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV, cl_uint);
   }
 
-  if (hasExtension("cl_amd_device_attribute_query")) {
+  if (device_has_extension("cl_amd_device_attribute_query")) {
     // https://www.khronos.org/registry/OpenCL/extensions/amd/cl_amd_device_attribute_query.txt
     //
     // cl_device_topology_amd topology
@@ -921,7 +921,7 @@ void list_device_info_for_device(
     DEVICE_INFO(CL_DEVICE_PCIE_ID_AMD, cl_uint);
     // TODO: others ...
   }
-  if (hasExtension("cl_qcom_ext_host_ptr")) {
+  if (device_has_extension("cl_qcom_ext_host_ptr")) {
     // https://www.khronos.org/registry/OpenCL/extensions/qcom/cl_qcom_ext_host_ptr.txt
     // the extension doesn't define the types, but another extension has sample
     // code that we draw from:
@@ -929,12 +929,12 @@ void list_device_info_for_device(
     DEVICE_INFO(CL_DEVICE_EXT_MEM_PADDING_IN_BYTES_QCOM, size_t);
     DEVICE_INFO(CL_DEVICE_PAGE_SIZE_QCOM, size_t);
   }
-  if (hasExtension("cl_altera_device_temperature")) {
+  if (device_has_extension("cl_altera_device_temperature")) {
     // https://www.khronos.org/registry/OpenCL/extensions/altera/cl_altera_device_temperature.txt
     DEVICE_INFO_UNITS(CL_DEVICE_CORE_TEMPERATURE_ALTERA, cl_int, "degrees C");
   }
 
-  if (hasExtension("cl_ext_device_fission")) {
+  if (device_has_extension("cl_ext_device_fission")) {
     // https://www.khronos.org/registry/OpenCL/extensions/ext/cl_ext_device_fission.txt
     // CL_DEVICE_PARENT_DEVICE_EXT
     DEVICE_INFO_WITH(

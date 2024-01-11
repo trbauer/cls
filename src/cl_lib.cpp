@@ -16,6 +16,8 @@ using namespace cls;
   const char *LIB_FILE = "OpenCL.so";
 #endif
 
+const cl_lib cl_lib::DEFAULT {0, nullptr};
+
 cl_lib::cl_lib(int _verbosity, cl_device_id dev_id) : verbosity(_verbosity) {
   lib = sys::load_library(LIB_FILE);
   if (!lib) {
@@ -23,8 +25,7 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id) : verbosity(_verbosity) {
     return;
   }
   if (dev_id == nullptr) {
-    dev_id = getDeviceDefault();
-
+    dev_id = get_device_default();
   }
 
   auto get = [&](const char *func) {

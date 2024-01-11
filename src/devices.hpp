@@ -7,38 +7,38 @@
 #include <string>
 
 //
-// std::string getDeviceName(cl_device_id d);
+// std::string get_device_name(cl_device_id d);
 //
-cl_int getDeviceInfo(cl_device_id d, cl_device_info info, std::string &value);
-cl_int getDeviceInfo(cl_device_id d, cl_device_info info, cl_uint &value);
+cl_int get_device_info(cl_device_id d, cl_device_info info, std::string &value);
+cl_int get_device_info(cl_device_id d, cl_device_info info, cl_uint &value);
 //
 
 
-bool            getDeviceByName(
+bool            get_device_by_name(
   const cls::opts &opts,
   std::string substr,
   cl_device_id &out_dev_id,
   std::string &err_msg);
 
-cl_device_id    getDeviceByName(
+cl_device_id    get_device_by_name(
   const cls::opts &opts,
   std::string substr);
 
-bool            getDeviceByIndex(
+bool            get_device_by_index(
   const cls::opts &opts,
   int dev_ix,
   cl_device_id &out_dev_id);
 
-cl_device_id    getDeviceByIndex(
+cl_device_id    get_device_by_index(
   const cls::opts &opts,
   int dev_ix);
 
-cl_device_id    getDeviceDefault();
+cl_device_id    get_device_default();
 
-void            listDeviceInfo(
+void            list_device_info(
   const cls::opts &opts);
 
-bool            hasExtension(
+bool            device_has_extension(
   cl_device_id dev_id,
   const char *ext);
 
@@ -51,7 +51,7 @@ enum class cl_spec {
   CL_2_2 = 220,
   CL_3_0 = 300,
 };
-cl_spec           getDeviceSpec(cl_device_id dev_id);
+cl_spec           get_device_spec(cl_device_id dev_id);
 
 enum class vendor {
   AMD    = 0x2222,
@@ -59,7 +59,7 @@ enum class vendor {
   NVIDIA = 0x10DE,
   OTHER  = 0x7FFF,
 };
-vendor        getDeviceVendor(cl_device_id dev_id);
+vendor        get_device_vendor(cl_device_id dev_id);
 
 enum class microarch {
   // AMD_VEGA  = ((static_cast<int>(cl_vendor::CL_AMD) << 16) | 0xXXXX),
@@ -95,7 +95,7 @@ enum class microarch {
   OTHER       = 0x7FFF0000,
 };
 
-microarch   getDeviceMicroArchitecture(cl_device_id d);
+microarch   get_device_microarch(cl_device_id d);
 
 static const char *format(microarch ma)
 {
@@ -131,7 +131,7 @@ static inline bool isIntelGEN(microarch p) {
     static_cast<int>(p) <= static_cast<int>(microarch::INTEL_XE2HPG);
 }
 static inline bool isIntelGEN(cl_device_id d) {
-  return isIntelGEN(getDeviceMicroArchitecture(d));
+  return isIntelGEN(get_device_microarch(d));
 }
 
 // const char *getDriverPath(cl_device_id d);
