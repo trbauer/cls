@@ -29,9 +29,9 @@ public:
       s = 0.0;
       m_min = m_max = x;
     } else {
-      double newMean = m + (x - m) / (m_samples + 1);
-      s = s + (x - m) * (x - newMean);
-      m = newMean;
+      double new_mean = m + (x - m) / (m_samples + 1);
+      s = s + (x - m) * (x - new_mean);
+      m = new_mean;
       if (x > m_max) m_max = x;
       else if (x < m_min) m_min = x;
     }
@@ -41,10 +41,14 @@ public:
 
   unsigned long long size() const { return m_samples; }
   double sum() const { return m_sum; }
-  double avg() const { return m_samples == 0 ? std::numeric_limits<double>().quiet_NaN() : m; }
+  double avg() const {
+    return m_samples == 0 ? std::numeric_limits<double>().quiet_NaN() : m;
+  }
   double var() const { return m_samples == 0 ? 0.0 : s / m_samples; } // biased
   double stdev() const { return sqrt(var()); }
-  double sterr() const { return m_samples < 1 ? 0 : stdev() / sqrt((double)m_samples); }
+  double sterr() const {
+     return m_samples < 1 ? 0 : stdev() / sqrt((double)m_samples);
+  }
   double cfv() const { return m_samples < 1 ? 0 : stdev() / avg(); }
   double min() const { return m_min; }
   double max() const { return m_max; }

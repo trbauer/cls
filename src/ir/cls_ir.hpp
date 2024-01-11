@@ -561,8 +561,8 @@ namespace cls
 
     device_spec(loc at) : spec(at, spec::DEVICE_SPEC) { }
 
-    void setSource(std::string name);
-    void setSource(int index);
+    void set_source(std::string name);
+    void set_source(int index);
 
     void str(std::ostream &os, format_opts fopts) const;
   };

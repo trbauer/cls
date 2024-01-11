@@ -508,7 +508,7 @@ namespace cls
   MAKE_TYPE_ACCESSORS(UINT);
   MAKE_TYPE_ACCESSORS(ULONG);
 
-  const type *lookupBuiltinType(std::string name, size_t bytes_per_addr);
+  const type *lookup_builtin_type(std::string name, size_t bytes_per_addr);
 
   // works for buffer or scalar
   void format(
@@ -516,17 +516,17 @@ namespace cls
     const void *memory,
     size_t buffer_length_in_bytes,
     const type &t);
-  void formatBuffer(
+  void format_buffer(
     std::ostream &os,
     const void *buffer,
     size_t buffer_length_in_bytes,
     const type &elem_type,
     int elems_per_row);
-  void formatBufferElement(
+  void format_buffer_element(
     std::ostream &os,
     const type &t,
     const void *ptr);
-  void formatBufferElementExt(
+  void format_buffer_element_ext(
     std::ostream &os,
     const type &t,
     const void *ptr);

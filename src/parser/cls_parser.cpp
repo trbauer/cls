@@ -452,8 +452,7 @@ std::string cls::CLS_SYN_SEX()
 }
 
 
-struct cls_parser: parser
-{
+struct cls_parser : parser {
   script &s;
 
   cls_parser(
@@ -464,10 +463,10 @@ struct cls_parser: parser
   // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
   //       ^^^^^^^^^^^^^^^^^^^^^^
   //                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  std::string consumeToChar(const char *set)
+  std::string consume_to_char(const char *set)
   {
     const std::string &s = input();
-    size_t start = nextLoc().offset;
+    size_t start = next_loc().offset;
     size_t len = 0;
     while (start + len < s.length()) {
       if (strchr(set, s[start + len])) {
@@ -475,7 +474,7 @@ struct cls_parser: parser
       }
       len++;
     }
-    while (nextLoc().offset != start + len)
+    while (next_loc().offset != start + len)
       skip();
     return s.substr(start, len);
   }
@@ -483,13 +482,13 @@ struct cls_parser: parser
   // 1024[1200]x768[800]x4
   //
   // similar to dimensions, but includes pitch
-  void parseImageDimensionExpressions(
+  void parse_image_dimension_expressions(
     std::vector<init_spec_atom *> &dims,
     std::vector<init_spec_atom *> &pitches)
   {
-    dims.push_back(parseInitAtom());
-    if (consumeIf(LBRACK)) {
-      pitches.push_back(parseInitAtom());
+    dims.push_back(parse_init_atom());
+    if (consume_if(LBRACK)) {
+      pitches.push_back(parse_init_atom());
       consume(RBRACK);
     } else {
       pitches.push_back(nullptr);
@@ -497,28 +496,28 @@ struct cls_parser: parser
     if (dims.size() == 3)
       return; // at the end
 
-    if (consumeIfIdentEq("x")) {
+    if (consume_if_ident_eq("x")) {
       // EXPR IDENT("x") ...
-      parseImageDimensionExpressions(dims, pitches);
+      parse_image_dimension_expressions(dims, pitches);
     } else {
-      while (lookingAtIdent()) {
+      while (looking_at_ident()) {
         if (dims.size() == 3)
           fatal("syntax error in image dimension constant");
         // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
         //     ^^^^^^        ^^^^^             ^^^^
         // need to split x768x3 into: "x 768 x 3"
-        loc at = nextLoc();
-        std::string lxm = tokenString();
+        loc at = next_loc();
+        std::string lxm = token_string();
         skip();
         if (lxm[0] != 'x') {
-          fatalAt(at, "syntax error in image dimensions");
+          fatal_at(at, "syntax error in image dimensions");
         }
         size_t off = 0;
         while (off < lxm.size()) {
           if (lxm[off] != 'x') {
             at.column += (uint32_t)off;
             at.offset += (uint32_t)off;
-            fatalAt(at, "syntax error in image dimensions");
+            fatal_at(at, "syntax error in image dimensions");
           }
           off++;
           size_t end = off;
@@ -528,7 +527,7 @@ struct cls_parser: parser
             // it must be a new dimension
             // 2048x1024x(...)
             //          ^
-            parseImageDimensionExpressions(dims, pitches);
+            parse_image_dimension_expressions(dims, pitches);
             return;
           } else {
             // dimension is embedded in identifier
@@ -546,7 +545,7 @@ struct cls_parser: parser
             } catch (...) {
               at.offset += (uint32_t)off;
               at.column += (uint32_t)off;
-              fatalAt(at, "syntax error in image dimensions");
+              fatal_at(at, "syntax error in image dimensions");
             }
             // 2048x1024 x16x32
             //           ^^^^
@@ -558,8 +557,8 @@ struct cls_parser: parser
             // that will handle expressions or fused numbers
             if (off == lxm.size()) {
               if (dims.size() == 2) {
-                if (consumeIf(LBRACK)) {
-                  pitches.push_back(parseInitAtom());
+                if (consume_if(LBRACK)) {
+                  pitches.push_back(parse_init_atom());
                   consume(RBRACK);
                 } else {
                   pitches.push_back(nullptr);
@@ -582,7 +581,7 @@ struct cls_parser: parser
             if (dims.size() == 3) {
               at.offset += (uint32_t)off;
               at.column += (uint32_t)off;
-              fatalAt(at, "syntax error in image dimensions (too many)");
+              fatal_at(at, "syntax error in image dimensions (too many)");
             }
           }
         } // while identifier
@@ -590,31 +589,31 @@ struct cls_parser: parser
     } // if
   }
 
-  init_spec_atom *parseInitAtomPrim()
+  init_spec_atom *parse_init_atom_prim()
   {
-    auto at = nextLoc();
-    if (lookingAt(STRLIT)) {
+    auto at = next_loc();
+    if (looking_at(STRLIT)) {
       fatal("bare strings not allowed for files anymore "
         "(use bin('...') and txt('...'))");
       return nullptr;
-    } else if (lookingAtFloat()) {
-      return new init_spec_float(at, consumeFloat());
-    } else if (lookingAtInt()) {
+    } else if (looking_at_float()) {
+      return new init_spec_float(at, consume_float());
+    } else if (looking_at_int()) {
       // we parse imm's as unsigned to enable u64 values, the cast will
       // preserve the bit patterns
-      int64_t imm = (int64_t)consumeIntegral<uint64_t>();
+      int64_t imm = (int64_t)consume_integral<uint64_t>();
       return new init_spec_int(at, imm);
-    } else if (lookingAtIdent()) {
+    } else if (looking_at_ident()) {
       // e.g. "X" or "g.x" or "pow(...)"
-      auto id = tokenString();
+      auto id = token_string();
       skip();
-      if (lookingAt(DOT)) {
+      if (looking_at(DOT)) {
         // e.g. "g.x"
-        while (consumeIf(DOT)) {
+        while (consume_if(DOT)) {
           id += '.';
-          if (!lookingAt(IDENT))
+          if (!looking_at(IDENT))
             fatal("syntax error in initializer expression field access");
-          id += tokenString();
+          id += token_string();
           skip();
         }
         for (int biv = init_spec_builtin::BIV_FIRST;
@@ -622,13 +621,13 @@ struct cls_parser: parser
           biv++)
         {
           if (id == init_spec_builtin::syntax_for((init_spec_builtin::biv_kind)biv)) {
-            at.extend_to(nextLoc());
+            at.extend_to(next_loc());
             return new init_spec_builtin(at, (init_spec_builtin::biv_kind)biv);
           }
         }
-        at.extend_to(nextLoc());
+        at.extend_to(next_loc());
         return new init_spec_symbol(at, id);
-      } else if (lookingAt(LPAREN) || lookingAt(LANGLE) ||
+      } else if (looking_at(LPAREN) || looking_at(LANGLE) ||
         id == "sizeof" || id == "random" ||
         id == "seq" || id == "aseq" || id == "fseq" || id == "cyc" ||
         id == "file" || id == "image" || id == "sampler")
@@ -639,23 +638,23 @@ struct cls_parser: parser
         //
         // then match by template arguments
         if (id == "sizeof") {
-          return parseInitAtomPrimSizeof(at);
+          return parse_init_atom_prim_sizeof(at);
         } else if (id == "random") {
-          return parseInitAtomPrimRandom(at);
+          return parse_init_atom_prim_random(at);
         } else if (id == "file") {
-          return parseInitAtomPrimFile(at);
+          return parse_init_atom_prim_file(at);
         } else if (id == "image") {
-          return parseInitAtomPrimImage(at);
+          return parse_init_atom_prim_image(at);
         } else if (id == "sampler") {
-          return parseInitSampler(at);
+          return parse_init_sampler(at);
         } else {
           ///////////////////////////////////////////////////
           // generic function syntax (could be seq still)
           std::vector<init_spec_atom *> args;
           consume(LPAREN);
-          while (!lookingAt(RPAREN)) {
-            args.push_back(parseInitAtom());
-            if (!consumeIf(COMMA))
+          while (!looking_at(RPAREN)) {
+            args.push_back(parse_init_atom());
+            if (!consume_if(COMMA))
               break;
           }
           consume(RPAREN);
@@ -668,29 +667,29 @@ struct cls_parser: parser
             case 0: iss = new init_spec_seq(at, nullptr, nullptr); break;
             case 1: iss = new init_spec_seq(at, args[0], nullptr); break;
             case 2: iss = new init_spec_seq(at, args[0], args[1]); break;
-            default: fatalAt(at, "wrong number of args to seq");
+            default: fatal_at(at, "wrong number of args to seq");
             }
-            iss->defined_at.extend_to(nextLoc());
+            iss->defined_at.extend_to(next_loc());
             return iss;
           } else if (id == "fseq") {
             init_spec_fseq *isf = new init_spec_fseq(at);
             if (args.empty()) {
-              fatalAt(at, "cyc args must be non-empty");
+              fatal_at(at, "cyc args must be non-empty");
             }
             for (const auto *arg : args) {
               isf->args.push_back(arg);
             }
-            isf->defined_at.extend_to(nextLoc());
+            isf->defined_at.extend_to(next_loc());
             return isf;
           } else if (id == "cyc") {
             init_spec_cyc *isc = new init_spec_cyc(at);
             if (args.empty()) {
-              fatalAt(at, "cyc args must be non-empty");
+              fatal_at(at, "cyc args must be non-empty");
             }
             for (const auto *arg : args) {
               isc->args.push_back(arg);
             }
-            isc->defined_at.extend_to(nextLoc());
+            isc->defined_at.extend_to(next_loc());
             return isc;
           }
 
@@ -698,58 +697,58 @@ struct cls_parser: parser
           // regular arithmetic functions
           if (args.size() == 1) {
             if (id == "fabs")
-              fatalAt(at, "use \"abs\" for the absolute value");
+              fatal_at(at, "use \"abs\" for the absolute value");
             else if (id == "sqt")
-              fatalAt(at, "use \"sqrt\" for the square root");
+              fatal_at(at, "use \"sqrt\" for the square root");
 
             const auto *op = init_spec_uex::lookup_op(id.c_str());
             if (!op) {
               if (init_spec_bex::lookup_op(id.c_str())) {
-                fatalAt(at, "function requires two arguments");
+                fatal_at(at, "function requires two arguments");
               } else {
-                fatalAt(at, "not a unary function");
+                fatal_at(at, "not a unary function");
               }
             }
             return new init_spec_uex(at, *op, args[0]);
           } else if (args.size() == 2) {
             const auto *op = init_spec_bex::lookup_op(id.c_str());
             if (!op) {
-              fatalAt(at, "not a binary function");
+              fatal_at(at, "not a binary function");
             }
             auto *isbe = new init_spec_bex(*op, args[0], args[1]);
             isbe->defined_at = at; // reset start loc to function name
-            isbe->defined_at.extend_to(nextLoc());
+            isbe->defined_at.extend_to(next_loc());
             return isbe;
           } else {
-            fatalAt(at, "undefined function");
+            fatal_at(at, "undefined function");
             return nullptr;
           }
         } // end else not random
       } else if (id == "undef") {
         return new init_spec_undef(at);
       } else {
-        return parseInitAtomPrimSymbol(at, id);
+        return parse_init_atom_prim_symbol(at, id);
       }
-    } else if (consumeIf(LBRACE)) {
-      return parseInitAtomPrimStruct(at);
-    } else if (consumeIf(LPAREN)) {
+    } else if (consume_if(LBRACE)) {
+      return parse_init_atom_prim_struct(at);
+    } else if (consume_if(LPAREN)) {
       // grouping expression or vector value
-      if (lookingAtSeq(IDENT, RPAREN))
+      if (looking_at_seq(IDENT, RPAREN))
       {
-        const type *et = lookupBuiltinType(tokenString(), 8);
+        const type *et = lookup_builtin_type(token_string(), 8);
         if (et == nullptr || !et->is<type_vector>()) {
           fatal("not a vector type");
           return nullptr;
         } else {
-          return parseInitAtomPrimVector(at, et);
+          return parse_init_atom_prim_vector(at, et);
         }
       } else {
         // grouping expression (E)
-        init_spec_atom *e = parseInitAtom();
+        init_spec_atom *e = parse_init_atom();
         consume(RPAREN);
         return e;
       }
-    } else if (lookingAt(NEWLINE)){
+    } else if (looking_at(NEWLINE)){
       fatal("unexpecetd newline initializer expression");
       return nullptr;
     } else {
@@ -757,17 +756,18 @@ struct cls_parser: parser
       return nullptr;
     }
   }
-  init_spec_atom *parseInitAtomPrimSizeof(loc at)
+
+  init_spec_atom *parse_init_atom_prim_sizeof(loc at)
   {
-    bool has_parens = consumeIf(LPAREN);
-    if (!lookingAtIdent())
+    bool has_parens = consume_if(LPAREN);
+    if (!looking_at_ident())
       fatal("expected type name");
-    loc nm_at = nextLoc();
-    std::string sizeof_arg = tokenString();
+    loc nm_at = next_loc();
+    std::string sizeof_arg = token_string();
     skip();
     if (has_parens)
       consume(RPAREN);
-    at.extend_to(nextLoc());
+    at.extend_to(next_loc());
     // manual dereference memobject
     auto itr = s.let_bindings.find(sizeof_arg);
     if (itr == s.let_bindings.end()) {
@@ -785,7 +785,7 @@ struct cls_parser: parser
         refable<init_spec_mem>(nm_at, sizeof_arg, (init_spec_mem *)is));
     }
   }
-  init_spec_atom *parseInitAtomPrimFile(loc at)
+  init_spec_atom *parse_init_atom_prim_file(loc at)
   {
     //
     // file('foo.bin'):r                 // binary
@@ -801,66 +801,66 @@ struct cls_parser: parser
     auto flv = init_spec_file::BIN;
     int col = 0;
     std::string sep = " ";
-    if (consumeIf(LANGLE)) {
-      if (!lookingAt(RANGLE)) {
-        auto fmt_loc = nextLoc();
-        auto flv_str = consumeIdent("data format (identifier)");
+    if (consume_if(LANGLE)) {
+      if (!looking_at(RANGLE)) {
+        auto fmt_loc = next_loc();
+        auto flv_str = consume_ident("data format (identifier)");
         if (flv_str == "bin") {
           flv = init_spec_file::BIN;
         } else if (flv_str == "text") {
           flv = init_spec_file::TXT;
-          if (consumeIf(COMMA)) {
-            if (!lookingAt(STRLIT)) {
+          if (consume_if(COMMA)) {
+            if (!looking_at(STRLIT)) {
               fatal("expected separator string (literal)");
             }
-            sep = tokenStringLiteral();
+            sep = token_string_literal();
             skip();
           }
         } else if (flv_str == "text_col") {
           flv = init_spec_file::TXT_COL;
-          if (consumeIf(COMMA)) {
-            col = consumeIntegral<int>("column index (int)");
-            if (consumeIf(COMMA)) {
-              if (!lookingAt(STRLIT)) {
+          if (consume_if(COMMA)) {
+            col = consume_integral<int>("column index (int)");
+            if (consume_if(COMMA)) {
+              if (!looking_at(STRLIT)) {
                 fatal("expected separator string (literal)");
               }
-              sep = tokenStringLiteral();
+              sep = token_string_literal();
               skip();
             }
           }
         } else {
-          fatalAt(fmt_loc, "unsupported file flavor; should be: bin, text, ...");
+          fatal_at(fmt_loc, "unsupported file flavor; should be: bin, text, ...");
         }
       }
       consume(RANGLE);
     }
     skip();
-    if (!lookingAt(STRLIT)) {
-      fatalAt(at, "expected file path (string literal)");
+    if (!looking_at(STRLIT)) {
+      fatal_at(at, "expected file path (string literal)");
     }
-    auto s = tokenStringLiteral();
+    auto s = token_string_literal();
     skip();
     consume(RPAREN);
-    at.extend_to(nextLoc());
+    at.extend_to(next_loc());
     return new init_spec_file(at, s, flv, col, sep);
   }
-  init_spec_atom *parseInitAtomPrimRandom(loc at)
+  init_spec_atom *parse_init_atom_prim_random(loc at)
   {
     auto func = new init_spec_rng(at);
     int64_t seed = 0;
     bool has_seed = false;
-    if (consumeIf(LANGLE)) {
-      if (!lookingAt(RANGLE)) {
-        seed = consumeIntegral<int64_t>("seed (int)");
+    if (consume_if(LANGLE)) {
+      if (!looking_at(RANGLE)) {
+        seed = consume_integral<int64_t>("seed (int)");
         has_seed = true;
       }
       consume(RANGLE);
     }
-    if (consumeIf(LPAREN)) {
-      if (!lookingAt(RPAREN)) {
-        auto *arg1 = parseInitAtom();
-        if (consumeIf(COMMA)) {
-          auto *arg2 = parseInitAtom();
+    if (consume_if(LPAREN)) {
+      if (!looking_at(RPAREN)) {
+        auto *arg1 = parse_init_atom();
+        if (consume_if(COMMA)) {
+          auto *arg2 = parse_init_atom();
           func->e_lo = arg1;
           func->e_hi = arg2;
         } else {
@@ -871,72 +871,72 @@ struct cls_parser: parser
     }
     if (has_seed)
       func->set_seed(seed);
-    func->defined_at.extend_to(nextLoc());
+    func->defined_at.extend_to(next_loc());
     return func;
   }
-  init_spec_atom *parseInitAtomPrimImage(loc at)
+  init_spec_atom *parse_init_atom_prim_image(loc at)
   {
     consume(LANGLE);
     auto ord = init_spec_image::RGB;
-    if (consumeIfIdentEq("i") ||
-      consumeIfIdentEq("CL_INTENSITY"))
+    if (consume_if_ident_eq("i") ||
+      consume_if_ident_eq("CL_INTENSITY"))
     {
       ord = init_spec_image::I;
-    } else if (consumeIfIdentEq("l") ||
-      consumeIfIdentEq("CL_LUMINANCE"))
+    } else if (consume_if_ident_eq("l") ||
+      consume_if_ident_eq("CL_LUMINANCE"))
     {
       ord = init_spec_image::L;
-    } else if (consumeIfIdentEq("r") ||
-      consumeIfIdentEq("CL_R"))
+    } else if (consume_if_ident_eq("r") ||
+      consume_if_ident_eq("CL_R"))
     {
       ord = init_spec_image::R;
-    } else if (consumeIfIdentEq("rx") ||
-      consumeIfIdentEq("CL_Rx"))
+    } else if (consume_if_ident_eq("rx") ||
+      consume_if_ident_eq("CL_Rx"))
     {
       ord = init_spec_image::Rx;
-    } else if (consumeIfIdentEq("rg") ||
-      consumeIfIdentEq("CL_RG"))
+    } else if (consume_if_ident_eq("rg") ||
+      consume_if_ident_eq("CL_RG"))
     {
       ord = init_spec_image::RG;
-    } else if (consumeIfIdentEq("rgx") ||
-      consumeIfIdentEq("CL_RGx"))
+    } else if (consume_if_ident_eq("rgx") ||
+      consume_if_ident_eq("CL_RGx"))
     {
       ord = init_spec_image::RGx;
-    } else if (consumeIfIdentEq("rgb") ||
-      consumeIfIdentEq("CL_RGB"))
+    } else if (consume_if_ident_eq("rgb") ||
+      consume_if_ident_eq("CL_RGB"))
     {
       ord = init_spec_image::RGB;
-    } else if (consumeIfIdentEq("rgbx") ||
-      consumeIfIdentEq("CL_RGBx"))
+    } else if (consume_if_ident_eq("rgbx") ||
+      consume_if_ident_eq("CL_RGBx"))
     {
       ord = init_spec_image::RGBx;
-    } else if (consumeIfIdentEq("rgba") ||
-      consumeIfIdentEq("CL_RGBA"))
+    } else if (consume_if_ident_eq("rgba") ||
+      consume_if_ident_eq("CL_RGBA"))
     {
       ord = init_spec_image::RGBA;
-    } else if (consumeIfIdentEq("argb") ||
-      consumeIfIdentEq("CL_ARGB"))
+    } else if (consume_if_ident_eq("argb") ||
+      consume_if_ident_eq("CL_ARGB"))
     {
       ord = init_spec_image::ARGB;
-    } else if (consumeIfIdentEq("bgra") ||
-      consumeIfIdentEq("CL_BGRA"))
+    } else if (consume_if_ident_eq("bgra") ||
+      consume_if_ident_eq("CL_BGRA"))
     {
       ord = init_spec_image::BGRA;
 
-    } else if (consumeIfIdentEq("srgb") ||
-      consumeIfIdentEq("CL_sRGB"))
+    } else if (consume_if_ident_eq("srgb") ||
+      consume_if_ident_eq("CL_sRGB"))
     {
       ord = init_spec_image::sRGB;
-    } else if (consumeIfIdentEq("srgbx") ||
-      consumeIfIdentEq("CL_sRGBx"))
+    } else if (consume_if_ident_eq("srgbx") ||
+      consume_if_ident_eq("CL_sRGBx"))
     {
       ord = init_spec_image::sRGBx;
-    } else if (consumeIfIdentEq("srgba") ||
-      consumeIfIdentEq("CL_sRGBA"))
+    } else if (consume_if_ident_eq("srgba") ||
+      consume_if_ident_eq("CL_sRGBA"))
     {
       ord = init_spec_image::sRGBA;
-    } else if (consumeIfIdentEq("sbgra") ||
-      consumeIfIdentEq("CL_sBGRA"))
+    } else if (consume_if_ident_eq("sbgra") ||
+      consume_if_ident_eq("CL_sBGRA"))
     {
       ord = init_spec_image::sBGRA;
     } else {
@@ -945,76 +945,76 @@ struct cls_parser: parser
     consume(COMMA);
     auto ty = init_spec_image::U8;
     ///////////////////////////////////////////////////////////////////////
-    if (consumeIfIdentEq("un8") ||
-      consumeIfIdentEq("CL_UNORM_INT8"))
+    if (consume_if_ident_eq("un8") ||
+      consume_if_ident_eq("CL_UNORM_INT8"))
     {
       ty = init_spec_image::UN8;
-    } else if (consumeIfIdentEq("un16") ||
-      consumeIfIdentEq("CL_UNORM_INT16"))
+    } else if (consume_if_ident_eq("un16") ||
+      consume_if_ident_eq("CL_UNORM_INT16"))
     {
       ty = init_spec_image::UN16;
-    } else if (consumeIfIdentEq("un24") ||
-      consumeIfIdentEq("CL_UNORM_INT24"))
+    } else if (consume_if_ident_eq("un24") ||
+      consume_if_ident_eq("CL_UNORM_INT24"))
     {
       ty = init_spec_image::UN24;
-    } else if (consumeIfIdentEq("un565") ||
-      consumeIfIdentEq("CL_UNORM_SHORT_565"))
+    } else if (consume_if_ident_eq("un565") ||
+      consume_if_ident_eq("CL_UNORM_SHORT_565"))
     {
       ty = init_spec_image::UN565;
-    } else if (consumeIfIdentEq("un555") ||
-      consumeIfIdentEq("CL_UNORM_SHORT_555"))
+    } else if (consume_if_ident_eq("un555") ||
+      consume_if_ident_eq("CL_UNORM_SHORT_555"))
     {
       ty = init_spec_image::UN555;
-    } else if (consumeIfIdentEq("un101010") ||
-      consumeIfIdentEq("CL_UNORM_INT_101010"))
+    } else if (consume_if_ident_eq("un101010") ||
+      consume_if_ident_eq("CL_UNORM_INT_101010"))
     {
       ty = init_spec_image::UN101010;
-    } else if (consumeIfIdentEq("un101010_2") ||
-      consumeIfIdentEq("CL_UNORM_INT_101010_2"))
+    } else if (consume_if_ident_eq("un101010_2") ||
+      consume_if_ident_eq("CL_UNORM_INT_101010_2"))
     {
       ty = init_spec_image::UN101010_2;
       ///////////////////////////////////////////////////////////////////////
-    } else if (consumeIfIdentEq("sn8") ||
-      consumeIfIdentEq("CL_SNORM_INT8"))
+    } else if (consume_if_ident_eq("sn8") ||
+      consume_if_ident_eq("CL_SNORM_INT8"))
     {
       ty = init_spec_image::SN8;
-    } else if (consumeIfIdentEq("sn16") ||
-      consumeIfIdentEq("CL_SNORM_INT16"))
+    } else if (consume_if_ident_eq("sn16") ||
+      consume_if_ident_eq("CL_SNORM_INT16"))
     {
       ty = init_spec_image::SN16;
       ///////////////////////////////////////////////////////////////////////
-    } else if (consumeIfIdentEq("u8") ||
-      consumeIfIdentEq("CL_UNSIGNED_INT8"))
+    } else if (consume_if_ident_eq("u8") ||
+      consume_if_ident_eq("CL_UNSIGNED_INT8"))
     {
       ty = init_spec_image::U8;
-    } else if (consumeIfIdentEq("u16") ||
-      consumeIfIdentEq("CL_UNSIGNED_INT16"))
+    } else if (consume_if_ident_eq("u16") ||
+      consume_if_ident_eq("CL_UNSIGNED_INT16"))
     {
       ty = init_spec_image::U16;
-    } else if (consumeIfIdentEq("u32") ||
-      consumeIfIdentEq("CL_UNSIGNED_INT32"))
+    } else if (consume_if_ident_eq("u32") ||
+      consume_if_ident_eq("CL_UNSIGNED_INT32"))
     {
       ty = init_spec_image::U32;
       ///////////////////////////////////////////////////////////////////////
-    } else if (consumeIfIdentEq("s8") ||
-      consumeIfIdentEq("CL_SIGNED_INT8"))
+    } else if (consume_if_ident_eq("s8") ||
+      consume_if_ident_eq("CL_SIGNED_INT8"))
     {
       ty = init_spec_image::S8;
-    } else if (consumeIfIdentEq("s16") ||
-      consumeIfIdentEq("CL_SIGNED_INT16"))
+    } else if (consume_if_ident_eq("s16") ||
+      consume_if_ident_eq("CL_SIGNED_INT16"))
     {
       ty = init_spec_image::S16;
-    } else if (consumeIfIdentEq("s32") ||
-      consumeIfIdentEq("CL_SIGNED_INT32"))
+    } else if (consume_if_ident_eq("s32") ||
+      consume_if_ident_eq("CL_SIGNED_INT32"))
     {
       ty = init_spec_image::S32;
       ///////////////////////////////////////////////////////////////////////
-    } else if (consumeIfIdentEq("f32") ||
-      consumeIfIdentEq("CL_FLOAT"))
+    } else if (consume_if_ident_eq("f32") ||
+      consume_if_ident_eq("CL_FLOAT"))
     {
       ty = init_spec_image::F32;
-    } else if (consumeIfIdentEq("f16") ||
-      consumeIfIdentEq("CL_HALF_FLOAT"))
+    } else if (consume_if_ident_eq("f16") ||
+      consume_if_ident_eq("CL_HALF_FLOAT"))
     {
       ty = init_spec_image::F16;
       ///////////////////////////////////////////////////////////////////////
@@ -1025,7 +1025,7 @@ struct cls_parser: parser
 
     init_spec_atom *width = nullptr, *height = nullptr, *depth = nullptr;
     init_spec_atom *row_pitch = nullptr, *slice_pitch = nullptr;
-    if (consumeIf(COMMA)) {
+    if (consume_if(COMMA)) {
       // image dimension:
       // W (RP)
       // W (RP) x H (SP)
@@ -1033,7 +1033,7 @@ struct cls_parser: parser
       // the spacing makes this hard
       std::vector<init_spec_atom *> dims;
       std::vector<init_spec_atom *> pitches;
-      parseImageDimensionExpressions(dims, pitches);
+      parse_image_dimension_expressions(dims, pitches);
       //
       width = dims[0];
       height = dims.size() >= 2 ? dims[1] : nullptr;
@@ -1043,31 +1043,31 @@ struct cls_parser: parser
     }
     consume(RANGLE);
     std::string file;
-    if (consumeIf(LPAREN)) {
-      if (!lookingAt(STRLIT)) {
-        fatalAt(at, "expected file path (string literal)");
+    if (consume_if(LPAREN)) {
+      if (!looking_at(STRLIT)) {
+        fatal_at(at, "expected file path (string literal)");
       }
-      file = tokenStringLiteral(); skip();
+      file = token_string_literal(); skip();
       consume(RPAREN);
     }
-    at.extend_to(nextLoc());
+    at.extend_to(next_loc());
     return new init_spec_image(
       at, file, ord, ty, width, row_pitch, height, slice_pitch, depth);
   }
-  init_spec_atom *parseInitAtomPrimStruct(loc at)
+  init_spec_atom *parse_init_atom_prim_struct(loc at)
   {
     // {...}
     auto re = new init_spec_record(at);
-    if (!lookingAt(RBRACE)) {
-      re->children.push_back(parseInitAtom());
-      while (consumeIf(COMMA))
-        re->children.push_back(parseInitAtom());
+    if (!looking_at(RBRACE)) {
+      re->children.push_back(parse_init_atom());
+      while (consume_if(COMMA))
+        re->children.push_back(parse_init_atom());
     }
     consume(RBRACE);
-    re->defined_at.extend_to(nextLoc());
+    re->defined_at.extend_to(next_loc());
     return re;
   }
-  init_spec_atom *parseInitAtomPrimVector(loc at, const type *et)
+  init_spec_atom *parse_init_atom_prim_vector(loc at, const type *et)
   {
     // vector initializer
     if (!et->is<type_vector>()) {
@@ -1078,11 +1078,11 @@ struct cls_parser: parser
     consume(RPAREN);
     //   vector:    (float4)(1,2,3,4)
     //   broadcast: (float4)(3.14f)
-    if (lookingAt(LPAREN)) {
+    if (looking_at(LPAREN)) {
       consume(LPAREN);
-      vi->children.push_back(parseInitAtom());
-      while (consumeIf(COMMA))
-        vi->children.push_back(parseInitAtom());
+      vi->children.push_back(parse_init_atom());
+      while (consume_if(COMMA))
+        vi->children.push_back(parse_init_atom());
       consume(RPAREN);
       if (vi->children.size() == 1) {
         // broadcast
@@ -1091,41 +1091,41 @@ struct cls_parser: parser
       }
     } else {
       // broadcast: (float4)3.14f
-      auto *e = parseInitAtom();
+      auto *e = parse_init_atom();
       for (int i = 0; i < (int)et->as<type_vector>().length; i++)
         vi->children.push_back(e);
     }
     return vi;
   }
 
-  init_spec_atom *parseInitSampler(loc at) {
+  init_spec_atom *parse_init_sampler(loc at) {
     consume(LPAREN);
     init_spec_sampler *iss = new init_spec_sampler(at);
-    if (consumeIfIdentEq("CL_FALSE") || consumeIfIdentEq("false")) {
+    if (consume_if_ident_eq("CL_FALSE") || consume_if_ident_eq("false")) {
       iss->normalized = false;
-    } else if (consumeIfIdentEq("CL_TRUE") || consumeIfIdentEq("true")) {
+    } else if (consume_if_ident_eq("CL_TRUE") || consume_if_ident_eq("true")) {
       iss->normalized = true;
     } else {
       fatal("expected CL_FALSE or CL_TRUE for normalized device coordinates");
     }
     consume(COMMA);
-    if (consumeIfIdentEq("CL_ADDRESS_NONE")) {
+    if (consume_if_ident_eq("CL_ADDRESS_NONE")) {
       iss->addr_mode = init_spec_sampler::AM_NONE;
-    } else if (consumeIfIdentEq("CL_ADDRESS_CLAMP_TO_EDGE")) {
+    } else if (consume_if_ident_eq("CL_ADDRESS_CLAMP_TO_EDGE")) {
       iss->addr_mode = init_spec_sampler::AM_CLAMP_EDGE;
-    } else if (consumeIfIdentEq("CL_ADDRESS_CLAMP")) {
+    } else if (consume_if_ident_eq("CL_ADDRESS_CLAMP")) {
       iss->addr_mode = init_spec_sampler::AM_CLAMP;
-    } else if (consumeIfIdentEq("CL_ADDRESS_REPEAT")) {
+    } else if (consume_if_ident_eq("CL_ADDRESS_REPEAT")) {
       iss->addr_mode = init_spec_sampler::AM_REPEAT;
-    } else if (consumeIfIdentEq("CL_ADDRESS_MIRRORED_REPEAT")) {
+    } else if (consume_if_ident_eq("CL_ADDRESS_MIRRORED_REPEAT")) {
       iss->addr_mode = init_spec_sampler::AM_MIRRORED_REPEAT;
     } else {
       fatal("expected cl_address_mode (e.g. CL_ADDRESS_CLAMP)");
     }
     consume(COMMA);
-    if (consumeIfIdentEq("CL_FILTER_NEAREST")) {
+    if (consume_if_ident_eq("CL_FILTER_NEAREST")) {
       iss->filter = init_spec_sampler::FM_NEAREST;
-    } else if (consumeIfIdentEq("CL_FILTER_LINEAR")) {
+    } else if (consume_if_ident_eq("CL_FILTER_LINEAR")) {
       iss->filter = init_spec_sampler::FM_LINEAR;
     } else {
       fatal("expected cl_filter_mode (e.g. CL_FILTER_NEAREST)");
@@ -1134,7 +1134,7 @@ struct cls_parser: parser
     return iss;
   }
 
-  init_spec_atom *parseInitAtomPrimSymbol(loc at, const std::string &id)
+  init_spec_atom *parse_init_atom_prim_symbol(loc at, const std::string &id)
   {
     auto mv = lookup_builtin_symbol(id);
     if (mv.has_value()) {
@@ -1149,12 +1149,12 @@ struct cls_parser: parser
     }
   }
 
-  init_spec_atom *parseInitAtomUnr()
+  init_spec_atom *parse_init_atom_unr()
   {
-    if (lookingAt(SUB) || lookingAt(TILDE)) {
-      auto loc = nextLoc();
-      bool isSub = lookingAt(SUB);
-      const auto &op = isSub ?
+    if (looking_at(SUB) || looking_at(TILDE)) {
+      auto loc = next_loc();
+      bool is_sub = looking_at(SUB);
+      const auto &op = is_sub ?
         *init_spec_uex::lookup_op("-") :
         *init_spec_uex::lookup_op("~");
 
@@ -1163,86 +1163,86 @@ struct cls_parser: parser
       // NOTE: we deal with 9223372036854775808 within atom as a second
       // try parse as uint64_t
       //
-      // if (isSub && lookingAtIdentEq("9223372036854775808")) {
+      // if (is_sub && looking_at_ident_eq("9223372036854775808")) {
         // given "-9223372036854775808", we can't parse the atom
         // as 9223372036854775808 (out of bounds for int64_t)
       // }
-      init_spec_atom *e = parseInitAtomUnr();
+      init_spec_atom *e = parse_init_atom_unr();
       return new init_spec_uex(loc, op, e);
     } else {
-      return parseInitAtomPrim();
+      return parse_init_atom_prim();
     }
   }
-  init_spec_atom *parseInitAtomMul()
+  init_spec_atom *parse_init_atom_mul()
   {
-    init_spec_atom *e = parseInitAtomUnr();
-    while (lookingAt(MUL) || lookingAt(DIV) || lookingAt(MOD)) {
+    init_spec_atom *e = parse_init_atom_unr();
+    while (looking_at(MUL) || looking_at(DIV) || looking_at(MOD)) {
       const auto &op =
-        lookingAt(MUL) ? *init_spec_bex::lookup_op("*") :
-        lookingAt(DIV) ? *init_spec_bex::lookup_op("/") :
+        looking_at(MUL) ? *init_spec_bex::lookup_op("*") :
+        looking_at(DIV) ? *init_spec_bex::lookup_op("/") :
         *init_spec_bex::lookup_op("%");
       skip();
-      init_spec_atom *t = parseInitAtomUnr();
+      init_spec_atom *t = parse_init_atom_unr();
       e = new init_spec_bex(op, e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtomAdd()
+  init_spec_atom *parse_init_atom_add()
   {
-    init_spec_atom *e = parseInitAtomMul();
-    while (lookingAt(ADD) || lookingAt(SUB)) {
-      const auto &op = lookingAt(ADD) ?
+    init_spec_atom *e = parse_init_atom_mul();
+    while (looking_at(ADD) || looking_at(SUB)) {
+      const auto &op = looking_at(ADD) ?
         *init_spec_bex::lookup_op("+") :
         *init_spec_bex::lookup_op("-");
       skip();
-      init_spec_atom *t = parseInitAtomMul();
+      init_spec_atom *t = parse_init_atom_mul();
       e = new init_spec_bex(op, e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtomShift()
+  init_spec_atom *parse_init_atom_shift()
   {
-    init_spec_atom *e = parseInitAtomAdd();
-    while (lookingAt(LSH) || lookingAt(RSH)) {
-      const auto &op = lookingAt(LSH) ?
+    init_spec_atom *e = parse_init_atom_add();
+    while (looking_at(LSH) || looking_at(RSH)) {
+      const auto &op = looking_at(LSH) ?
         *init_spec_bex::lookup_op("<<") :
         *init_spec_bex::lookup_op(">>");
       skip();
-      init_spec_atom *t = parseInitAtomAdd();
+      init_spec_atom *t = parse_init_atom_add();
       e = new init_spec_bex(op, e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtomBitwiseAND()
+  init_spec_atom *parse_init_atom_bitwise_and()
   {
-    init_spec_atom *e = parseInitAtomShift();
-    while (consumeIf(AMP)) {
-      init_spec_atom *t = parseInitAtomShift();
+    init_spec_atom *e = parse_init_atom_shift();
+    while (consume_if(AMP)) {
+      init_spec_atom *t = parse_init_atom_shift();
       e = new init_spec_bex(*init_spec_bex::lookup_op("&"), e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtomBitwiseXOR()
+  init_spec_atom *parse_init_atom_bitwise_xor()
   {
-    init_spec_atom *e = parseInitAtomBitwiseAND();
-    while (consumeIf(CIRC)) {
-      init_spec_atom *t = parseInitAtomBitwiseAND();
+    init_spec_atom *e = parse_init_atom_bitwise_and();
+    while (consume_if(CIRC)) {
+      init_spec_atom *t = parse_init_atom_bitwise_and();
       e = new init_spec_bex(*init_spec_bex::lookup_op("^"), e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtomBitwiseOR()
+  init_spec_atom *parse_init_atom_bitwise_or()
   {
-    init_spec_atom *e = parseInitAtomBitwiseXOR();
-    while (consumeIf(PIPE)) {
-      init_spec_atom *t = parseInitAtomBitwiseXOR();
+    init_spec_atom *e = parse_init_atom_bitwise_xor();
+    while (consume_if(PIPE)) {
+      init_spec_atom *t = parse_init_atom_bitwise_xor();
       e = new init_spec_bex(*init_spec_bex::lookup_op("|"), e, t);
     }
     return e;
   }
-  init_spec_atom *parseInitAtom()
+  init_spec_atom *parse_init_atom()
   {
-    return parseInitAtomBitwiseOR();
+    return parse_init_atom_bitwise_or();
   }
 
   // starts
@@ -1261,30 +1261,30 @@ struct cls_parser: parser
     return cols;
   }
 
-  init_spec *parseInit()
+  init_spec *parse_init()
   {
-    auto l = nextLoc();
-    init_spec_atom *e = parseInitAtom();
+    auto l = next_loc();
+    init_spec_atom *e = parse_init_atom();
 
-    if (consumeIf(COLON)) {
+    if (consume_if(COLON)) {
       // memory initializer
       init_spec_mem *m = new init_spec_mem(l);
       m->root = e;
-      if (consumeIf(LBRACK)) {
-        init_spec_atom *de = parseInitAtom();
+      if (consume_if(LBRACK)) {
+        init_spec_atom *de = parse_init_atom();
         m->dimension = de;
         consume(RBRACK);
       }
       // attributes
-      if (!lookingAt(IDENT)) {
+      if (!looking_at(IDENT)) {
         fatal("expected buffer/image attributes");
       }
-      auto s = tokenString();
+      auto s = token_string();
       skip();
       for (size_t i = 0; i < s.size(); i++) {
-        auto setTx = [&](init_spec_mem::transfer t) {
+        auto set_tx = [&](init_spec_mem::transfer t) {
           if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID) {
-            fatalAt(l, "memory transfer respecification");
+            fatal_at(l, "memory transfer respecification");
           }
           m->transfer_properties = t;
         };
@@ -1307,26 +1307,26 @@ struct cls_parser: parser
             case 'c':
             case 'f':
               if (m->transfer_properties != init_spec_mem::transfer::TX_INVALID)
-                fatalAt(l,
+                fatal_at(l,
                   "invalid svm memory attribute (must be :..sc.. or :..sf..)");
-              setTx(s[i] == 'c' ?
+              set_tx(s[i] == 'c' ?
                 init_spec_mem::transfer::TX_SVM_COARSE :
                 init_spec_mem::transfer::TX_SVM_FINE);
               break;
             default:
-              // fatalAt(l, "invalid svm memory attribute (must be sc or sf)");
+              // fatal_at(l, "invalid svm memory attribute (must be sc or sf)");
               // assume coarse if only one char given
-              setTx(init_spec_mem::transfer::TX_SVM_COARSE);
+              set_tx(init_spec_mem::transfer::TX_SVM_COARSE);
             }
           } else {
-            setTx(init_spec_mem::transfer::TX_SVM_COARSE);
+            set_tx(init_spec_mem::transfer::TX_SVM_COARSE);
           }
           break;
         case 'm':
-          setTx(init_spec_mem::transfer::TX_MAP);
+          set_tx(init_spec_mem::transfer::TX_MAP);
           break;
         case 'c':
-          setTx(init_spec_mem::transfer::TX_COPY);
+          set_tx(init_spec_mem::transfer::TX_COPY);
           break;
           // SPECIFY: do we consider deprecating these after stable development
           //          they are certainly nice for debugging
@@ -1346,12 +1346,12 @@ struct cls_parser: parser
           // the diganostic
           l.column += (uint32_t)i;
           l.offset += (uint32_t)i;
-          fatalAt(l, "invalid memory attribute");
+          fatal_at(l, "invalid memory attribute");
         }
       }
       if (m->transfer_properties == init_spec_mem::transfer::TX_INVALID)
         m->transfer_properties = init_spec_mem::transfer::TX_COPY; // default to copy
-      m->defined_at.extend_to(nextLoc());
+      m->defined_at.extend_to(next_loc());
       return m;
     } else {
       // regular primitive
@@ -1360,15 +1360,15 @@ struct cls_parser: parser
   }
 
   template <typename T>
-  refable<T> dereferenceLet(
+  refable<T> dereference_let(
     enum spec::spec_kind skind,
     const char *what)
   {
-    auto at = nextLoc();
-    std::string name = consumeIdent();
+    auto at = next_loc();
+    std::string name = consume_ident();
     auto itr = s.let_bindings.find(name);
     if (itr == s.let_bindings.end()) {
-      fatalAt(at, what, " not defined");
+      fatal_at(at, what, " not defined");
     }
     let_spec *ls = itr->second;
     spec *rs = ls->value;
@@ -1376,16 +1376,16 @@ struct cls_parser: parser
       std::stringstream ss;
       ss << "identifier does not reference a " << what;
       ss << " (defined on line " << rs->defined_at.line << ")";
-      fatalAt(at, ss.str());
+      fatal_at(at, ss.str());
     }
     return refable<T>(at, name, (T *)rs);
   }
 
-  refable<init_spec_mem> dereferenceLetMem() {
+  refable<init_spec_mem> dereference_let_mem() {
     refable<init_spec> rf =
-      dereferenceLet<init_spec>(spec::INIT_SPEC, "memory object");
+      dereference_let<init_spec>(spec::INIT_SPEC, "memory object");
     if ((*rf).skind != init_spec::IS_MEM) {
-      fatalAt(rf.defined_at, "identifier does not reference a memory object");
+      fatal_at(rf.defined_at, "identifier does not reference a memory object");
     }
     return refable<init_spec_mem>(
       rf.defined_at,
@@ -1410,29 +1410,29 @@ struct cls_parser: parser
   // 1024x256 x3         INT(1024) IDENT("x256x3") IDENT("x3")
   // 1024x768x(2*4)      INT(1024) IDENT("x256x") EXPR
   // (2*1024)x768 x 3    EXPR      IDENT("x768") IDENT("x") INT(3)
-  void parseDimensionExpressions(std::vector<init_spec_atom *> &dims) {
-    dims.push_back(parseInitAtom());
-    if (lookingAtIdentEq("x")) {
+  void parse_dimension_expressions(std::vector<init_spec_atom *> &dims) {
+    dims.push_back(parse_init_atom());
+    if (looking_at_ident_eq("x")) {
       // EXPR IDENT("x") ...
       skip();
-      parseDimensionExpressions(dims);
+      parse_dimension_expressions(dims);
     } else {
-      while (lookingAtIdent()) {
+      while (looking_at_ident()) {
         // 1024x768x3 or 1024x768x(...) or 1024x768 x(...)
         //     ^^^^^^        ^^^^^             ^^^^
         // need to split x768x3 into: "x 768 x 3"
-        loc at = nextLoc();
-        std::string lxm = tokenString();
+        loc at = next_loc();
+        std::string lxm = token_string();
         skip();
         if (lxm[0] != 'x') {
-          fatalAt(at, "syntax error in dimension constant");
+          fatal_at(at, "syntax error in dimension constant");
         }
         size_t off = 0;
         while (off < lxm.size()) {
           if (lxm[off] != 'x') {
             at.column += (uint32_t)off;
             at.offset += (uint32_t)off;
-            fatalAt(at, "syntax error in dimension constant");
+            fatal_at(at, "syntax error in dimension constant");
           }
           off++;
           size_t end = off;
@@ -1442,7 +1442,7 @@ struct cls_parser: parser
             // it must be a new dimension
             // 2048x1024x(...)
             //          ^
-            parseDimensionExpressions(dims);
+            parse_dimension_expressions(dims);
             return;
           } else {
             // dimension is embedded in identifier
@@ -1460,7 +1460,7 @@ struct cls_parser: parser
             } catch (...) {
               at.offset += (uint32_t)off;
               at.column += (uint32_t)off;
-              fatalAt(at, "syntax error in dimension constant");
+              fatal_at(at, "syntax error in dimension constant");
             }
             // 2048x1024 x16x32
             //           ^^^^
@@ -1495,27 +1495,27 @@ struct cls_parser: parser
   // Partially applied program:   BAR`baz<1024,128>(...)
   // Paritally applied kernel:    FOO<1024,128>(...)
   //
-  // void parseDispatchStatement####(parser &p, script &s, dispatch_spec &ds)
-  void parseDispatchStatementDimensions(dispatch_spec &ds) {
+  // void parse_dispatch_statement####(parser &p, script &s, dispatch_spec &ds)
+  void parse_dispatch_statement_dimensions(dispatch_spec &ds) {
     // #1`path/foo.cl`kernel<1024x1024>(...)
     //                      ^^^^^^^^^^^
     // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
     //                      ^^^^^^^^^^^^^^^^^
     consume(LANGLE);
 
-    if (lookingAtIdentEq("nullptr") || lookingAtIdentEq("NULL"))
-      fatal(tokenString(), " not allowed for global dimensions");
-    loc at = nextLoc();
-    parseDimensionExpressions(ds.global_size);
-    if (consumeIf(COMMA)) {
-      if (!consumeIfIdentEq("nullptr") && !consumeIfIdentEq("NULL"))
-        parseDimensionExpressions(ds.local_size);
+    if (looking_at_ident_eq("nullptr") || looking_at_ident_eq("NULL"))
+      fatal(token_string(), " not allowed for global dimensions");
+    loc at = next_loc();
+    parse_dimension_expressions(ds.global_size);
+    if (consume_if(COMMA)) {
+      if (!consume_if_ident_eq("nullptr") && !consume_if_ident_eq("NULL"))
+        parse_dimension_expressions(ds.local_size);
     }
     if (!ds.local_size.empty() &&
       ds.global_size.size() != ds.local_size.size())
     {
-      at.extend_to(nextLoc());
-      fatalAt(at, "global and local sizes have different dimensions");
+      at.extend_to(next_loc());
+      fatal_at(at, "global and local sizes have different dimensions");
     }
 
     consume(RANGLE);
@@ -1523,10 +1523,10 @@ struct cls_parser: parser
 
   // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
   //                                 ^^^^^^^^^^^^^
-  void parseDispatchStatementArguments(dispatch_spec &ds) {
+  void parse_dispatch_statement_arguments(dispatch_spec &ds) {
     consume(LPAREN);
-    while (!lookingAt(RPAREN)) {
-      init_spec *is = parseInit();
+    while (!looking_at(RPAREN)) {
+      init_spec *is = parse_init();
       if (is->skind == init_spec::IS_SYM) {
         // make a reference argument
         ds.arguments.emplace_back(
@@ -1538,20 +1538,20 @@ struct cls_parser: parser
         // immediate value
         ds.arguments.push_back(is);
       }
-      if (!consumeIf(COMMA))
+      if (!consume_if(COMMA))
         break;
     }
     consume(RPAREN);
-    ds.defined_at.extend_to(nextLoc());
+    ds.defined_at.extend_to(next_loc());
   }
 
   // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
   //                                               ^^^^^^^^^^^^^^^^^^^^^^
-  void parseDispatchStatementWhereClause(
+  void parse_dispatch_statement_where_clause(
     dispatch_spec &ds,
     let_spec *enclosing_let)
   {
-    auto hasParam =
+    auto has_param =
       [&](std::string nm) {
       if (enclosing_let)
         for (const std::string &arg : enclosing_let->params)
@@ -1561,26 +1561,26 @@ struct cls_parser: parser
     };
 
     // resolve references after the where clause
-    if (consumeIfIdentEq("where")) {
-      while (lookingAt(IDENT)) {
-        auto loc = nextLoc();
-        auto name = consumeIdent("variable name");
+    if (consume_if_ident_eq("where")) {
+      while (looking_at(IDENT)) {
+        auto loc = next_loc();
+        auto name = consume_ident("variable name");
 
-        if (hasParam(name)) {
-          fatalAt(loc, "where binding shadows let parameter");
+        if (has_param(name)) {
+          fatal_at(loc, "where binding shadows let parameter");
         }
         auto itr = s.let_bindings.find(name);
         if (itr != s.let_bindings.end()) {
-          warningAt(loc,
+          warning_at(loc,
             "where binding shadows let binding (from line ",
             itr->second->defined_at.line, ")");
         }
         for (auto w : ds.where_bindings)
           if (std::get<0>(w) == name)
-            fatalAt(loc, "repeated where binding name");
+            fatal_at(loc, "repeated where binding name");
         consume(EQ);
-        init_spec *i = parseInit();
-        i->defined_at.extend_to(nextLoc());
+        init_spec *i = parse_init();
+        i->defined_at.extend_to(next_loc());
         ds.where_bindings.emplace_back(name, i);
         bool where_used_at_least_once = false;
         for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
@@ -1592,9 +1592,9 @@ struct cls_parser: parser
           }
         }
         if (!where_used_at_least_once) {
-          warningAt(loc, "where binding never used");
+          warning_at(loc, "where binding never used");
         }
-        if (lookingAtSeq(COMMA, IDENT)) {
+        if (looking_at_seq(COMMA, IDENT)) {
           skip();
         } else {
           break;
@@ -1606,7 +1606,7 @@ struct cls_parser: parser
     for (size_t ai = 0; ai < ds.arguments.size(); ai++) {
       if (ds.arguments[ai].value == nullptr) {
         const auto &id = ds.arguments[ai].identifier;
-        if (hasParam(id)) {
+        if (has_param(id)) {
           // parameter passed to this let
           // e.g. let F(X) = ....<...>(...,X,...);
           auto &prs = enclosing_let->param_uses[id];
@@ -1615,11 +1615,11 @@ struct cls_parser: parser
           // capture from the let binding above this statement
           auto itr = s.let_bindings.find(id);
           if (itr == s.let_bindings.end()) {
-            fatalAt(ds.arguments[ai].defined_at, "undefined symbol");
+            fatal_at(ds.arguments[ai].defined_at, "undefined symbol");
           }
           let_spec *ls = itr->second;
           if (ls->value->skind != spec::INIT_SPEC) {
-            fatalAt(ds.arguments[ai].defined_at,
+            fatal_at(ds.arguments[ai].defined_at,
               "symbol does not refer to a kernel argument (see line ",
               ls->defined_at.line,
               ")");
@@ -1633,26 +1633,26 @@ struct cls_parser: parser
 
   // #1`path/foo.cl
   // #1:a`path/foo.cl
-  program_spec *parseDispatchStatementDeviceProgramPart() {
-    device_spec dev(nextLoc());
-    if (consumeIf(HASH)) {
-      if (lookingAt(STRLIT) || lookingAt(IDENT)) {
-        if (lookingAt(STRLIT)) {
-          dev.setSource(tokenStringLiteral());
+  program_spec *parse_dispatch_statement_device_program_part() {
+    device_spec dev(next_loc());
+    if (consume_if(HASH)) {
+      if (looking_at(STRLIT) || looking_at(IDENT)) {
+        if (looking_at(STRLIT)) {
+          dev.set_source(token_string_literal());
         } else {
-          dev.setSource(tokenString());
+          dev.set_source(token_string());
         }
         skip();
-      } else if (lookingAtInt()) {
-        dev.setSource(consumeIntegral<int32_t>("device index (integer)"));
+      } else if (looking_at_int()) {
+        dev.set_source(consume_integral<int32_t>("device index (integer)"));
       } else {
         fatal("invalid device specification");
       }
-      if (consumeIf(COLON)) {
-        dev.instance = consumeIdent("queue identifier");
+      if (consume_if(COLON)) {
+        dev.instance = consume_ident("queue identifier");
       }
-      dev.defined_at.extend_to(nextLoc());
-      if (!lookingAt(BACKTICK))
+      dev.defined_at.extend_to(next_loc());
+      if (!looking_at(BACKTICK))
         fatal("expected ` (dispatch program separator) or "
           "# (queue identifier)");
       consume(BACKTICK);
@@ -1664,64 +1664,64 @@ struct cls_parser: parser
     //    ^^^^^^^^^^^
     // #GTX`"foo/spaces in path/prog.cl"`kernel<...>(...)
     //      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    program_spec *ps = new program_spec(nextLoc());
+    program_spec *ps = new program_spec(next_loc());
     ps->device = dev;
-    if (lookingAt(STRLIT)) {
-      ps->path = tokenStringLiteral(); skip();
+    if (looking_at(STRLIT)) {
+      ps->path = token_string_literal(); skip();
     } else {
-      ps->path = consumeToChar("[`");
+      ps->path = consume_to_char("[`");
     }
 
     // #1`path/foo.cl[-DTYPE=int]`kernel<1024x1024,16x16>(...)
     //               ^^^^^^^^^^^^
-    if (consumeIf(LBRACK)) {
-      ps->build_options = consumeToChar("]");
+    if (consume_if(LBRACK)) {
+      ps->build_options = consume_to_char("]");
       consume(RBRACK);
     }
-    ps->defined_at.extend_to(nextLoc());
+    ps->defined_at.extend_to(next_loc());
 
     return ps;
   }
 
-  kernel_spec *parseDispatchStatementKernelPart(program_spec *ps) {
+  kernel_spec *parse_dispatch_statement_kernel_part(program_spec *ps) {
     // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
     //                ^^^^^^
     kernel_spec *ks = new kernel_spec(ps);
-    if (lookingAt(IDENT)) {
-      ks->name = tokenString(); skip();
+    if (looking_at(IDENT)) {
+      ks->name = token_string(); skip();
     }
-    ks->defined_at.extend_to(nextLoc());
+    ks->defined_at.extend_to(next_loc());
     ks->program = ps;
     return ks;
   }
 
 
   // allows for default devices:
-  //   EASY CSE:  #1`....
+  //   EASY CASE: #1`....
   //              ^ yes!
   //   HARD CASE: long/path with/spaces/foo.cl[long args]`kernel<...>()
   //                                          ^ YES!
   //              long/path with/spaces/foo.cl`kernel<...>()
   //                                          ^ YES!
-  bool lookingAtImmediateDispatchStatement() const {
-    if (lookingAt(HASH))
+  bool looking_at_immediate_dispatch_statement() const {
+    if (looking_at(HASH))
       return true;
-    if (lookingAtIdentEq("let"))
+    if (looking_at_ident_eq("let"))
       return false; // let foo = ...;
-    if (lookingAtSeq(IDENT, LPAREN))
+    if (looking_at_seq(IDENT, LPAREN))
       return false; // e.g. seq(...); print(...)
     int i = 1;
-    while (i < (int)tokensLeft()) {
-      if (lookingAt(BACKTICK, i) || // correct dispatch
-        lookingAt(LANGLE, i) || // malformed dispatch   foo.cl`bar<1024>(...)
+    while (i < (int)tokens_left()) {
+      if (looking_at(BACKTICK, i) || // correct dispatch
+        looking_at(LANGLE, i) || // malformed dispatch   foo.cl`bar<1024>(...)
                                  //                            ^
-        lookingAt(LBRACK, i)) // malformed dispatchd    foo.cl[...]`bar(...)
+        looking_at(LBRACK, i)) // malformed dispatchd    foo.cl[...]`bar(...)
                                //                              ^
       {
         return true;
-      } else if (lookingAt(NEWLINE, i) || // malformed statement
-        lookingAt(SEMI, i) || // malformed statement    .....; ....
-        lookingAt(EQ, i)) // malformed let possibly     foo=BAR
+      } else if (looking_at(NEWLINE, i) || // malformed statement
+        looking_at(SEMI, i) || // malformed statement    .....; ....
+        looking_at(EQ, i)) // malformed let possibly     foo=BAR
       {
         break;
       }
@@ -1730,36 +1730,36 @@ struct cls_parser: parser
     return false;
   }
 
-  dispatch_spec *parseDispatchStatement()
+  dispatch_spec *parse_dispatch_statement()
   {
-    auto loc = nextLoc();
+    auto loc = next_loc();
     dispatch_spec *ds = new dispatch_spec(loc);
-    if (lookingAtImmediateDispatchStatement()) {
-      if (lookingAtSeq(IDENT, RANGLE)) {
+    if (looking_at_immediate_dispatch_statement()) {
+      if (looking_at_seq(IDENT, RANGLE)) {
         // named kernel invocation
         // KERNEL<...>(...)
         ds->kernel =
-          dereferenceLet<kernel_spec>(spec::KERNEL_SPEC, "kernel");
-      } else if (lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE)) {
+          dereference_let<kernel_spec>(spec::KERNEL_SPEC, "kernel");
+      } else if (looking_at_seq(IDENT, BACKTICK, IDENT, LANGLE)) {
         // PROG`kernel<...>(...)
         // 000012222223...
         refable<program_spec> ps =
-          dereferenceLet<program_spec>(spec::PROGRAM_SPEC, "program");
+          dereference_let<program_spec>(spec::PROGRAM_SPEC, "program");
         consume(BACKTICK);
-        std::string kernel_name = consumeIdent("kernel name");
+        std::string kernel_name = consume_ident("kernel name");
         ds->kernel = new kernel_spec(ps);
       } else {
         // FULLY immediate dispatch
         //
         // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
         // ^^^^^^^^^^^^^^^^^^^^^^^
-        program_spec *ps = parseDispatchStatementDeviceProgramPart();
+        program_spec *ps = parse_dispatch_statement_device_program_part();
         // #1`path/foo.cl[-cl-opt]`kernel<1024x1024,16x16>(...)
         //                        ^
         consume(BACKTICK);
         // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
         //                ^^^^^^
-        ds->kernel = parseDispatchStatementKernelPart(ps);
+        ds->kernel = parse_dispatch_statement_kernel_part(ps);
       }
     } else {
       fatal("expected statement");
@@ -1767,24 +1767,24 @@ struct cls_parser: parser
 
     // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
     //                      ^^^^^^^^^^^^^^^^^
-    parseDispatchStatementDimensions(*ds);
+    parse_dispatch_statement_dimensions(*ds);
 
     // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where ...
     //                                 ^^^^^^^^^^^^^^^^^^^^^^^
-    parseDispatchStatementArguments(*ds);
+    parse_dispatch_statement_arguments(*ds);
     // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
     //                                               ^^^^^^^^^^^^^^^^^^^^^^
-    parseDispatchStatementWhereClause(*ds, nullptr);
-    ds->defined_at.extend_to(nextLoc());
+    parse_dispatch_statement_where_clause(*ds, nullptr);
+    ds->defined_at.extend_to(next_loc());
 
     return ds;
   }
 
-  init_spec_symbol *parseSymbol(parser &p)
+  init_spec_symbol *parse_symbol(parser &p)
   {
-    auto loc = nextLoc();
-    if (lookingAtIdent()) {
-      auto ident = tokenString();
+    auto loc = next_loc();
+    if (looking_at_ident()) {
+      auto ident = token_string();
       return new init_spec_symbol(loc, ident);
     } else {
       fatal("expected identifier");
@@ -1793,18 +1793,18 @@ struct cls_parser: parser
   }
 
   // Given an arugment; we resolve symbol the symbol to a let target (or fail)
-  refable<init_spec> parseInitResolved()
+  refable<init_spec> parse_init_resolved()
   {
-    init_spec *is = parseInit();
+    init_spec *is = parse_init();
     if (is->skind == init_spec::IS_SYM) {
       // make a reference argument
       auto itr = s.let_bindings.find(((const init_spec_symbol *)is)->identifier);
       if (itr == s.let_bindings.end()) {
-        fatalAt(is->defined_at, "unbound identifier");
+        fatal_at(is->defined_at, "unbound identifier");
       } else if (itr->second->value->skind != spec::INIT_SPEC ||
         ((init_spec *)itr->second->value)->skind != init_spec::IS_MEM)
       {
-        fatalAt(is->defined_at, "identifier does not reference a memory object");
+        fatal_at(is->defined_at, "identifier does not reference a memory object");
       }
       refable<init_spec> ris(
         is->defined_at,
@@ -1818,10 +1818,10 @@ struct cls_parser: parser
     }
   }
 
-  static bool isFloating(const type &elem_type) {
+  static bool is_floating(const type &elem_type) {
     if (elem_type.is<type_vector>()) {
       const type_vector &s = elem_type.as<type_vector>();
-      return isFloating(s.element_type);
+      return is_floating(s.element_type);
     }
     return elem_type.is<type_num>() &&
       elem_type.as<type_num>().skind == type_num::FLOATING;
@@ -1833,51 +1833,51 @@ struct cls_parser: parser
   // diff(X,Y) | diff<float>(X,Y) | diff<float,0.001> | diff<double2,0.0001>
   // print(X) | print<float>(X)
   // save(sym,X) | save_image<...>(...)
-  bool parseBuiltIn()
+  bool parse_builtin()
   {
-    auto loc = nextLoc();
-    if (lookingAtIdentEq("barrier")) {
+    auto loc = next_loc();
+    if (looking_at_ident_eq("barrier")) {
       s.statement_list.statements.push_back(new barrier_spec(loc));
       skip();
-      if (consumeIf(LPAREN)) // optional ()
+      if (consume_if(LPAREN)) // optional ()
         consume(RPAREN);
-      s.statement_list.statements.back()->defined_at.extend_to(nextLoc());
+      s.statement_list.statements.back()->defined_at.extend_to(next_loc());
       return true;
-    } else if (lookingAtIdentEq("diff")) {
+    } else if (looking_at_ident_eq("diff")) {
       skip();
       const type *elem_type = nullptr;
       std::optional<double> max_diff;
-      if (consumeIf(LANGLE)) {
-        auto at = nextLoc();
+      if (consume_if(LANGLE)) {
+        auto at = next_loc();
         // HACK: need to know the pointer size; assume 64b for now
         // technically we should probably just save the string and deal with
         // it during compilation once devices are matched etc...
         const size_t HACK = 8;
-        elem_type = lookupBuiltinType(consumeIdent("type name"), HACK);
-        if (consumeIf(COMMA)) {
-          auto diff_loc = nextLoc();
-          max_diff = consumeFloat("floating point (max diff)");
-          if (!isFloating(*elem_type)) {
-            fatalAt(diff_loc, "diff max error requires floating point type");
+        elem_type = lookup_builtin_type(consume_ident("type name"), HACK);
+        if (consume_if(COMMA)) {
+          auto diff_loc = next_loc();
+          max_diff = consume_float("floating point (max diff)");
+          if (!is_floating(*elem_type)) {
+            fatal_at(diff_loc, "diff max error requires floating point type");
           }
         }
         consume(RANGLE);
       }
       consume(LPAREN);
-      auto ref = parseInitResolved();
+      auto ref = parse_init_resolved();
       consume(COMMA);
-      if (!lookingAt(IDENT))
+      if (!looking_at(IDENT))
         fatal("expected reference to memory object");
-      refable<init_spec_mem> r_sut = dereferenceLetMem();
+      refable<init_spec_mem> r_sut = dereference_let_mem();
       consume(RPAREN);
-      loc.extend_to(nextLoc());
+      loc.extend_to(next_loc());
       diff_spec *ds = new diff_spec(loc, ref, r_sut, elem_type);
       s.statement_list.statements.push_back(ds);
       if (max_diff.has_value()) {
         ds->max_diff = max_diff.value();
       }
       return true;
-    } else if (lookingAtIdentEq("print")) {
+    } else if (looking_at_ident_eq("print")) {
       // print(X)
       // print<TYPE>(X)
       // print<INT>(X)
@@ -1885,57 +1885,57 @@ struct cls_parser: parser
       skip();
       const type *elem_type = nullptr;
       int elems_per_row = 0;
-      if (consumeIf(LANGLE)) {
-        if (lookingAtInt()) {
-          elems_per_row = consumeIntegral<int>("elements per column");
+      if (consume_if(LANGLE)) {
+        if (looking_at_int()) {
+          elems_per_row = consume_integral<int>("elements per column");
         } else {
           // HACK: we can't know the bits per ptr until we unify the
           // arguments with the owning context.
           const size_t HACK = 8;
-          elem_type = lookupBuiltinType(consumeIdent("type name"), HACK);
-          if (consumeIf(COMMA)) {
-            elems_per_row = consumeIntegral<int>("elements per column");
+          elem_type = lookup_builtin_type(consume_ident("type name"), HACK);
+          if (consume_if(COMMA)) {
+            elems_per_row = consume_integral<int>("elements per column");
           }
         }
         consume(RANGLE);
       }
       consume(LPAREN);
-      if (!lookingAt(IDENT))
+      if (!looking_at(IDENT))
         fatal("expected reference to memory object");
-      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      refable<init_spec_mem> r_surf = dereference_let_mem();
       consume(RPAREN);
-      loc.extend_to(nextLoc());
+      loc.extend_to(next_loc());
       s.statement_list.statements.push_back(
         new print_spec(loc, r_surf, elem_type, elems_per_row));
       return true;
-    } else if (lookingAtIdentEq("save_buffer") || lookingAtIdentEq("save")) {
+    } else if (looking_at_ident_eq("save_buffer") || looking_at_ident_eq("save")) {
       skip();
       consume(LPAREN);
-      if (!lookingAt(STRLIT))
+      if (!looking_at(STRLIT))
         fatal("expected file name (string literal)");
-      std::string file = tokenStringLiteral();
+      std::string file = token_string_literal();
       skip();
       consume(COMMA);
-      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      refable<init_spec_mem> r_surf = dereference_let_mem();
       consume(RPAREN);
-      loc.extend_to(nextLoc());
+      loc.extend_to(next_loc());
       s.statement_list.statements.push_back(new save_spec(loc, file, r_surf));
       return true;
-    } else if (lookingAtIdentEq("save_image")) {
+    } else if (looking_at_ident_eq("save_image")) {
       skip();
       save_image_spec::data_format fmt = save_image_spec::data_format::INVALID;
       consume(LANGLE);
       bool float4 = false;
-      if (consumeIfIdentEq("float4")) {
+      if (consume_if_ident_eq("float4")) {
         float4 = true;
-      } else if (consumeIfIdentEq("uchar4")) {
+      } else if (consume_if_ident_eq("uchar4")) {
         float4 = false;
       } else {
         fatal("expected image format type (float4,rgba)");
       }
-      if (lookingAt(COMMA) && lookingAtIdent(1)) {
+      if (looking_at(COMMA) && looking_at_ident(1)) {
         skip();
-        if (!consumeIfIdentEq("rgba"))
+        if (!consume_if_ident_eq("rgba"))
           fatal("expected rgba or width");
         // only RGBA is supported
       } // else implied
@@ -1943,35 +1943,35 @@ struct cls_parser: parser
         save_image_spec::data_format::FLOAT4_RGBA :
         save_image_spec::data_format::UCHAR4_RGBA;
       size_t width = 0, height = 0;
-      if (consumeIf(COMMA)) {
+      if (consume_if(COMMA)) {
         // "200x400" lexes as:   INT(200) IDENT("x400")
         // "200 x 400" lexes as: INT(200) IDENT("x") INT(400)
-        width = consumeIntegral<size_t>("image width");
-        auto at = nextLoc();
-        std::string hstr = consumeIdent("image height"); // "x200" or "x 200"
+        width = consume_integral<size_t>("image width");
+        auto at = next_loc();
+        std::string hstr = consume_ident("image height"); // "x200" or "x 200"
         if (hstr == "x") {
-          height = consumeIntegral<size_t>("image height");
+          height = consume_integral<size_t>("image height");
         } else {
           if (hstr.size() < 2 || hstr[0] != 'x' || !isdigit(hstr[1]))
-            fatalAt(at, "malformed image height");
+            fatal_at(at, "malformed image height");
           size_t off = 1;
           while (off < hstr.size() && isdigit(hstr[off])) {
             height = 10 * height + hstr[off++] - '0';
           }
           if (off != hstr.size())
-            fatalAt(at, "malformed image height");
+            fatal_at(at, "malformed image height");
         }
       }
       consume(RANGLE);
       consume(LPAREN);
-      if (!lookingAt(STRLIT))
+      if (!looking_at(STRLIT))
         fatal("expected file name (string literal)");
-      std::string file = tokenStringLiteral();
+      std::string file = token_string_literal();
       skip();
       consume(COMMA);
-      refable<init_spec_mem> r_surf = dereferenceLetMem();
+      refable<init_spec_mem> r_surf = dereference_let_mem();
       consume(RPAREN);
-      loc.extend_to(nextLoc());
+      loc.extend_to(next_loc());
       s.statement_list.statements.push_back(
         new save_image_spec(loc, fmt, width, height, file, r_surf));
       return true;
@@ -1981,24 +1981,24 @@ struct cls_parser: parser
   }
 
   // X=...
-  void parseLetBinding()
+  void parse_let_binding()
   {
-    if (!lookingAt(IDENT)) {
+    if (!looking_at(IDENT)) {
       fatal("expected identifier");
     }
-    auto at = nextLoc();
-    auto name = tokenString(); // X
+    auto at = next_loc();
+    auto name = token_string(); // X
     if (s.let_bindings.find(name) != s.let_bindings.end()) {
       fatal(name, ": redefinition of let binding");
     }
     skip();      // X
     let_spec *ls = new let_spec(at, name);
-    if (consumeIf(LPAREN)) {
+    if (consume_if(LPAREN)) {
       // let F(X,Y) = #1`foo.cl`bar<...>(X,Y)
-      if (!lookingAt(RPAREN)) {
+      if (!looking_at(RPAREN)) {
         do {
-          ls->params.push_back(consumeIdent());
-        } while (consumeIf(COMMA));
+          ls->params.push_back(consume_ident());
+        } while (consume_if(COMMA));
         consume(RPAREN);
         fatal("let arguments not supported yet");
       }
@@ -2006,58 +2006,58 @@ struct cls_parser: parser
     consume(EQ); // =
 
     spec *value = nullptr;
-    loc value_loc = nextLoc();
+    loc value_loc = next_loc();
     bool is_init_expr_start =
       // SPECIFY: does this handle built-in function (e.g. atan2)
-      lookingAtFloat() ||
-      lookingAtInt() ||
-      lookingAt(LPAREN) ||
-      lookingAtIdentEq("seq") ||
-      lookingAtIdentEq("random") ||
-      lookingAtIdentEq("file") ||
-      lookingAtIdentEq("undef") ||
-      lookingAtIdentEq("image");
-    if (!is_init_expr_start && lookingAtSeq(IDENT, LANGLE)) {
+      looking_at_float() ||
+      looking_at_int() ||
+      looking_at(LPAREN) ||
+      looking_at_ident_eq("seq") ||
+      looking_at_ident_eq("random") ||
+      looking_at_ident_eq("file") ||
+      looking_at_ident_eq("undef") ||
+      looking_at_ident_eq("image");
+    if (!is_init_expr_start && looking_at_seq(IDENT, LANGLE)) {
       // let D = K<1024>(....) where ...
       dispatch_spec *ds = new dispatch_spec(value_loc);
-      ds->kernel = dereferenceLet<kernel_spec>(spec::KERNEL_SPEC, "kernel");
-      parseDispatchStatementDimensions(*ds);
-      parseDispatchStatementArguments(*ds);
-      parseDispatchStatementWhereClause(*ds, ls);
-      ds->defined_at.extend_to(nextLoc());
+      ds->kernel = dereference_let<kernel_spec>(spec::KERNEL_SPEC, "kernel");
+      parse_dispatch_statement_dimensions(*ds);
+      parse_dispatch_statement_arguments(*ds);
+      parse_dispatch_statement_where_clause(*ds, ls);
+      ds->defined_at.extend_to(next_loc());
       value = ds;
     } else if (
       !is_init_expr_start &&
-      lookingAtSeq(IDENT, BACKTICK, IDENT, LANGLE))
+      looking_at_seq(IDENT, BACKTICK, IDENT, LANGLE))
     {
       // let D = P`kernel<...>(...) where ...
       dispatch_spec *ds = new dispatch_spec(value_loc);
       refable<program_spec> rps =
-        dereferenceLet<program_spec>(spec::PROGRAM_SPEC, "programs");
+        dereference_let<program_spec>(spec::PROGRAM_SPEC, "programs");
       consume(BACKTICK);
       ds->kernel = new kernel_spec(rps.value);
-      parseDispatchStatementDimensions(*ds);
-      parseDispatchStatementArguments(*ds);
-      parseDispatchStatementWhereClause(*ds, ls);
-      ds->defined_at.extend_to(nextLoc());
+      parse_dispatch_statement_dimensions(*ds);
+      parse_dispatch_statement_arguments(*ds);
+      parse_dispatch_statement_where_clause(*ds, ls);
+      ds->defined_at.extend_to(next_loc());
       value = ds;
-    } else if (!is_init_expr_start && lookingAtImmediateDispatchStatement()) {
+    } else if (!is_init_expr_start && looking_at_immediate_dispatch_statement()) {
       // let P = #1`foo/bar.cl
       // let K = foo/bar.cl`kernel
       // let D = foo/bar.cl`kernel<...>(...) where ...
-      program_spec *ps = parseDispatchStatementDeviceProgramPart();
-      if (consumeIf(BACKTICK)) {
+      program_spec *ps = parse_dispatch_statement_device_program_part();
+      if (consume_if(BACKTICK)) {
         // includes the kernel
-        kernel_spec *ks = parseDispatchStatementKernelPart(ps);
+        kernel_spec *ks = parse_dispatch_statement_kernel_part(ps);
         ks->program = ps;
-        if (lookingAt(LANGLE)) {
+        if (looking_at(LANGLE)) {
           // let D = ...<...>(...) where ...
           dispatch_spec *ds = new dispatch_spec(value_loc);
           ds->kernel = ks;
-          parseDispatchStatementDimensions(*ds);
-          parseDispatchStatementArguments(*ds);
-          parseDispatchStatementWhereClause(*ds, ls);
-          ds->defined_at.extend_to(nextLoc());
+          parse_dispatch_statement_dimensions(*ds);
+          parse_dispatch_statement_arguments(*ds);
+          parse_dispatch_statement_where_clause(*ds, ls);
+          ds->defined_at.extend_to(next_loc());
           value = ds;
         } else {
           // let P = #1`prog.cl`kernel
@@ -2070,55 +2070,55 @@ struct cls_parser: parser
     } else {
       // a regular initializer
       // let M = 0:w
-      value = parseInit();
+      value = parse_init();
     }
     ls->value = value;
     s.let_bindings[name] = ls;
     s.statement_list.statements.push_back(ls);
-    s.statement_list.statements.back()->defined_at.extend_to(nextLoc());
+    s.statement_list.statements.back()->defined_at.extend_to(next_loc());
   }
 
   // let X=...
   // let X=..., Y=...
-  void parseLetStatement()
+  void parse_let_statement()
   {
-    auto let_loc = nextLoc();
+    auto let_loc = next_loc();
     skip(); // let
-    parseLetBinding();
-    while (consumeIf(COMMA))
-      parseLetBinding();
+    parse_let_binding();
+    while (consume_if(COMMA))
+      parse_let_binding();
   }
 
-  void parseStatementLine()
+  void parse_statement_line()
   {
-    if (lookingAtIdentEq("let") && lookingAt(IDENT, 1)) {
+    if (looking_at_ident_eq("let") && looking_at(IDENT, 1)) {
       // let X = ...
       // let F(X,Y) = ...
-      parseLetStatement();
-    } else if (parseBuiltIn()) {
+      parse_let_statement();
+    } else if (parse_builtin()) {
       // barrier
       // save('foo.bin',A);
       ;
     } else {
       // #1`foo/bar.cl
-      s.statement_list.statements.emplace_back(parseDispatchStatement());
+      s.statement_list.statements.emplace_back(parse_dispatch_statement());
     }
   }
 
   ///////////////////////////////////////////////////////////
-  void parseScript()
+  void parse_script()
   {
-    while (!endOfFile()) {
-      while (consumeIf(NEWLINE))
+    while (!end_of_file()) {
+      while (consume_if(NEWLINE))
         ;
-      if (endOfFile())
+      if (end_of_file())
         break;
       //
-      parseStatementLine(); // S ((<NEWLINE> | ';') S)*
+      parse_statement_line(); // S ((<NEWLINE> | ';') S)*
       //
-      if (endOfFile())
+      if (end_of_file())
         break;
-      if (!consumeIf(SEMI) && !consumeIf(NEWLINE)) { // ';' S
+      if (!consume_if(SEMI) && !consume_if(NEWLINE)) { // ';' S
         fatal("syntax error in statement");
       }
     }
@@ -2137,7 +2137,7 @@ std::string cls::expand_input_variables(
   auto eos = [&] () {
     return off == inp.size();
   };
-  auto lookingAt = [&] (char c) {
+  auto looking_at = [&] (char c) {
     return !eos() && inp[off] == c;
   };
   auto skip = [&](uint32_t n, bool copy = false) {
@@ -2152,8 +2152,8 @@ std::string cls::expand_input_variables(
       off++;
     }
   };
-  auto consumeIf = [&] (char c) {
-    if (lookingAt(c)) {
+  auto consume_if = [&] (char c) {
+    if (looking_at(c)) {
       skip(1);
       return true;
     }
@@ -2161,15 +2161,15 @@ std::string cls::expand_input_variables(
   };
 
   while (!eos()) {
-    if (lookingAt('$')) {
+    if (looking_at('$')) {
       loc inp_var_start(ln, col, off, 0);
       skip(1);
       size_t key_start = off;
-      bool inBraces = consumeIf('{');
-      if (inBraces)
+      bool in_braces = consume_if('{');
+      if (in_braces)
         key_start++;
-      if (!isalpha(inp[off]) && inp[off] != '_') {
-        ds.fatalAt(loc(ln, col, off, 1),
+      if (!std::isalpha(inp[off]) && inp[off] != '_') {
+        ds.fatal_at(loc(ln, col, off, 1),
           "invalid program input variable: "
           "should start with an identifier starting character");
       }
@@ -2177,22 +2177,22 @@ std::string cls::expand_input_variables(
         skip(1);
       }
       std::string inp_var = inp.substr(key_start, off - key_start);
-      if (inBraces) {
-        if (!lookingAt('}'))
-          ds.fatalAt(loc(ln, col, off, 1), "expected '}'");
+      if (in_braces) {
+        if (!looking_at('}'))
+          ds.fatal_at(loc(ln, col, off, 1), "expected '}'");
         skip(1);
       }
       inp_var_start.extent = off - inp_var_start.offset;
-      bool matchedKey = false;
+      bool matched_key = false;
       for (const auto &iv : os.input_vars) {
         if (iv.first == inp_var) {
           ss << iv.second;
-          matchedKey = true;
+          matched_key = true;
           break;
         }
       }
-      if (!matchedKey) {
-        ds.fatalAt(inp_var_start,
+      if (!matched_key) {
+        ds.fatal_at(inp_var_start,
           "undefined input variable (-D", inp_var, "=..)");
       }
     } else {
@@ -2210,5 +2210,5 @@ void cls::parse_script(
   diagnostics &ds)
 {
   cls_parser cp(ds, input, s);
-  cp.parseScript();
+  cp.parse_script();
 }

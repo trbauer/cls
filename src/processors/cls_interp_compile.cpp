@@ -34,18 +34,18 @@ struct script_compiler : cl_interface {
   }
   void compile();
 private:
-  void compileDispatch(const dispatch_spec *ds);
-  dispatch_command *compileDispatchArgs(const dispatch_spec *ds);
-  diffu_command *compileDiffU(const diff_spec *ds);
-  diffs_command *compileDiffS(const diff_spec *ds);
-  print_command *compilePrint(const print_spec *ps);
-  const type *inferSurfaceElementType(const loc &at, surface_object *so);
+  void compile_dispatch(const dispatch_spec *ds);
+  dispatch_command *compile_dispatch_args(const dispatch_spec *ds);
+  diffu_command *compile_diff_u(const diff_spec *ds);
+  diffs_command *compile_diff_s(const diff_spec *ds);
+  print_command *compile_print(const print_spec *ps);
+  const type *infer_surface_element_type(const loc &at, surface_object *so);
 
-  kernel_object &compileKernel(const kernel_spec *ks);
-  program_object &compileProgram(const program_spec *ps);
-  device_object &createDeviceObject(const device_spec *ds);
+  kernel_object &compile_kernel(const kernel_spec *ks);
+  program_object &compile_program(const program_spec *ps);
+  device_object &create_device_object(const device_spec *ds);
 
-  std::string getLabeledBuildLog(
+  std::string get_labeled_build_log(
     const loc &at, cl_program p, cl_device_id dev_id);
 };
 
@@ -57,7 +57,7 @@ struct ndr_temp {
   ndr_temp() {dims[0] = dims[1] = dims[2] = 0;}
 
   // HACK: unreachable for ndr_temp,
-  // but suffices the template for emitCompiledKernelProperty
+  // but suffices the template for emit_compiled_kernel_property
   ndr_temp operator%(size_t) {return *this;}
   ndr_temp operator/(size_t) {return *this;}
   bool operator==(size_t) {return false;}
@@ -70,7 +70,7 @@ std::ostream &operator <<(std::ostream &os, ndr_temp t) {
 
 #if 0
 // dummy type to represent size_t[3] and emit to an ostream
-static void emitCompiledKernelPropertyDims(
+static void emit_compiled_kernel_property_dims(
   cl_kernel kernel,
   cl_device_id device,
   cl_int param,
@@ -103,7 +103,7 @@ static void emit_param_name(const char *param_name)
 }
 
 template <typename T>
-static void emitCompiledKernelWorkgroupProperty(
+static void emit_compiled_kernel_workgroup_property(
   cl_kernel kernel,
   cl_device_id device,
   cl_int param,
@@ -138,7 +138,7 @@ static void emitCompiledKernelWorkgroupProperty(
 }
 
 template <typename T>
-static void emitCompiledKernelProperty(
+static void emit_compiled_kernel_property(
   cl_kernel kernel,
   cl_device_id device,
   cl_int param,
@@ -172,7 +172,7 @@ static void emitCompiledKernelProperty(
   std::cout << "\n";
 }
 
-static void emitCompiledKernelPropertyStr(
+static void emit_compiled_kernel_property_str(
   cl_kernel kernel,
   cl_device_id device,
   cl_int param,
@@ -211,7 +211,7 @@ using clGetSubgroupInfo_Fn = cl_int (*)(
     void                    */* param_value */,
     size_t                  */* param_value_size_ret*/);
 
-clGetSubgroupInfo_Fn findSubgroupFunction()
+clGetSubgroupInfo_Fn find_subgroup_function()
 {
   static clGetSubgroupInfo_Fn function;
   if (function == nullptr) {
@@ -229,7 +229,7 @@ clGetSubgroupInfo_Fn findSubgroupFunction()
 }
 
 template <typename T>
-static void emitCompiledKernelSubgroupProperty(
+static void emit_compiled_kernel_subgroup_property(
   clGetSubgroupInfo_Fn fn,
   cl_kernel kernel,
   cl_device_id device,
@@ -264,7 +264,7 @@ static void emitCompiledKernelSubgroupProperty(
   std::cout << "\n";
 }
 
-static void emitCompiledKernelProperties(
+static void emit_compiled_kernel_properties(
   diagnostics &ds, kernel_object &ko)
 {
   cl_kernel kernel = ko.kernel;
@@ -274,15 +274,15 @@ static void emitCompiledKernelProperties(
 
 #define KERNEL_WORKGROUP_PROPERTY(MINSPEC,PARAM,TYPE) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelWorkgroupProperty<TYPE>(\
+    emit_compiled_kernel_workgroup_property<TYPE>(\
       kernel, device, PARAM, #PARAM, false, nullptr)
 #define KERNEL_WORKGROUP_PROPERTY_DIM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelWorkgroupProperty(\
+    emit_compiled_kernel_workgroup_property(\
       kernel, device, PARAM, #PARAM)
 #define KERNEL_WORKGROUP_PROPERTY_MEM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelWorkgroupProperty<cl_ulong>(\
+    emit_compiled_kernel_workgroup_property<cl_ulong>(\
       kernel, device, PARAM, #PARAM, true, nullptr)
 
   std::cout << text::ANSI_FADED << "=== clGetKernelWorkGroupInfo\n"
@@ -301,9 +301,9 @@ static void emitCompiledKernelProperties(
   if (device_has_extension(device, "cl_khr_subgroups")) {
     std::cout << text::ANSI_FADED << "=== clGetKernelSubGroupInfo\n"
               << text::ANSI_RESET;
-    auto cl_subgroup_fn = findSubgroupFunction();
+    auto cl_subgroup_fn = find_subgroup_function();
 #define SUBGROUP_PROPERTY(PARAM, TYPE, INPSZ, INP, UNITS) \
-  emitCompiledKernelSubgroupProperty<TYPE>(\
+  emit_compiled_kernel_subgroup_property<TYPE>(\
     cl_subgroup_fn, kernel, device, PARAM, #PARAM, INPSZ, INP, false, UNITS)
 
     // requires input of dispatch size or some other input we won't have here
@@ -334,18 +334,18 @@ static void emitCompiledKernelProperties(
   // units are an optional last parameter
 #define KERNEL_PROPERTY(MINSPEC, PARAM, TYPE, UNITS) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelProperty<TYPE>(\
+    emit_compiled_kernel_property<TYPE>(\
       kernel, device, PARAM, #PARAM, false, UNITS)
 #define KERNEL_PROPERTY_STR(MINSPEC, PARAM) \
   if (spec >= (MINSPEC)) \
-    emitCompiledKernelPropertyStr(\
+    emit_compiled_kernel_property_str(\
       kernel, device, PARAM, #PARAM)
   std::cout << text::ANSI_FADED << "=== clGetKernelInfo\n"
             << text::ANSI_RESET;
 
   // currently always returns INVALID_VALUE... (also tested priming call with big string)
   KERNEL_PROPERTY_STR(cl_spec::CL_1_0, CL_KERNEL_ATTRIBUTES);
-  if (isIntelGEN(device)) {
+  if (is_intel_gen(device)) {
     // always returns INVALID_VALUE
     KERNEL_PROPERTY(
         cl_spec::CL_1_0, CL_KERNEL_BINARY_GPU_ADDRESS_INTEL, cl_ulong, nullptr);
@@ -357,16 +357,16 @@ static void emitCompiledKernelProperties(
 #undef KERNEL_PROPERTY
 }
 
-kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
+kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
 {
   auto itr = csi->kernels.find(ks);
   if (itr != csi->kernels.find_end()) {
     return *itr->second;
   }
-  program_object *po = &compileProgram(ks->program);
+  program_object *po = &compile_program(ks->program);
   kernel_object &ko = csi->kernels.emplace_back(ks,ks,po);
 
-  debugAt(ks->defined_at, "compiling kernel");
+  debug_at(ks->defined_at, "compiling kernel");
 
   //////////////////////////////////////////////
   // call createKernel on parent object
@@ -383,14 +383,14 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
     cl_int err =
       clCreateKernelsInProgram(po->program, 0, nullptr, &nks);
     if (err != CL_SUCCESS) {
-      fatalAt(ks->defined_at, "clCreateKernelsInProgram: ",
+      fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
         status_to_symbol(err));
     }
     all_ks.resize(nks);
     err =
       clCreateKernelsInProgram(po->program, nks, all_ks.data(), nullptr);
     if (err != CL_SUCCESS) {
-      fatalAt(ks->defined_at, "clCreateKernelsInProgram: ",
+      fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
         status_to_symbol(err));
     }
     ss << "valid kernels in the program are:\n";
@@ -398,20 +398,20 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
       size_t n;
       auto err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, 0, nullptr, &n);
       if (err != CL_SUCCESS)
-        fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
+        fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
           status_to_symbol(err));
 
       char *name = (char *)alloca(n + 1);
       memset(name, 0, n + 1);
       err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n + 1, name, nullptr);
       if (err != CL_SUCCESS)
-        fatalAt(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
+        fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
           status_to_symbol(err));
       ss << " * " << name << "\n";
     }
-    fatalAt(ks->defined_at,"unable to find kernel in program\n",ss.str());
+    fatal_at(ks->defined_at,"unable to find kernel in program\n",ss.str());
   } else {
-    fatalAt(ks->defined_at,"error creating kernel",status_to_symbol(err_ck));
+    fatal_at(ks->defined_at,"error creating kernel",status_to_symbol(err_ck));
   }
 
   // find the kernel info from the program info
@@ -422,7 +422,7 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
     }
   }
   if (ko.kernel_info == nullptr) {
-    fatalAt(ks->defined_at,"unable to find kernel info in source file");
+    fatal_at(ks->defined_at,"unable to find kernel info in source file");
   }
 
   // Fetch the required workgroup size
@@ -436,16 +436,16 @@ kernel_object &script_compiler::compileKernel(const kernel_spec *ks)
       ko.kernel_info->reqd_word_group_size,
       nullptr);
 
-  if (isDebug()) {
-    debugAt(ks->defined_at,
+  if (is_debug()) {
+    debug_at(ks->defined_at,
       "========== clGetKernelWorkGroupInfo ==========\n");
-    emitCompiledKernelProperties(getDiagnostics(), ko);
+    emit_compiled_kernel_properties(get_diagnostics(), ko);
   }
 
   return ko;
 }
 
-std::string script_compiler::getLabeledBuildLog(
+std::string script_compiler::get_labeled_build_log(
   const loc &at, cl_program p, cl_device_id dev_id)
 {
   size_t len = 0;
@@ -466,17 +466,17 @@ std::string script_compiler::getLabeledBuildLog(
     log_buf);
 }
 
-program_object &script_compiler::compileProgram(const program_spec *ps)
+program_object &script_compiler::compile_program(const program_spec *ps)
 {
   auto itr = csi->programs.find(ps);
   if (itr != csi->programs.find_end()) {
     return *itr->second;
   }
 
-  debugAt(ps->defined_at, "building program");
+  debug_at(ps->defined_at, "building program");
 
-  device_object *dobj = &createDeviceObject(&ps->device);
-  program_object &po = csi->programs.emplace_back(ps,ps,dobj);
+  device_object  *dobj = &create_device_object(&ps->device);
+  program_object &po   = csi->programs.emplace_back(ps, ps, dobj);
   // program_object &po = program_object(ps,dobj);
   // program_object &po = csi->programs[ps] = program_object(ps,dobj);
   // auto eitr = csi->programs.emplace(ps,ps,dobj);
@@ -485,7 +485,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   if (!sys::file_exists(ps->path)) {
     loc at = ps->defined_at;
     at.extent = (uint32_t)ps->path.size();
-    fatalAt(at, "file not found");
+    fatal_at(at, "file not found");
   }
   bool is_bin =
     strsfx(".bin", ps->path) ||
@@ -516,7 +516,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     }
     if (!is_spv && !is_bin) {
       is_bin = has_non_ascii;
-      warningAt(ps->defined_at,
+      warning_at(ps->defined_at,
         "unable to infer program type from extension; "
         "based on contents we're assuming ", (is_bin ? "binary" : "text"), "\n",
         "NOTE: .cl, .clc imply OpenCL C, .spv implies SPIR-V, "
@@ -532,7 +532,7 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       {
         dev_nm = status_to_symbol(errd);
       }
-      fatalAt(ps->defined_at,
+      fatal_at(ps->defined_at,
         ps->path, ": failed to ", do_what, " with ", with_what,
         " (", status_to_symbol(err), ") on device [", dev_nm, "]");
     };
@@ -544,12 +544,12 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     if (is_bin && vend != vendor::INTEL) {
       // according to the OpenCL rules argument info doesn't have to be there
       // for binaries; Intel does include this though
-      warningAt(ps->defined_at,
+      warning_at(ps->defined_at,
         "trying to use kernel argument info on non-Intel binary "
         "(this may not work)");
     }
     if (get_device_spec(po.device->device) <  cl_spec::CL_1_2)
-      fatalAt(ps->defined_at,"kernel argument info needs OpenCL 1.2+");
+      fatal_at(ps->defined_at,"kernel argument info needs OpenCL 1.2+");
     if (build_opts.empty()) {
       build_opts_with_arg_info = "-cl-kernel-arg-info";
     } else if (build_opts.find("-cl-kernel-arg-info") == std::string::npos) {
@@ -581,18 +581,18 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
     if (bp_err == CL_BUILD_PROGRAM_FAILURE) {
       std::stringstream ss;
       ss << "failed to build source:\n";
-      ss << getLabeledBuildLog(
+      ss << get_labeled_build_log(
         ps->defined_at,
         po.program,
         po.device->device) << "\n";
-      fatalAt(ps->defined_at, ss.str());
+      fatal_at(ps->defined_at, ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
-      debugAt(ps->defined_at, getLabeledBuildLog(
+      debug_at(ps->defined_at, get_labeled_build_log(
         ps->defined_at,
         po.program,
         po.device->device));
     } else if (bp_err != CL_SUCCESS) {
-      fatalAt(
+      fatal_at(
         ps->defined_at, "failed to build program ", status_to_symbol(bp_err));
     }
 
@@ -672,17 +672,17 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   // kernel info
   if (os.use_kernel_arg_info) {
     // use clGetKernelArgInfo* for types etc...
-    po.program_info = parseProgramInfoFromAPI(
+    po.program_info = parse_program_info_from_api(
       os,
-      getDiagnostics(),
+      get_diagnostics(),
       ps->defined_at,
       po.program,
       po.device->device);
   } else {
     // use kargs library
-    po.program_info = parseProgramInfo(
+    po.program_info = parse_program_info(
       os,
-      getDiagnostics(),
+      get_diagnostics(),
       ps->defined_at,
       src,
       po.device->device);
@@ -692,11 +692,11 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
   if (get_device_info(
     po.device->device, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
   {
-    fatalAt(ps->defined_at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+    fatal_at(ps->defined_at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
   }
   bytes_per_addr /= 8;
   if (bytes_per_addr != po.program_info->pointer_size) {
-    fatalAt(ps->defined_at,
+    fatal_at(ps->defined_at,
       "mismatch between clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS) "
       "and program's reported byte size");
   }
@@ -729,16 +729,16 @@ program_object &script_compiler::compileProgram(const program_spec *ps)
       ss <<
         "  - args:\n";
       for (const arg_info &ai : k.args) {
-        ss << "    - " << ai.typeSyntax() << " " << ai.name << "\n";
+        ss << "    - " << ai.type_syntax() << " " << ai.name << "\n";
       }
     }
-    debugAt(ps->defined_at, ss.str());
+    debug_at(ps->defined_at, ss.str());
   }
 
   return po;
 }
 
-static void CL_CALLBACK dispatchContextNotify(
+static void CL_CALLBACK dispatch_context_notify(
   const char *errinfo,
   const void *private_info, size_t cb,
   void *user_data)
@@ -751,7 +751,7 @@ static void CL_CALLBACK dispatchContextNotify(
       std::cerr << errinfo;
     return;
   }
-  dobj->contextNotify(errinfo, private_info, cb, user_data);
+  dobj->context_notify(errinfo, private_info, cb, user_data);
 }
 
 // We use the old 1.0 style command queue creation since the host running
@@ -760,7 +760,7 @@ static void CL_CALLBACK dispatchContextNotify(
 // disable the deprecation warning on clCreateCommandQueue
 #pragma warning(disable : 4996)
 #endif
-static cl_command_queue makeCommandQueue(
+static cl_command_queue make_command_queue(
   script_compiler &ds,
   loc at,
   const cl_lib &cl,
@@ -779,14 +779,14 @@ static cl_command_queue makeCommandQueue(
   const char *cl_function = "clCreateCommandQueue";
   if (!metric_counter_set.empty()) {
     props |= CL_QUEUE_PROFILING_ENABLE; // -tMD implies -tCL?
-    if (!isIntelGEN(get_device_microarch(dev_id))) {
-      ds.fatalAt(at, "-tMD=.. set, but device does not support MDAPI");
+    if (!is_intel_gen(get_device_microarch(dev_id))) {
+      ds.fatal_at(at, "-tMD=.. set, but device does not support MDAPI");
     }
     if (md == nullptr) {
-      ds.internalAt(at, "-tMD=.. set, but library not loaded");
+      ds.internal_at(at, "-tMD=.. set, but library not loaded");
     }
     if (cl.clCreatePerfCountersCommandQueueINTEL == nullptr) {
-      ds.fatalAt(
+      ds.fatal_at(
           at,
           "-tMD=.. cannot find clCreatePerfCountersCommandQueueINTEL "
           "on this device");
@@ -800,7 +800,7 @@ static cl_command_queue makeCommandQueue(
     queue = clCreateCommandQueue(ctx, dev_id, props, &err);
   }
   if (err != CL_SUCCESS) {
-    ds.fatalAt(
+    ds.fatal_at(
       at,
       cl_function, ": failed to create command queue for device "
       "(", status_to_symbol(err), ")");
@@ -808,7 +808,7 @@ static cl_command_queue makeCommandQueue(
   return queue;
 }
 
-device_object &script_compiler::createDeviceObject(const device_spec *ds)
+device_object &script_compiler::create_device_object(const device_spec *ds)
 {
   cl_device_id dev_id;
   switch (ds->skind) {
@@ -817,17 +817,17 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
     break;
   case device_spec::BY_INDEX:
     if (!get_device_by_index(os, ds->by_index_value, dev_id)) {
-      fatalAt(ds->defined_at,"invalid device index");
+      fatal_at(ds->defined_at,"invalid device index");
     }
     break;
   case device_spec::BY_NAME: {
     std::string err_msg;
     if (!get_device_by_name(os, ds->by_name_value, dev_id, err_msg))
-      fatalAt(ds->defined_at, "invalid device specification ", err_msg);
+      fatal_at(ds->defined_at, "invalid device specification ", err_msg);
     break;
   }
   default:
-    fatalAt(ds->defined_at, "invalid device spec");
+    fatal_at(ds->defined_at, "invalid device spec");
     break;
   }
 
@@ -838,20 +838,20 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   }
 
   device_object &dobj =
-      csi->devices.emplace_back(dev_key, getDiagnostics(), ds, dev_id, os.verbosity);
+      csi->devices.emplace_back(dev_key, get_diagnostics(), ds, dev_id, os.verbosity);
   if (!os.metric_counter_set.empty()) {
-    if (!isIntelGEN(get_device_microarch(dev_id))) {
-      fatalAt(ds->defined_at, "-tMD=.. set but device does not support MDAPI");
+    if (!is_intel_gen(get_device_microarch(dev_id))) {
+      fatal_at(ds->defined_at, "-tMD=.. set but device does not support MDAPI");
     }
     dobj.md = new mdapi_lib();
     if (!dobj.md->is_loaded())
-      fatalAt(
+      fatal_at(
           ds->defined_at,
           "-tMD=",
           os.metric_counter_set,
           ": failed to load MDAPI library (", dobj.md->get_error(), ")");
     if (!dobj.md->bind(os.metric_counter_set.c_str()))
-      fatalAt(
+      fatal_at(
           ds->defined_at,
           "-tMD=", os.metric_counter_set, ": failed to bind to counter set");
   }
@@ -864,16 +864,16 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
       nullptr,
       1,
       &dev_id,
-      dispatchContextNotify,
+      dispatch_context_notify,
       (void *)&dobj);
   dobj.context = context;
   if (os.verbosity >= 2) {
     std::string dev_nm;
     get_device_info(dobj.device, CL_DEVICE_NAME, dev_nm);
-    debugAt(ds->defined_at, "created context on ", dev_nm);
+    debug_at(ds->defined_at, "created context on ", dev_nm);
   }
 
-  dobj.queue = makeCommandQueue(
+  dobj.queue = make_command_queue(
       *this,
       ds->defined_at,
       *dobj.cl,
@@ -895,7 +895,7 @@ void script_compiler::compile()
   // device_spec's that appear in the script and compile programs.
   for (const statement_spec *st : s.statement_list.statements) {
     if (st->skind == statement_spec::DISPATCH) {
-      compileDispatch((const dispatch_spec *)st);
+      compile_dispatch((const dispatch_spec *)st);
     }
   }
 
@@ -905,19 +905,19 @@ void script_compiler::compile()
   for (size_t st_ix = 0; st_ix < s.statement_list.statements.size(); st_ix++) {
     const statement_spec *st = s.statement_list.statements[st_ix];
     if (st->skind == statement_spec::DISPATCH) {
-      dispatch_command *dc = compileDispatchArgs((const dispatch_spec *)st);
+      dispatch_command *dc = compile_dispatch_args((const dispatch_spec *)st);
       csi->instructions.emplace_back(dc);
     } else if (st->skind == statement_spec::DIFF) {
       const diff_spec *ds = (const diff_spec *)st;
       if (ds->ref.value->is_atom()) {
-        diffu_command *dc = compileDiffU(ds);
+        diffu_command *dc = compile_diff_u(ds);
         csi->instructions.emplace_back(dc);
       } else {
-        diffs_command *dc = compileDiffS(ds);
+        diffs_command *dc = compile_diff_s(ds);
         csi->instructions.emplace_back(dc);
       }
     } else if (st->skind == statement_spec::PRINT) {
-      print_command *pc = compilePrint((const print_spec *)st);
+      print_command *pc = compile_print((const print_spec *)st);
       csi->instructions.emplace_back(pc);
     } else if (st->skind == statement_spec::SAVE_BUFFER) {
       const save_spec *ss = (const save_spec *)st;
@@ -936,14 +936,14 @@ void script_compiler::compile()
         ch_ord = CL_RGBA;
         ch_type = CL_UNSIGNED_INT8;
         break;
-      default: fatalAt(ss->defined_at, "unsupported channel order");
+      default: fatal_at(ss->defined_at, "unsupported channel order");
       }
       savei_command *sic = new savei_command(ss, nullptr, ch_ord, ch_type);
       csi->instructions.emplace_back(sic);
     } else if (st->skind == statement_spec::LET) {
       ; // nop
     } else {
-      internalAt(st->defined_at, "NOT IMPLEMENTED");
+      internal_at(st->defined_at, "NOT IMPLEMENTED");
     }
   } // for
 
@@ -957,10 +957,10 @@ void script_compiler::compile()
   //    print<int>(X)  <<<<<<<<<<<<< surface object used before dispatch
   //    #0`foo.cl`kernel<...>(X);
   for (script_instruction &si : csi->instructions) {
-    auto lookupSurfaceObject = [&] (const refable<init_spec_mem> &val) {
+    auto lookup_surface_object = [&] (const refable<init_spec_mem> &val) {
       surface_object *so = &csi->surfaces.get(val);
       if (so == nullptr) {
-        fatalAt(si.defined_at(), "non-existent surface object "
+        fatal_at(si.defined_at(), "non-existent surface object "
           "(was it used in an enqueue?)");
       }
       return so;
@@ -970,17 +970,17 @@ void script_compiler::compile()
     case script_instruction::DIFFS: {
       diffs_command *dfsc = si.dfsc;
       // sut surface
-      dfsc->so_sut = lookupSurfaceObject(dfsc->spec->sut.value);
-      debugAt(
+      dfsc->so_sut = lookup_surface_object(dfsc->spec->sut.value);
+      debug_at(
         dfsc->spec->defined_at, "bound (SUT) surface to ",
         dfsc->so_sut->str());
 
       // bind the element type if it's not explicitly set
       if (!dfsc->element_type) {
         dfsc->element_type =
-          inferSurfaceElementType(dfsc->spec->defined_at, dfsc->so_sut);
+          infer_surface_element_type(dfsc->spec->defined_at, dfsc->so_sut);
         if (dfsc->element_type)
-          debugAt(dfsc->spec->defined_at,
+          debug_at(dfsc->spec->defined_at,
             "bound element type to ", dfsc->element_type->syntax());
       }
 
@@ -989,12 +989,12 @@ void script_compiler::compile()
         (const init_spec_mem *)dfsc->spec->ref.value;
       if (csi->surfaces.find(ism_ref) != csi->surfaces.find_end()) {
         dfsc->so_ref = &csi->surfaces.get(ism_ref);
-        debugAt(
+        debug_at(
           dfsc->spec->defined_at,
           "bound (REF) surface to ",
           dfsc->so_ref->str());
         if (dfsc->so_sut->size_in_bytes != dfsc->so_ref->size_in_bytes) {
-          fatalAt(dfsc->spec->defined_at, "surface sizes mismatch");
+          fatal_at(dfsc->spec->defined_at, "surface sizes mismatch");
         }
       } else {
         // it's an immediate object, we have to create a dummy surface
@@ -1003,11 +1003,11 @@ void script_compiler::compile()
         // e.g. diff<int>(seq(4,2):r, SUT)
         //
         if (dfsc->so_sut->dispatch_uses.empty()) {
-          fatalAt(dfsc->spec->defined_at,
+          fatal_at(dfsc->spec->defined_at,
             "cannot diff against unused memory object");
         }
         if (!dfsc->element_type) {
-          fatalAt(dfsc->spec->defined_at,
+          fatal_at(dfsc->spec->defined_at,
             "explicit type required for reference surface initializer");
         }
         // use SUT to dtermine the buffer type etc...
@@ -1030,7 +1030,7 @@ void script_compiler::compile()
           memobj,
           dfsc->so_sut->queue);
         dfsc->so_ref->dummy_object = true; // only used for comparison
-        withBufferMapWrite(
+        with_buffer_map_write(
           ism_ref->defined_at,
           dfsc->so_ref,
           [&](void *host_ptr) {
@@ -1040,12 +1040,12 @@ void script_compiler::compile()
               // typeless diff needs the element from the SUT
               // diff(22:r,SUT) needs to take the type from SUT
               if (!dfsc->so_sut->dispatch_uses.empty()) {
-                fatalAt(dfsc->spec->defined_at,"cannot infer element type");
+                fatal_at(dfsc->spec->defined_at,"cannot infer element type");
               }
               const type &t =
                 *std::get<2>(dfsc->so_sut->dispatch_uses.back()).arg_type;
               if (!t.is<type_ptr>()) {
-                fatalAt(dfsc->spec->defined_at,
+                fatal_at(dfsc->spec->defined_at,
                   "inferred element type (from SUT) is not a pointer");
               }
               elem_type = t.as<type_ptr>().element_type;
@@ -1057,38 +1057,38 @@ void script_compiler::compile()
     }
     case script_instruction::DIFFU: {
       diffu_command *dfuc = si.dfuc;
-      si.dfuc->so = lookupSurfaceObject(dfuc->spec->sut.value);
-      debugAt(si.dfuc->spec->defined_at, "bound surface to ", dfuc->so->str());
+      si.dfuc->so = lookup_surface_object(dfuc->spec->sut.value);
+      debug_at(si.dfuc->spec->defined_at, "bound surface to ", dfuc->so->str());
       if (!dfuc->element_type) {
         dfuc->element_type =
-          inferSurfaceElementType(dfuc->spec->defined_at, dfuc->so);
+          infer_surface_element_type(dfuc->spec->defined_at, dfuc->so);
         if (dfuc->element_type)
-          debugAt(dfuc->spec->defined_at, "bound element type to ",
+          debug_at(dfuc->spec->defined_at, "bound element type to ",
             dfuc->element_type->syntax());
       }
       break;
     }
     case script_instruction::PRINT:
-      si.prc->so = lookupSurfaceObject(si.prc->spec->arg);
+      si.prc->so = lookup_surface_object(si.prc->spec->arg);
 
-      debugAt(si.prc->spec->defined_at, "bound surface to ", si.prc->so->str());
+      debug_at(si.prc->spec->defined_at, "bound surface to ", si.prc->so->str());
       if (!si.prc->element_type) {
         si.prc->element_type =
-          inferSurfaceElementType(si.prc->spec->defined_at, si.prc->so);
+          infer_surface_element_type(si.prc->spec->defined_at, si.prc->so);
         if (si.prc->element_type)
-          debugAt(si.prc->spec->defined_at, "bound element type to ",
+          debug_at(si.prc->spec->defined_at, "bound element type to ",
             si.prc->element_type->syntax());
       }
       break;
     case script_instruction::SAVEB:
-      si.svbc->so = lookupSurfaceObject(si.svbc->spec->arg.value);
-      debugAt(
+      si.svbc->so = lookup_surface_object(si.svbc->spec->arg.value);
+      debug_at(
         si.svbc->spec->defined_at, "bound surface to ", si.svbc->so->str());
       break;
     case script_instruction::SAVEI:
     {
-      si.svic->so = lookupSurfaceObject(si.svic->spec->arg.value);
-      debugAt(
+      si.svic->so = lookup_surface_object(si.svic->spec->arg.value);
+      debug_at(
         si.svic->spec->defined_at, "bound surface to ", si.svic->so->str());
       si.svic->width = si.svic->spec->width;
       si.svic->height = si.svic->spec->height;
@@ -1097,14 +1097,14 @@ void script_compiler::compile()
         for (const surface_object::use &u : si.svic->so->dispatch_uses) {
           const dispatch_command &dc = *std::get<0>(u);
           if (dc.global_size.rank() != 2) {
-            fatalAt(si.svic->spec->defined_at,
+            fatal_at(si.svic->spec->defined_at,
               "cannot infer image size from dispatch use "
               "(used in non-2d kernel)");
           }
           if (si.svic->width != 0 &&
             si.svic->width != dc.global_size.dims[0])
           {
-            fatalAt(si.svic->spec->defined_at,
+            fatal_at(si.svic->spec->defined_at,
               "cannot infer image width from dispatch use "
               "(mismatch in size)");
           } else if (si.svic->width == 0) {
@@ -1113,7 +1113,7 @@ void script_compiler::compile()
           if (si.svic->height != 0 &&
             si.svic->height != dc.global_size.dims[1])
           {
-            fatalAt(si.svic->spec->defined_at,
+            fatal_at(si.svic->spec->defined_at,
               "cannot infer image height from dispatch use "
               "(mismatch in size)");
           } else if (si.svic->height == 0) {
@@ -1126,7 +1126,7 @@ void script_compiler::compile()
         channels_per_pixel(si.svic->channel_order) *
         bytes_per_channel(si.svic->channel_type);
       if (accessed_size > si.svic->so->size_in_bytes) {
-        warningAt(si.svic->spec->defined_at,
+        warning_at(si.svic->spec->defined_at,
           "image access overflows buffer size");
       }
       break;
@@ -1145,7 +1145,7 @@ void script_compiler::compile()
       if (dobj == nullptr) {
         dobj = dc->dobj;
       } else if (dobj != dc->dobj) {
-        fatalAt(so->init->defined_at,
+        fatal_at(so->init->defined_at,
           "memory object used across cl_context's (c.f. lines ",
           dobj->spec->defined_at.line, " and ",
           dc->dobj->spec->defined_at.line, ")");
@@ -1154,56 +1154,56 @@ void script_compiler::compile()
   }
 }
 
-void script_compiler::compileDispatch(const dispatch_spec *ds)
+void script_compiler::compile_dispatch(const dispatch_spec *ds)
 {
-  debugAt(ds->defined_at, "compiling dispatch");
-  kernel_object &ko = compileKernel(ds->kernel);
+  debug_at(ds->defined_at, "compiling dispatch");
+  kernel_object &ko = compile_kernel(ds->kernel);
   dispatch_command &dc = csi->dispatches.emplace_back(ds,ds,&ko);
 
   evaluator e(csi);
   if (ds->global_size.size() > 3)
-    fatalAt(ds->defined_at,"dimension must be <= 3");
+    fatal_at(ds->defined_at,"dimension must be <= 3");
   dc.global_size.num_dims = ds->global_size.size();
 
-  auto evaluateDimension = [&](const init_spec_atom *expr) {
+  auto evaluate_dimension = [&](const init_spec_atom *expr) {
     // later iterations will see the value of earlier iterations
     // => we can support something like <1024x(g.x/2)x(g.x*g.y/4)>
     //    pretty awesome!
     evaluator::context ec(dc);
     // ec holds const references, but that isn't seeing the updates
     // so we rebuild it ec within each loop
-    val v = e.evalTo<size_t>(ec, expr);
+    val v = e.eval_to<size_t>(ec, expr);
     //
     if (v.s64 < 0) {
-      fatalAt(expr->defined_at, "negative dimension");
+      fatal_at(expr->defined_at, "negative dimension");
     }
     //
     return (size_t)v.u64;
   };
 
   for (size_t i = 0; i < ds->global_size.size(); i++) {
-    dc.global_size.dims[i] = evaluateDimension(ds->global_size[i]);
+    dc.global_size.dims[i] = evaluate_dimension(ds->global_size[i]);
   }
   if (ds->local_size.empty()) {
     // use the required workgroup size
     const size_t *rqsz = ko.kernel_info->reqd_word_group_size;
     if (rqsz[0] != 0 && rqsz[1] != 0 && rqsz[2] != 0) {
       switch (dc.global_size.rank()) {
-      case 1: dc.local_size = ndr(rqsz[0]);                 break;
-      case 2: dc.local_size = ndr(rqsz[0],rqsz[1]);         break;
-      case 3: dc.local_size = ndr(rqsz[0],rqsz[1],rqsz[2]); break;
+      case 1: dc.local_size = ndr(rqsz[0]);                   break;
+      case 2: dc.local_size = ndr(rqsz[0], rqsz[1]);          break;
+      case 3: dc.local_size = ndr(rqsz[0], rqsz[1], rqsz[2]); break;
       }
     }
   } else {
     // have to do the locals too
     dc.local_size.num_dims = ds->local_size.size();
     for (size_t i = 0; i < ds->local_size.size(); i++) {
-      dc.local_size.dims[i] = evaluateDimension(ds->local_size[i]);
+      dc.local_size.dims[i] = evaluate_dimension(ds->local_size[i]);
     }
   }
 }
 
-static std::string kernelArgsErrorMessage(
+static std::string kernel_args_error_message(
   const kernel_object &ko,
   const char *msg)
 {
@@ -1216,21 +1216,21 @@ static std::string kernelArgsErrorMessage(
     arg_index++)
   {
     const arg_info &ai = ais[arg_index];
-    ss << "  - " << std::setw(24) << std::left << ai.typeSyntax();
+    ss << "  - " << std::setw(24) << std::left << ai.type_syntax();
     ss << "  " << ai.name << "\n";
   }
   return ss.str();
 }
 
-dispatch_command *script_compiler::compileDispatchArgs(
+dispatch_command *script_compiler::compile_dispatch_args(
   const dispatch_spec *ds)
 {
   dispatch_command &dc = csi->dispatches.get(ds);
   kernel_object &ko = *dc.kernel;
   const auto &ais = ko.kernel_info->args;
   if (ais.size() != ds->arguments.size()) {
-    fatalAt(ds->defined_at,
-      kernelArgsErrorMessage(ko, "wrong number of arguments to kernel"));
+    fatal_at(ds->defined_at,
+      kernel_args_error_message(ko, "wrong number of arguments to kernel"));
   }
   size_t ptr_size = ko.program->device->pointer_size;
   for (cl_uint arg_index = 0;
@@ -1242,50 +1242,50 @@ dispatch_command *script_compiler::compileDispatchArgs(
     const refable<init_spec> &ris = ds->arguments[arg_index];
     const init_spec *is = ris;
     if (ai.addr_qual == CL_KERNEL_ARG_ADDRESS_LOCAL) {
-      csi->e->setKernelArgSLM(arg_index,dc,ss,ris,ai);
+      csi->e->set_kernel_arg_slm(arg_index,dc,ss,ris,ai);
     } else if (ai.arg_type->is<type_ptr>()) {
-      csi->e->setKernelArgBuffer(
+      csi->e->set_kernel_arg_buffer(
         arg_index, dc, ss, ris.defined_at, ris, ai);
     } else if (ai.arg_type->is<type_builtin>() &&
       ai.arg_type->as<type_builtin>().is_surface())
     {
-      csi->e->setKernelArgImage(
+      csi->e->set_kernel_arg_image(
         arg_index, dc, ss, ris.defined_at, ris, ai);
     } else if (ai.arg_type->is<type_builtin>() &&
       ai.arg_type->as<type_builtin>().skind == type_builtin::SAMPLER)
     {
-      csi->e->setKernelArgSampler(arg_index, dc, ss, ris, ai);
+      csi->e->set_kernel_arg_sampler(arg_index, dc, ss, ris, ai);
     } else {
       // A uniform argument
-      csi->e->setKernelArgImmediate(arg_index, dc, ss, ris, ai);
+      csi->e->set_kernel_arg_immediate(arg_index, dc, ss, ris, ai);
     }
     dc.evaluated_args.push_back(ss.str());
   } // for kernel args
   return &dc;
 }
 
-diffu_command *script_compiler::compileDiffU(const diff_spec *ds)
+diffu_command *script_compiler::compile_diff_u(const diff_spec *ds)
 {
   // we patch surface and type information later
   return new diffu_command(ds,nullptr,nullptr);
 }
-diffs_command *script_compiler::compileDiffS(const diff_spec *ds)
+diffs_command *script_compiler::compile_diff_s(const diff_spec *ds)
 {
   // we patch surface and type information later
   return new diffs_command(ds,nullptr,nullptr,nullptr);
 }
 
-print_command *script_compiler::compilePrint(const print_spec *ps)
+print_command *script_compiler::compile_print(const print_spec *ps)
 {
   // we patch surface and type information later
   return new print_command(ps,nullptr,ps->element_type);
 }
 
-const type *script_compiler::inferSurfaceElementType(
+const type *script_compiler::infer_surface_element_type(
   const loc &at, surface_object *so)
 {
   if (so->dispatch_uses.empty()) {
-    fatalAt(so->init->defined_at,
+    fatal_at(so->init->defined_at,
       "memory object never used in a dispatch (so we can't infer it's type)");
   }
   dispatch_command *dc = std::get<0>(so->dispatch_uses.front());
@@ -1302,17 +1302,17 @@ const type *script_compiler::inferSurfaceElementType(
       if (!ai.arg_type->is<type_ptr>()) {
         // TODO: I am not sure if this check is needed
         //       We could skip the error and try another dispatch command
-        fatalAt(at, "INTERNAL ERROR: surface type used as non-pointer type");
+        fatal_at(at, "INTERNAL ERROR: surface type used as non-pointer type");
       }
       return ai.arg_type->as<type_ptr>().element_type;
     }
   }
-  fatalAt(at, "INTERNAL ERROR: surface object mis-linked to dispatch");
+  fatal_at(at, "INTERNAL ERROR: surface object mis-linked to dispatch");
   return nullptr;
 }
 
 #if 0
-const type *script_compiler::inferSurfaceElementType(
+const type *script_compiler::infer_surface_element_type(
   surface_object *so, size_t from_st_ix)
 {
   statement_spec *from_st = s.statement_list.statements[from_st_ix];
@@ -1334,7 +1334,7 @@ const type *script_compiler::inferSurfaceElementType(
           if (!ai.type.is<type_ptr>()) {
             // TODO: I am not sure if this check is needed
             //       We could skip the error and continue on to the next
-            fatalAt(from_st->defined_at,
+            fatal_at(from_st->defined_at,
               "INTERNAL ERROR: surface type used as non-pointer type");
           }
           return ai.type.as<type_ptr>().element_type;

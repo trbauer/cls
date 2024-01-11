@@ -12,7 +12,7 @@ namespace cls
 {
   constexpr uint32_t SPIRV_MAGIC = 0x07230203;
 
-  cls::k::program_info *parseProgramInfoBinarySPIRV(
+  cls::k::program_info *parse_program_info_binary_spirv(
     const opts &os,
     diagnostics &ds, loc at,
     const std::string &path);

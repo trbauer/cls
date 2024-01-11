@@ -48,7 +48,8 @@ namespace cls
       cl_kernel_arg_type_qualifier     type_qual = CL_KERNEL_ARG_TYPE_NONE;
       std::string                      name;
       const type                      *arg_type;
-      std::string typeSyntax() const;
+
+      std::string type_syntax() const;
     };
 
     // a kernel definition from the source
@@ -89,19 +90,19 @@ namespace cls
       program_info& operator=(program_info const&) = delete;
       ~program_info();
 
-      const type &pointerTo(const type &t, size_t ptr_size);
+      const type &pointer_to(const type &t, size_t ptr_size);
     };
 
     /////////////////////////////////////////////////////////////////////////////
     // API
 
-    program_info *parseProgramInfo(
+    program_info *parse_program_info(
       const cls::opts &os,
       cls::diagnostics &ds, cls::loc at,
       const cls::program_source &src,
       cl_device_id dev_id);
 
-    program_info *parseProgramInfoFromAPI(
+    program_info *parse_program_info_from_api(
       const cls::opts &os,
       cls::diagnostics &ds, cls::loc at,
       cl_program program,

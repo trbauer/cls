@@ -45,31 +45,31 @@ struct spv_decoder: decoder {
       binary_little_endian != machine_endian_little;
   }
 
-  uint32_t decodeWord() {
-    auto x = peekWord();
+  uint32_t decode_word() {
+    auto x = peek_word();
     skip(sizeof(x));
     return x;
   }
-  uint32_t peekWord() const {
+  uint32_t peek_word() const {
     auto x = peek<uint32_t>();
     if (endian_flip_needed) {
-      x = swapByteOrder(x);
+      x = swap_byte_order(x);
     }
     return x;
   }
 
-  std::string decodeString() {
+  std::string decode_string() {
     // no endian conversion needed for SPV inline strings
     std::stringstream ss;
 
     // the reference disassembler uses the operand count to deduce the
     // string length, but the spec promises to use a NUL terminator byte;
     // hence, we take the easy path and stop when we hit a NUL byte
-    uint32_t ws[2] = {decodeWord(),0x0};
+    uint32_t ws[2] = {decode_word(),0x0};
     const char *str = (const char *)&ws[0];
     ss << str;
     while (strlen(str) == 4) {
-      ws[0] = decodeWord();
+      ws[0] = decode_word();
       ss << str;
     }
     return ss.str();
@@ -90,25 +90,26 @@ struct spv_decoder: decoder {
   // per instruction methods
   template <typename...Ts>
   [[noreturn]]
-  void fatalAtInst(Ts...ts) {
-    fatalAt(
+  void fatal_at_inst(Ts...ts) {
+    fatal_at(
       curr_inst_offset,
       "in SPIR-V binary inst ",
-      currInstOpName(), ": ", ts...);
+      curr_inst_op_name(), ": ", ts...);
   }
 
-  const char *currInstOpName() {
+  const char *curr_inst_op_name() {
     return curr_inst_opname ? curr_inst_opname : "???";
   }
 
-  // int instWordsLeft() const {
+  // int inst_words_left() const {
   //  return (int)curr_inst_words - ((int)offset() - (int)curr_inst_offset)/4;
   // }
 
   //
   std::map<uint32_t, const type *> builtin_types; // e.g. int, int2, ...
   std::map<uint32_t, const type *> custom_types; // e.g. struct foo {...}
-  const type *findType(uint32_t tid){
+
+  const type *find_type(uint32_t tid){
     auto itr = builtin_types.find(tid);
     if (itr == builtin_types.end()) {
       itr = custom_types.find(tid);
@@ -118,30 +119,32 @@ struct spv_decoder: decoder {
     }
     return itr->second;
   }
-  const type *getType(uint32_t tid) {
-    const type *t = findType(tid);
+  const type *get_type(uint32_t tid) {
+    const type *t = find_type(tid);
     if (t == nullptr)
-      fatalAtInst("%", tid, ": cannot find type id in SPIR-V binary");
+      fatal_at_inst("%", tid, ": cannot find type id in SPIR-V binary");
     return t;
   };
-  const type *getBuiltinType(std::string tnm) {
-    const type *t = lookupBuiltinType(tnm, pi.pointer_size);
+
+  const type *get_builtin_type(std::string tnm) {
+    const type *t = lookup_builtin_type(tnm, pi.pointer_size);
     if (t == nullptr)
-      fatalAtInst(tnm, ": cannot find builtin type");
+      fatal_at_inst(tnm, ": cannot find builtin type");
     return t;
   };
 
   // kernels by id, we build this based on the kernel ids we see
   std::map<uint32_t, kernel_info> ks;
-  kernel_info *findKernel(uint32_t id) {
+
+  kernel_info *find_kernel(uint32_t id) {
     auto itr = ks.find(id);
     if (itr == ks.end()) {
       return nullptr;
     }
     return &itr->second;
   }
-  kernel_info *getKernel(uint32_t id) {
-    auto *ki = findKernel(id);
+  kernel_info *get_kernel(uint32_t id) {
+    auto *ki = find_kernel(id);
     if (ki == nullptr) {
       ks[id] = kernel_info();
       return &ks[id];
@@ -150,7 +153,7 @@ struct spv_decoder: decoder {
   }
 
   std::unordered_map<uint32_t, std::string> names;
-  const std::string *findName(uint32_t id) {
+  const std::string *find_name(uint32_t id) {
     auto itr = names.find(id);
     if (itr == names.end()) {
       // fatal("cannot find name id in SPIR-V binary");
@@ -160,10 +163,10 @@ struct spv_decoder: decoder {
   }
   //
   std::unordered_map<uint32_t, int64_t> integer_constants;
-  int64_t getIntegerConstant(uint32_t id) {
+  int64_t get_integer_constant(uint32_t id) {
     auto itr = integer_constants.find(id);
     if (itr == integer_constants.end()) {
-      fatalAtInst("%", id, ": unable to find integer constant");
+      fatal_at_inst("%", id, ": unable to find integer constant");
     }
     return itr->second;
   };
@@ -175,10 +178,11 @@ struct spv_decoder: decoder {
     ftype(const type *_ret) : ret(_ret) {}
   };
   std::unordered_map<uint32_t, ftype> function_types;
-  ftype &getFunctionType(uint32_t id) {
+
+  ftype &get_function_type(uint32_t id) {
     auto itr = function_types.find(id);
     if (itr == function_types.end()) {
-      fatalAtInst("%", id, " unable to find function type");
+      fatal_at_inst("%", id, " unable to find function type");
     }
     return itr->second;
   }
@@ -195,15 +199,17 @@ struct spv_decoder: decoder {
     // other decorators?
   };
   std::unordered_map<uint32_t, arg_attrs> arg_attributes;
-  arg_attrs *findArgAttrs(uint32_t tid) {
+
+  arg_attrs *find_arg_attrs(uint32_t tid) {
     auto itr = arg_attributes.find(tid);
     if (itr == arg_attributes.end()) {
       return nullptr;
     }
     return &itr->second;
   };
-  arg_attrs &getArgAttrs(uint32_t tid) {
-    auto *aas = findArgAttrs(tid);
+
+  arg_attrs &get_arg_attrs(uint32_t tid) {
+    auto *aas = find_arg_attrs(tid);
     if (!aas) {
       arg_attributes[tid] = arg_attrs();
       return arg_attributes[tid];
@@ -215,7 +221,7 @@ struct spv_decoder: decoder {
   /////////////////////////////////////////////////////////////////////////////
   /////////////////////////////////////////////////////////////////////////////
   //
-  void decodeBinary() {
+  void decode_binary() {
     // https://www.khronos.org/registry/spir-v/specs/1.0/SPIRV.html#Binary
     if (bytes_left() < 5*4)
       fatal("invalid SPIR-V binary (truncated header)");
@@ -224,20 +230,20 @@ struct spv_decoder: decoder {
 
     uint32_t magic = SPIRV_MAGIC;
     if (endian_flip_needed)
-      magic = swapByteOrder(magic);
-    decodeEq(magic, "expected SPIR-V file input (bad magic)");
+      magic = swap_byte_order(magic);
+    decode_eq(magic, "expected SPIR-V file input (bad magic)");
 
     // spv_header_t
     // c.f. https://github.com/KhronosGroup/SPIRV-Tools/blob/master/source/spirv_definition.h
-    auto version = decodeWord();
+    auto version = decode_word();
     debug("version: ",
       (int)(version>>16) & 0xFF, ".", (int)(version>>8) & 0xFF, "\n");
-    auto generator = decodeWord();
+    auto generator = decode_word();
     // https://www.khronos.org/registry/spir-v/api/spir-v.xml
     debug("generator: ", generator, "\n");
-    auto bound = decodeWord();
+    auto bound = decode_word();
     debug("bound: ", bound, "\n"); // all ids are less than this
-    auto schema = decodeWord();
+    auto schema = decode_word();
     debug("schema: ", schema, "\n");
 
     // instructions
@@ -246,15 +252,15 @@ struct spv_decoder: decoder {
     while (bytes_left() > 0) {
       curr_inst_opname = "???";
       curr_inst_offset = (uint32_t)offset();
-      uint32_t inst_header = decodeWord();
+      uint32_t inst_header = decode_word();
       curr_inst_words = (uint16_t)(inst_header >> 16);
       uint16_t opcode = (uint16_t)(inst_header & 0xFFFF);
       if (curr_inst_words == 0) { // to prevent skip by 0xFFFFF...
-        fatalAtInst("invalid SPIR-V instruction (invalid word count)");
+        fatal_at_inst("invalid SPIR-V instruction (invalid word count)");
       } else if (4*((size_t)curr_inst_words - 1) > bytes_left()) {
-        fatalAtInst("invalid SPIR-V instruction (truncated instruction)");
+        fatal_at_inst("invalid SPIR-V instruction (truncated instruction)");
       }
-      decodeInst(opcode);
+      decode_inst(opcode);
     } // while inst
 
     // now copy out the kernels
@@ -266,7 +272,7 @@ struct spv_decoder: decoder {
       pi.types.push_back(ti.second);
   }
 
-  void decodeInst(uint16_t opcode) {
+  void decode_inst(uint16_t opcode) {
     bool emit_inst = true;
     //
     constexpr uint16_t OpName          = 0x05;
@@ -300,47 +306,47 @@ struct spv_decoder: decoder {
     //
     if (opcode == OpName) {
       curr_inst_opname = "OpName";
-      uint32_t target_id = decodeWord();
-      names[target_id] = decodeString();
+      uint32_t target_id = decode_word();
+      names[target_id] = decode_string();
       //
     } else if (opcode == OpMemoryModel) {
       curr_inst_opname = "OpMemoryModel";
       constexpr uint32_t Logical = 0x0;
       constexpr uint32_t Physical32 = 0x1;
       constexpr uint32_t Physical64 = 0x2;
-      uint32_t addr_model = decodeWord();
-      (void)decodeWord(); // memory model
+      uint32_t addr_model = decode_word();
+      (void)decode_word(); // memory model
       pi.pointer_size =
         addr_model == Physical32 ? 4 :
         addr_model == Physical64 ? 8 : 0;
       //
     } else if (opcode == OpEntryPoint) {
       curr_inst_opname = "OpEntryPoint";
-      uint32_t model = decodeWord();
-      uint32_t id = decodeWord();
+      uint32_t model = decode_word();
+      uint32_t id = decode_word();
       constexpr uint32_t Kernel = 6;
       if (model == Kernel) {
-        auto *ki = getKernel(id);
-        ki->name = decodeString();
+        auto *ki = get_kernel(id);
+        ki->name = decode_string();
       } // else skip
       //
     } else if (opcode == OpExecutionMode) {
       curr_inst_opname = "OpExecutionMode";
-      uint32_t id = decodeWord();
-      uint32_t mode = decodeWord();
+      uint32_t id = decode_word();
+      uint32_t mode = decode_word();
       constexpr uint32_t LocalSize = 0x11;
       if (mode == LocalSize) {
-        auto *ki = getKernel(id);
-        ki->reqd_word_group_size[0] = decodeWord();
-        ki->reqd_word_group_size[1] = decodeWord();
-        ki->reqd_word_group_size[2] = decodeWord();
+        auto *ki = get_kernel(id);
+        ki->reqd_word_group_size[0] = decode_word();
+        ki->reqd_word_group_size[1] = decode_word();
+        ki->reqd_word_group_size[2] = decode_word();
       } // else: ignore it
       //
     } else if (opcode == OpTypeInt) {
       curr_inst_opname = "OpTypeInt";
-      uint32_t id = decodeWord();
-      uint32_t bits = decodeWord();
-      uint32_t sign = decodeWord();
+      uint32_t id = decode_word();
+      uint32_t bits = decode_word();
+      uint32_t sign = decode_word();
       switch (bits) {
       case 8:
         builtin_types[id] = sign ? &cls::CHAR() : &cls::UCHAR();
@@ -358,13 +364,13 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpTypeVoid) {
       curr_inst_opname = "OpTypeVoid";
-      uint32_t id = decodeWord();
+      uint32_t id = decode_word();
       builtin_types[id] = &cls::VOID();
       //
     } else if (opcode == OpTypeFloat) {
       curr_inst_opname = "OpTypeFloat";
-      uint32_t id = decodeWord();
-      uint32_t bits = decodeWord();
+      uint32_t id = decode_word();
+      uint32_t bits = decode_word();
       switch (bits) {
       case 16: builtin_types[id] = &cls::HALF(); break;
       case 32: builtin_types[id] = &cls::FLOAT(); break;
@@ -373,33 +379,33 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpTypeVector) {
       curr_inst_opname = "OpTypeVector";
-      uint32_t id = decodeWord();
-      uint32_t elem_type = decodeWord();
-      uint32_t elem_count = decodeWord();
-      const type *et = getType(elem_type);
+      uint32_t id = decode_word();
+      uint32_t elem_type = decode_word();
+      uint32_t elem_count = decode_word();
+      const type *et = get_type(elem_type);
       //
       std::stringstream ss;
       ss << et->syntax() << elem_count;
       //
-      const type *vt = getBuiltinType(ss.str());
+      const type *vt = get_builtin_type(ss.str());
       if (!vt) {
-        fatalAtInst("OpTypeVector with non-builtin type");
+        fatal_at_inst("OpTypeVector with non-builtin type");
       }
       builtin_types[id] = vt;
       //
     } else if (opcode == OpTypeImage) {
       curr_inst_opname = "OpTypeImage";
-      uint32_t rid = decodeWord(); // result id
-      uint32_t stid = decodeWord(); // sampled type
-      uint32_t dim = decodeWord(); // 1D, 2D, 3D, Cube, Rect, Buffer, SubpassData
+      uint32_t rid = decode_word(); // result id
+      uint32_t stid = decode_word(); // sampled type
+      uint32_t dim = decode_word(); // 1D, 2D, 3D, Cube, Rect, Buffer, SubpassData
       //
-      uint32_t depth = decodeWord(); // 0 (no), 1 (yes), or 2 (unknown)
-      uint32_t arrayed = decodeWord(); // 0 or 1
-      uint32_t msaa = decodeWord(); // multi sampled
-      uint32_t is_sampled = decodeWord(); // 0 (runtime sampler), 1 (yes), 2 (no)
+      uint32_t depth = decode_word(); // 0 (no), 1 (yes), or 2 (unknown)
+      uint32_t arrayed = decode_word(); // 0 or 1
+      uint32_t msaa = decode_word(); // multi sampled
+      uint32_t is_sampled = decode_word(); // 0 (runtime sampler), 1 (yes), 2 (no)
       //
-      uint32_t format = decodeWord(); // probably Unknown
-      uint32_t aqbits = decodeWord();
+      uint32_t format = decode_word(); // probably Unknown
+      uint32_t aqbits = decode_word();
       //
       // use the following:
       // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/otherDataTypes.html
@@ -415,7 +421,7 @@ struct spv_decoder: decoder {
       case Dim_3D: ss << "3d"; break;
       case Dim_Buffer: ss << "1d_buffer"; break; // image1d_array_t
       // TODO: image_buffer
-      default: fatalAtInst("OpTypeImage with unsupported Dim");
+      default: fatal_at_inst("OpTypeImage with unsupported Dim");
       }
       //
       if (arrayed) {
@@ -427,7 +433,7 @@ struct spv_decoder: decoder {
         ss << "_depth"; // e.g. image2d_depth_t o image2d_array_depth_t
       //
       ss << "_t";
-      builtin_types[rid] = getBuiltinType(ss.str());
+      builtin_types[rid] = get_builtin_type(ss.str());
       //
       cl_kernel_arg_address_qualifier aq = CL_KERNEL_ARG_ACCESS_NONE;
       if (aqbits == 0) {
@@ -437,37 +443,37 @@ struct spv_decoder: decoder {
       } else if (aqbits == 2) {
         aq = CL_KERNEL_ARG_ACCESS_READ_WRITE;
       } else {
-        fatalAtInst("OpTypeImage invalid access qualifier");
+        fatal_at_inst("OpTypeImage invalid access qualifier");
       }
       // the image built-in type has already been mapped to the correct id
       // we need only associate this type id with the image access qualifier
-      getArgAttrs(rid).accs_qual = aq;
+      get_arg_attrs(rid).accs_qual = aq;
       //
     } else if (opcode == OpTypeSampler) {
       curr_inst_opname = "OpTypeSampler";
-      uint32_t id = decodeWord();
-      builtin_types[id] = getBuiltinType("sampler_t");
+      uint32_t id = decode_word();
+      builtin_types[id] = get_builtin_type("sampler_t");
       //
     } else if (opcode == OpTypeArray) {
       curr_inst_opname = "OpTypeArray";
-      uint32_t id = decodeWord();
-      const type *et = getType(decodeWord());
-      int64_t ic = getIntegerConstant(decodeWord());
+      uint32_t id = decode_word();
+      const type *et = get_type(decode_word());
+      int64_t ic = get_integer_constant(decode_word());
       if (ic < 0)
-        fatalAtInst("OpTypeArray with negative size");
+        fatal_at_inst("OpTypeArray with negative size");
       builtin_types[id] = new type(type_array(et,(size_t)ic));
       //
     } else if (opcode == OpTypeStruct) {
       curr_inst_opname = "OpTypeStruct";
-      auto id = decodeWord();
+      auto id = decode_word();
       std::vector<const type *> elems;
       size_t total_size = 0;
       for (uint16_t ix = 0; ix < curr_inst_words - 2; ix++) {
-        const type *t = getType(decodeWord());
+        const type *t = get_type(decode_word());
         while (total_size % t->size() != 0)
           total_size++; // natural alignment
         if (!t)
-          fatalAtInst("OpTypeStruct with unknown type");
+          fatal_at_inst("OpTypeStruct with unknown type");
         elems.push_back(t);
       }
       while (total_size % 4 == 0)
@@ -476,7 +482,7 @@ struct spv_decoder: decoder {
       // construct a dynamically allocated name for this structure
       // program_info::~program_info cleans this up
       std::string dummy;
-      const std::string *nm = findName(id);
+      const std::string *nm = find_name(id);
       if (!nm) {
         // not sure if a struct is promised to have a named id, but we'll
         // support the omission of that case
@@ -500,18 +506,18 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpTypePointer) {
       curr_inst_opname = "OpTypePointer";
-      uint32_t tid = decodeWord();
+      uint32_t tid = decode_word();
       // https://www.khronos.org/registry/spir-v/specs/1.0/SPIRV.html#Storage_Class
-      uint32_t storage_class = decodeWord();
-      uint32_t element_type_id = decodeWord();
-      const type *element_type = findType(element_type_id);
+      uint32_t storage_class = decode_word();
+      uint32_t element_type_id = decode_word();
+      const type *element_type = find_type(element_type_id);
       if (element_type == nullptr) {
-        fatalAtInst("OpTypePointer points to unknown type");
+        fatal_at_inst("OpTypePointer points to unknown type");
       }
-      auto addPointerType = [&](cl_kernel_arg_address_qualifier aq) {
+      auto add_pointer_type = [&](cl_kernel_arg_address_qualifier aq) {
         custom_types[tid] =
           new type(type_ptr(element_type, pi.pointer_size));
-        getArgAttrs(tid).addr_qual = aq;
+        get_arg_attrs(tid).addr_qual = aq;
       };
       //
       static const uint32_t UniformConstant  =  0;
@@ -533,23 +539,23 @@ struct spv_decoder: decoder {
         // e.g.
         //   %v3ulong = OpTypeVector %ulong 3 ; 0x00000860
         //   %_ptr_UniformConstant_v3ulong = OpTypePointer UniformConstant %v3ulong; 0x00000870
-        addPointerType(CL_KERNEL_ARG_ADDRESS_CONSTANT);
+        add_pointer_type(CL_KERNEL_ARG_ADDRESS_CONSTANT);
         break;
       case Workgroup: // local T *
         // custom_types[id] =
         //  new type(type_ptr(element_type, pi.pointer_size));
-        addPointerType(CL_KERNEL_ARG_ADDRESS_LOCAL);
+        add_pointer_type(CL_KERNEL_ARG_ADDRESS_LOCAL);
         break;
         //
       case CrossWorkgroup: // global T *
-        addPointerType(CL_KERNEL_ARG_ADDRESS_GLOBAL);
+        add_pointer_type(CL_KERNEL_ARG_ADDRESS_GLOBAL);
         break;
       case Function:
         // e.g. a *uniform* structure passed by value manifests itself as
         //      a pointer (C semantics)
         //   struct point {int x, y;};
         //   kernel void test(struct point x);
-        addPointerType(CL_KERNEL_ARG_ADDRESS_PRIVATE);
+        add_pointer_type(CL_KERNEL_ARG_ADDRESS_PRIVATE);
         break;
         //
       case Input:
@@ -562,33 +568,33 @@ struct spv_decoder: decoder {
       case Image:
       case StorageBuffer:
       default:
-        fatalAtInst("unhandled storage class ", storage_class);
+        fatal_at_inst("unhandled storage class ", storage_class);
       }
       //
     } else if (opcode == OpTypeFunction) {
       curr_inst_opname = "OpTypeFunction";
-      uint32_t ftid = decodeWord();
-      uint32_t rtid = decodeWord();
-      const type *rt = getType(rtid);
+      uint32_t ftid = decode_word();
+      uint32_t rtid = decode_word();
+      const type *rt = get_type(rtid);
       function_types[ftid] = ftype(rt);
       ftype &ft = function_types[ftid];
       for (int i = 0; i < curr_inst_words - 3; i++) {
-        ft.args.push_back(getType(decodeWord()));
+        ft.args.push_back(get_type(decode_word()));
       }
       //
     } else if (opcode == OpConstant) {
       // we need these for static array arguments
       // e.g. local int[256];
       curr_inst_opname = "OpConstant";
-      uint32_t tid = decodeWord();
-      uint32_t cid = decodeWord();
-      const type *t = findType(tid);
+      uint32_t tid = decode_word();
+      uint32_t cid = decode_word();
+      const type *t = find_type(tid);
       if (t->is<type_num>()) {
         const type_num &tn = t->as<type_num>();
         if (tn.skind == type_num::UNSIGNED || tn.skind == type_num::SIGNED) {
-          int64_t val = (int64_t)decodeWord();
+          int64_t val = (int64_t)decode_word();
           if (tn.size() == 8) {
-            val |= (int64_t)decodeWord() << 32;
+            val |= (int64_t)decode_word() << 32;
           }
           integer_constants[cid] = val;
         } // else float: skip it
@@ -596,14 +602,14 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpFunction) {
       curr_inst_opname = "OpFunction";
-      uint32_t fid = decodeWord(); // result type id
-      uint32_t rid = decodeWord(); // result function id
-      uint32_t fctl = decodeWord(); // function control
+      uint32_t fid = decode_word(); // result type id
+      uint32_t rid = decode_word(); // result function id
+      uint32_t fctl = decode_word(); // function control
       (void)fctl; // ignore
-      uint32_t ftid = decodeWord(); // function type id
-      const ftype &ft = getFunctionType(ftid);
+      uint32_t ftid = decode_word(); // function type id
+      const ftype &ft = get_function_type(ftid);
       function_params_left = (int)ft.args.size();
-      if (kernel_info *ki = findKernel(rid)) {
+      if (kernel_info *ki = find_kernel(rid)) {
         ki->args.reserve(ft.args.size());
         last_kernel = ki;
       } else {
@@ -613,31 +619,31 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpFunctionParameter) {
       curr_inst_opname = "OpFunctionParameter";
-      uint32_t rtid = decodeWord(); // result type id
-      const type *t = getType(rtid);
-      uint32_t rid = decodeWord(); // result id
+      uint32_t rtid = decode_word(); // result type id
+      const type *t = get_type(rtid);
+      uint32_t rid = decode_word(); // result id
       // %8 = OpFunctionParameter %5; 0x00000118
       //  ^ rid                   ^ rtid
 
       // name that matches rtid
       if (function_params_left == 0)
-        fatalAtInst("OpFunctionParameter without OpFunction");
+        fatal_at_inst("OpFunctionParameter without OpFunction");
       if (last_kernel) {
-        const std::string *arg = findName(rid);
+        const std::string *arg = find_name(rid);
         if (arg == nullptr) {
-          fatalAtInst("unable to OpFunctionParameter name");
+          fatal_at_inst("unable to OpFunctionParameter name");
         }
         last_kernel->args.emplace_back();
         arg_info &ai = last_kernel->args.back();
         ai.name = *arg;
         ai.arg_type = t;
         if (t->is<type_ptr>()) {
-          const arg_attrs *param_attrs = findArgAttrs(rid);
+          const arg_attrs *param_attrs = find_arg_attrs(rid);
           if (param_attrs) {
             // const, restrict, ... come from OpDecorator
             ai.type_qual = param_attrs->type_qual;
           }
-          const arg_attrs *type_attrs = findArgAttrs(rtid);
+          const arg_attrs *type_attrs = find_arg_attrs(rtid);
           if (type_attrs) {
             // private, local, global, ... come from OpPointerType
             ai.addr_qual = type_attrs->addr_qual;
@@ -645,7 +651,7 @@ struct spv_decoder: decoder {
 
         } else if (t->is<type_builtin>()) {
           // access qualifiers are a property of the image type
-          const arg_attrs *type_attrs = findArgAttrs(rtid);
+          const arg_attrs *type_attrs = find_arg_attrs(rtid);
           if (type_attrs) {
             ai.accs_qual = type_attrs->accs_qual;
           }
@@ -657,8 +663,8 @@ struct spv_decoder: decoder {
       //
     } else if (opcode == OpDecorate) {
       curr_inst_opname = "OpDecorate";
-      uint32_t tid = decodeWord(); // target id
-      uint32_t dec = decodeWord();
+      uint32_t tid = decode_word(); // target id
+      uint32_t dec = decode_word();
       //
       // static const uint32_t CPacked = 10;
       static const uint32_t BuiltIn = 11;
@@ -670,29 +676,29 @@ struct spv_decoder: decoder {
       switch (dec) {
       case Restrict:
         // Intel appears to send this via FuncParamAttr:NoAlias
-        getArgAttrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
+        get_arg_attrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
         break;
       case Volatile:
-        getArgAttrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_VOLATILE;
+        get_arg_attrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_VOLATILE;
         break;
       case Constant:
         // Intel appears to send this via FuncParamAttr:NoWrite
-        getArgAttrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_CONST;
+        get_arg_attrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_CONST;
         break;
       case FuncParamAttr:
       {
         static const uint32_t NoAlias = 4;
         static const uint32_t NoWrite = 6;
-        uint32_t fpa = decodeWord(); // func param attr
+        uint32_t fpa = decode_word(); // func param attr
         switch (fpa) {
         case NoWrite:
-          getArgAttrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_CONST;
+          get_arg_attrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_CONST;
           break;
         case NoAlias:
-          getArgAttrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
+          get_arg_attrs(tid).type_qual |= CL_KERNEL_ARG_TYPE_RESTRICT;
           break;
         default:
-          warningAt(curr_inst_offset, "SPIRV ignoring decorator ", dec);
+          warning_at(curr_inst_offset, "SPIRV ignoring decorator ", dec);
         }
         break;
       }
@@ -700,7 +706,7 @@ struct spv_decoder: decoder {
         // normal cases that we can avoid silently GlobalInvocationId
         break;
       default:
-        warningAt(curr_inst_offset, "SPIRV ignoring decorator ", dec);
+        warning_at(curr_inst_offset, "SPIRV ignoring decorator ", dec);
       }
       //
     } else { // else: opcode == ?
@@ -715,7 +721,7 @@ struct spv_decoder: decoder {
       std::cout << text::fmt_hex(curr_inst_offset) << ": ";
       std::cout << "0x" << text::fmt_hex(opcode);
       std::stringstream ss;
-      ss << " (" << currInstOpName() << ") ";
+      ss << " (" << curr_inst_op_name() << ") ";
       std::cout << std::left << std::setw(24) << ss.str();
       for (uint16_t op_ix = 1; op_ix < curr_inst_words; op_ix++) {
         std::cout << "  0x" <<
@@ -723,10 +729,10 @@ struct spv_decoder: decoder {
       }
       std::cout << "\n";
     }
-  } // decodeInst
+  } // decode_inst
 };
 
-cls::k::program_info *cls::parseProgramInfoBinarySPIRV(
+cls::k::program_info *cls::parse_program_info_binary_spirv(
   const opts &os,
   diagnostics &ds, loc at,
   const std::string &path)
@@ -734,6 +740,6 @@ cls::k::program_info *cls::parseProgramInfoBinarySPIRV(
   program_info *pi = new program_info();
   auto bits = sys::read_file_binary(path);
   spv_decoder sd(os.verbosity, ds, at, bits.data(), bits.size(), *pi);
-  sd.decodeBinary();
+  sd.decode_binary();
   return pi;
 }

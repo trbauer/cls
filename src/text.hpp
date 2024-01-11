@@ -205,7 +205,7 @@ namespace text
     size_t n_elems,
     size_t elem_w = 1,
     unsigned cols = 0,
-    bool showChars = false);
+    bool show_chars = false);
 
   /////////////////////////////////////////////////////////////////////////////
   // Run the C preprocessor on an input file.

@@ -115,7 +115,7 @@ const type &cls::VOID() {
 // constexpr static type CHAR{type_num("char",type_num::SIGNED,1)};
 // constexpr static type_struct TS2 = type_struct{&CHAR};
 // constexpr static type CHAR2{TS2};
-const type *cls::lookupBuiltinType(std::string name, size_t bytes_per_addr)
+const type *cls::lookup_builtin_type(std::string name, size_t bytes_per_addr)
 {
   // normalize primitive names (e.g. unsigned int -> uint)
   if (name == "void") {
@@ -204,18 +204,18 @@ void cls::format(
   const type &memory_type)
 {
   if (memory_type.is<type_ptr>()) {
-    formatBuffer(
+    format_buffer(
       os,
       memory,
       memory_size,
       *memory_type.as<type_ptr>().element_type,
       0);
   } else {
-    formatBufferElement(os, memory_type, memory);
+    format_buffer_element(os, memory_type, memory);
   }
 }
 
-void cls::formatBuffer(
+void cls::format_buffer(
   std::ostream &os,
   const void *buffer,
   size_t buffer_length_in_bytes,
@@ -237,22 +237,22 @@ void cls::formatBuffer(
   const int hex_digits_for_addrs =
     std::max<int>(4,
       (int)std::ceil(std::log(buffer_length_in_bytes + 1)/std::log(16)));
-  auto startNewLine = [&] {
+  auto start_new_line = [&] {
     auto addr = text::fmt_hex(curr - base, hex_digits_for_addrs);
     os << addr << ":";
     curr_col = addr.size() + 1;
     elems_on_row = 0;
   };
 
-  auto fmtElem = [&] () {
+  auto fmt_elem = [&] () {
     std::stringstream ss;
     ss << "  ";
-    formatBufferElement(ss, elem_type, curr);
+    format_buffer_element(ss, elem_type, curr);
     if (elems_per_row > 0 && elems_on_row == elems_per_row ||
       (elems_per_row <= 0) && is_os_tty && curr_col + ss.tellp() >= max_cols)
     {
       os << "\n";
-      startNewLine();
+      start_new_line();
     }
 
     os << ss.str();
@@ -262,9 +262,9 @@ void cls::formatBuffer(
     elems_on_row++;
   };
   if (buffer_length_in_bytes > 0)
-    startNewLine();
+    start_new_line();
   while (curr < base + buffer_length_in_bytes)
-    fmtElem();
+    fmt_elem();
 }
 
 template <typename T>
@@ -278,7 +278,7 @@ static T read_unaligned(const void *buf)
 static const int FLTPREC = 5;
 static const int DBLPREC = 8;
 
-static bool parsesBackIdentically(float x)
+static bool parses_back_identically(float x)
 {
   std::stringstream ss;
   ss << std::fixed << std::setprecision(FLTPREC) << x;
@@ -289,7 +289,7 @@ static bool parsesBackIdentically(float x)
   }
   return false;
 }
-static bool parsesBackIdentically(double x)
+static bool parses_back_identically(double x)
 {
   std::stringstream ss;
   ss << std::fixed << std::setprecision(DBLPREC) << x;
@@ -301,7 +301,7 @@ static bool parsesBackIdentically(double x)
   return false;
 }
 
-static void emitFloatBits(std::ostream &os, uint64_t bits, int e, int m)
+static void emit_float_bits(std::ostream &os, uint64_t bits, int e, int m)
 {
   os << "... (";
   if ((1ull << (e + m)) & bits) {
@@ -328,7 +328,7 @@ static void emitFloatBits(std::ostream &os, uint64_t bits, int e, int m)
   os << ')';
 }
 
-void cls::formatBufferElementExt(
+void cls::format_buffer_element_ext(
   std::ostream &os,
   const type &t,
   const void *ptr)
@@ -354,30 +354,30 @@ void cls::formatBufferElementExt(
           bits = read_unaligned<uint32_t>(ptr);
           e = 8; m = 23;
         }
-        emitted_exact = parsesBackIdentically(x);
+        emitted_exact = parses_back_identically(x);
         os << std::setw(8) << std::fixed << std::setprecision(FLTPREC) << x;
         break;
       }
       case 8:
         os << std::setw(12) << std::fixed << std::setprecision(DBLPREC) <<
           read_unaligned<double>(ptr);
-        emitted_exact = parsesBackIdentically(read_unaligned<double>(ptr));
+        emitted_exact = parses_back_identically(read_unaligned<double>(ptr));
         bits = read_unaligned<uint64_t>(ptr);
         e = 11; m = 52;
         break;
       }
       break;
     default:
-      formatBufferElement(os, t, ptr);
+      format_buffer_element(os, t, ptr);
     }
     if (!emitted_exact)
-      emitFloatBits(os, bits, e, m);
+      emit_float_bits(os, bits, e, m);
   } else {
-    formatBufferElement(os, t, ptr);
+    format_buffer_element(os, t, ptr);
   }
 }
 
-void cls::formatBufferElement(
+void cls::format_buffer_element(
   std::ostream &os,
   const type &t,
   const void *ptr)
@@ -461,7 +461,7 @@ void cls::formatBufferElement(
     for (size_t i = 0; i < ts.elements_length; i++) {
       if (i > 0)
         os << ",";
-      formatBufferElement(os, *ts.elements[i], struct_ptr);
+      format_buffer_element(os, *ts.elements[i], struct_ptr);
       struct_ptr += ts.elements[i]->size();
     }
     os << "}";
@@ -472,7 +472,7 @@ void cls::formatBufferElement(
     for (size_t i = 0; i < ts.length; i++) {
       if (i > 0)
         os << ",";
-      formatBufferElement(os, ts.element_type, struct_ptr);
+      format_buffer_element(os, ts.element_type, struct_ptr);
       struct_ptr += ts.element_type.size();
     }
     os << ")";
@@ -482,7 +482,7 @@ void cls::formatBufferElement(
     for (size_t i = 0; i < tu.elements_length; i++) {
       if (i > 0)
         os << "#";
-      formatBufferElement(os, *tu.elements[i], ptr);
+      format_buffer_element(os, *tu.elements[i], ptr);
     }
     os << "}";
   } else if (t.is<type_ptr>()) {
@@ -495,6 +495,6 @@ void cls::formatBufferElement(
         read_unaligned<uint64_t>(ptr);
     }
   } else {
-    os << "formatBufferElement<" << t.syntax() << ">?";
+    os << "format_buffer_element<" << t.syntax() << ">?";
   }
 }

@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -32,10 +31,8 @@ static void run_file(
   std::string file_name,
   std::string file_contents);
 
-static void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
-static void emit_metrics_trns(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
-static void emit_metrics_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
-// static void emit_metrics_trns_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
+// main-format-metrics.cpp
+void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
 
 int main(int argc, const char **argv)
 {
@@ -44,7 +41,11 @@ int main(int argc, const char **argv)
     "CL Script " CLS_VERSION_STRING " (" __DATE__ ")",
     CLS_EXE,
     "  % " CLS_EXE " -e \"matrix.cl`naive<1024x1024>(0:w,1:r,1:r)\"\n"
+    "    run a script given as an argument\n"
     "  % " CLS_EXE " script.cls\n"
+    "    run the script given in script.cls\n"
+    "  % " CLS_EXE " -l=0\n"
+    "    lists devices\n"
   );
   cmdspec.defineArg(
     "FILE", "a cls script file",
@@ -342,7 +343,7 @@ static void run_file(
       std::cout << "EXPANDS TO==\n" << file_contents << "\n==\n";
     cls::parse_script(os, file_contents, file_name, s, ds);
 
-    ds.flushWarnings(std::cerr);
+    ds.flush_warnings(std::cerr);
 
     if (os.parse_only) {
       cls::format_opts fopts;
@@ -366,7 +367,7 @@ static void run_file(
     //
     cs = cls::compile(os, s, ds);
     //
-    ds.flushWarnings(std::cerr);
+    ds.flush_warnings(std::cerr);
   } catch (const cls::diagnostic &d) {
     d.emit_and_exit_with_error();
   }
@@ -406,7 +407,7 @@ static void run_file(
   t.define_spacer("  ");
   auto &pct_total_col = t.define_col("overall%", true, 1);
 
-  auto emitStats = [&](
+  auto emit_stats = [&](
     const std::string &clk,
     const sampler &s,
     std::optional<double> avg_total)
@@ -438,7 +439,7 @@ static void run_file(
     }
   };
   if (os.show_all_times)
-    emitStats("TOTAL", execute_times, std::nullopt);
+    emit_stats("TOTAL", execute_times, std::nullopt);
   if (os.verbosity >= 0) {
     if (os.prof_time) {
         std::cout << "PROF=================================================\n";
@@ -458,43 +459,36 @@ static void run_file(
     }
   }
 
-  if (!os.metric_counter_set.empty()) {
-    const auto &mdcs = cs.get_mdapi_ctrs();
-     if (os.metric_format == cls::opts::NAT) {
-      emit_metrics(os, mdcs);
-    } else if (os.metric_format == cls::opts::TRANS) {
-      emit_metrics_trns(os, mdcs);
-    } else if (os.metric_format == cls::opts::CSV) {
-      emit_metrics_csv(os, mdcs);
-    } else {
-      std::cerr << "unexpected output format for -mf=..\n";
-      exit(EXIT_INTERNAL_ERROR);
-    }
-  }
-
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);
-    emitStats(ds.spec::str(), ts, std::make_optional(total));
+    emit_stats(ds.spec::str(), ts, std::make_optional(total));
   }
   if (os.show_all_times) {
     sampler start;
     start.add(duration_setup_s);
-    emitStats("<startup>", start, std::make_optional(total));
+    emit_stats("<startup>", start, std::make_optional(total));
     //
     sampler comps;
     comps.add(compile_time_s);
-    emitStats("<compile>", comps, std::make_optional(total));
+    emit_stats("<compile>", comps, std::make_optional(total));
     //
     for (const auto &dt : cs.get_init_times()) {
       const cls::init_spec_mem &im = *std::get<0>(dt);
       const sampler &ts = std::get<1>(dt);
-      emitStats(
+      emit_stats(
         "<init>(" + im.spec::str() + ")",
         ts,
         std::make_optional(total));
     }
   }
+
+  if (!os.metric_counter_set.empty()) {
+    const auto &mdcs = cs.get_mdapi_ctrs();
+    emit_metrics(os, mdcs);
+  }
+
+
   t.str(std::cout);
   std::cout.flush();
   std::cerr.flush();
@@ -502,126 +496,3 @@ static void run_file(
     cs.destroy();
 } // run_file
 
-
-static std::string format_metric_value(const metric_val::mval &mv) {
-  std::stringstream ss;
-  if (std::holds_alternative<bool>(mv.value)) {
-    ss << ((bool)mv ? "T" : "F");
-  } else if (std::holds_alternative<float>(mv.value)) {
-    ss << std::fixed << std::setprecision(3) << (float)mv;
-  } else if (std::holds_alternative<uint64_t>(mv.value)) {
-    ss << (uint64_t)mv;
-  } else if (std::holds_alternative<std::string>(mv.value)) {
-    ss << (std::string)mv;
-  } else {
-    ss << "?";
-  }
-  return ss.str();
-}
-
-
-static void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs) {
-  for (const auto &m : mdcs) {
-    const cls::dispatch_spec *ds = std::get<0>(m);
-    std::cout << "==============";
-    ds->str(std::cout, cls::format_opts());
-    std::cout << "\n";
-    const metric_map &mm = std::get<1>(m);
-    unsigned max_col_len = 0;
-    for (const metric_val &col : mm.columns) {
-      if (col.is_info && os.verbosity <= 1)
-        continue;
-      std::cout << "  " << std::setw(28) << col.metric;
-      max_col_len = std::max(max_col_len, (unsigned)col.values.size());
-    }
-    std::cout << "\n";
-    for (unsigned row_ix = 0; row_ix < max_col_len; row_ix++) {
-      std::cout << "  ";
-      for (const metric_val &col : mm.columns) {
-        if (col.is_info && os.verbosity <= 1)
-          continue;
-        std::cout << "  ";
-        std::stringstream ss;
-        if (row_ix >= (unsigned)col.values.size()) {
-          ss << "-";
-        } else {
-          const metric_val::mval &mv = col.values[row_ix];
-          ss << format_metric_value(mv);
-        }
-        std::cout << std::setw(28) << ss.str();
-      }
-      std::cout << "\n";
-    }
-  }
-}
-
-static void
-emit_metrics_trns(const cls::opts &os, const cls::mdapi_ctrs &mdcs)
-{
-  for (const auto &m : mdcs) {
-    const cls::dispatch_spec *ds = std::get<0>(m);
-    std::cout << "==============";
-    ds->str(std::cout, cls::format_opts());
-    std::cout << "\n";
-    const metric_map &mm = std::get<1>(m);
-    unsigned max_metric_col = 0, max_units_col = 0;
-    for (const metric_val &col : mm.columns) {
-      max_metric_col = std::max(max_metric_col, (unsigned)col.metric.size());
-      max_units_col = std::max(max_units_col, (unsigned)col.units.size());
-    }
-
-    for (const metric_val &col : mm.columns) {
-      if (col.is_info && os.verbosity <= 1)
-        continue;
-      std::cout << "  " << std::setw(max_metric_col) << std::left << col.metric;
-      std::cout << "  " << std::setw(max_units_col) << std::left << col.units;
-      for (const auto &mv : col.values) {
-        std::cout << "  " << std::setw(16) << std::right
-                  << format_metric_value(mv);
-      }
-      std::cout << "\n";
-    }
-  }
-}
-
-static void emit_metrics_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs)
-{
-  const char *OUTPUT_CSV_FILE = "metrics.csv";
-  std::ofstream ofs {OUTPUT_CSV_FILE, std::ofstream::out};
-  if (!ofs.good()) {
-    std::cerr << OUTPUT_CSV_FILE << ": failed to open file\n";
-    exit(EXIT_FAILURE);
-  }
-  for (const auto &m : mdcs) {
-    const cls::dispatch_spec *ds = std::get<0>(m);
-    ofs << "\"";
-    ds->str(ofs, cls::format_opts());
-    ofs << "\"";
-    ofs << "\n";
-    const metric_map &mm = std::get<1>(m);
-    unsigned max_col_len = 0;
-    for (const metric_val &col : mm.columns) {
-      if (col.is_info && os.verbosity <= 1)
-        continue;
-      ofs << "," << col.metric;
-      max_col_len = std::max(max_col_len, (unsigned)col.values.size());
-    }
-    ofs << "\n";
-    for (unsigned row_ix = 0; row_ix < max_col_len; row_ix++) {
-      for (const metric_val &col : mm.columns) {
-        if (col.is_info && os.verbosity <= 1)
-          continue;
-        std::stringstream ss;
-        if (row_ix < (unsigned)col.values.size()) {
-          const metric_val::mval &mv = col.values[row_ix];
-          ss << format_metric_value(mv);
-        }
-        ofs << "," << ss.str();
-      }
-      ofs << "\n";
-    } // cols
-  }
-  if (os.verbosity >= 0) {
-    std::cout << OUTPUT_CSV_FILE << ": wrote data to file\n";
-  }
-}

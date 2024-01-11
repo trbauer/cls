@@ -8,7 +8,9 @@
 
 // Dynamic access to OpenCL APIs simplifies build dependencies
 struct cl_lib {
-  cl_lib(int _verbosity, cl_device_id dev_id = nullptr);
+  cl_lib(int _verbosity,
+         cl_device_id dev_id = nullptr,
+         bool auto_ld_exts = true);
   ~cl_lib();
   cl_lib(const cl_lib &) = delete;
   cl_lib & operator=(const cl_lib &) = delete;
@@ -17,12 +19,11 @@ private:
   int verbosity = 0;
   void *lib = nullptr;
 
+  void load_extensions(cl_device_id id);
 public:
   static const cl_lib DEFAULT;
 
   bool is_valid() const {return lib;}
-
-  void load_extensions(cl_device_id id);
 
   using clCreateCommandQueue_Fn = CL_API_ENTRY
   cl_command_queue(CL_API_CALL *)(

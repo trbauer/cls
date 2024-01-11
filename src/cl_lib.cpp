@@ -18,7 +18,9 @@ using namespace cls;
 
 const cl_lib cl_lib::DEFAULT {0, nullptr};
 
-cl_lib::cl_lib(int _verbosity, cl_device_id dev_id) : verbosity(_verbosity) {
+cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
+    : verbosity(_verbosity)
+{
   lib = sys::load_library(LIB_FILE);
   if (!lib) {
     std::cerr << LIB_FILE << ": failed to load\n";
@@ -55,40 +57,47 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id) : verbosity(_verbosity) {
 
   //////////////////////////
   // load extensions
-  if (dev_id) {
-    cl_platform_id plt_id = nullptr;
-    auto           err = this->clGetDeviceInfo(
-        dev_id, CL_DEVICE_PLATFORM, sizeof(cl_platform_id), &plt_id, nullptr);
-    if (err != CL_SUCCESS) {
-      std::cerr << "cl_lib: clDeviceInfo(CL_DEVICE_PLATFORM...) failed: " <<
-        cls::status_to_symbol(err) << "\n";
-      exit(EXIT_INTERNAL_ERROR);
-    }
-
-
-    if (!clGetExtensionFunctionAddressForPlatform) {
-      std::cerr << LIB_FILE
-                << ": failed to find clGetExtensionFunctionAddressForPlatform "
-                   "(OpenCL 1.2 driver needed?)\n";
-    }
-
-    auto find_ext =
-      [&]<typename T>(const char *func_name) -> T {
-        if (!clGetExtensionFunctionAddressForPlatform)
-          return nullptr;
-        T func = (T)clGetExtensionFunctionAddressForPlatform(plt_id, func_name);
-        if (func == nullptr) {
-          if (verbosity >= 1) {
-            std::cerr << func_name << ": unable to find extension function\n";
-          }
-        }
-        return func;
-      };
-    clCreatePerfCountersCommandQueueINTEL =
-        find_ext.template operator()<clCreatePerfCountersCommandQueueINTEL_Fn>(
-            "clCreatePerfCountersCommandQueueINTEL");
+  if (auto_ld_exts) {
+    load_extensions(dev_id);
   } // if loading extensions
 } // cl_lib::cl_lib()
+
+void cl_lib::load_extensions(cl_device_id dev_id) {
+  if (!dev_id) {
+    std::cerr << "cl_lib: invalid dev_id\n";
+    return;
+  }
+  cl_platform_id plt_id = nullptr;
+  auto           err = this->clGetDeviceInfo(
+      dev_id, CL_DEVICE_PLATFORM, sizeof(cl_platform_id), &plt_id, nullptr);
+  if (err != CL_SUCCESS) {
+    std::cerr << "cl_lib: clDeviceInfo(CL_DEVICE_PLATFORM...) failed: " <<
+      cls::status_to_symbol(err) << "\n";
+    exit(EXIT_INTERNAL_ERROR);
+  }
+
+  if (!clGetExtensionFunctionAddressForPlatform) {
+    std::cerr << LIB_FILE
+              << ": failed to find clGetExtensionFunctionAddressForPlatform "
+                  "(OpenCL 1.2 driver needed?)\n";
+  }
+
+  auto find_ext =
+    [&]<typename T>(const char *func_name) -> T {
+      if (!clGetExtensionFunctionAddressForPlatform)
+        return nullptr;
+      T func = (T)clGetExtensionFunctionAddressForPlatform(plt_id, func_name);
+      if (func == nullptr) {
+        if (verbosity >= 1) {
+          std::cerr << func_name << ": unable to find extension function\n";
+        }
+      }
+      return func;
+    };
+  clCreatePerfCountersCommandQueueINTEL =
+      find_ext.template operator()<clCreatePerfCountersCommandQueueINTEL_Fn>(
+          "clCreatePerfCountersCommandQueueINTEL");
+}
 
 
 cl_lib::~cl_lib()

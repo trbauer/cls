@@ -36,28 +36,28 @@ namespace cls {
   // These have to be functions for some reason unknown to me
   // (MinGW GCC 7.2 rejects as method, VS 2017 accepts)
   //
-  // I was using I tokenString() within the body.
-  template <typename T> void parseIntegralBody(
-    std::string str, int base, T &val);
-  template <> inline void parseIntegralBody(
-    std::string str, int base, int64_t &val)
+  // I was using I token_string() within the body.
+  template<typename T>
+  void parse_integral_body(std::string str, int base, T &val);
+  template<>
+  inline void parse_integral_body(std::string str, int base, int64_t &val)
   {
-    val = std::stoll(str,nullptr,base);
+    val = std::stoll(str, nullptr, base);
   }
-  template <> inline void parseIntegralBody(
-    std::string str, int base, uint64_t &val)
+  template<>
+  inline void parse_integral_body(std::string str, int base, uint64_t &val)
   {
-    val = std::stoull(str,nullptr,base);
+    val = std::stoull(str, nullptr, base);
   }
-  template <> inline void parseIntegralBody(
-    std::string str, int base, int32_t &val)
+  template<>
+  inline void parse_integral_body(std::string str, int base, int32_t &val)
   {
-    val = std::stol(str,nullptr,base);
+    val = std::stol(str, nullptr, base);
   }
-  template <> inline void parseIntegralBody(
-    std::string str, int base, uint32_t &val)
+  template<>
+  inline void parse_integral_body(std::string str, int base, uint32_t &val)
   {
-    val = std::stoul(str,nullptr,base);
+    val = std::stoul(str, nullptr, base);
   }
 
   class parser {
@@ -67,30 +67,31 @@ namespace cls {
     size_t              m_offset;
     token               m_eof;
   private:
-    // template <typename...Ts> bool lookingAtSeqHelper(int ix) const {
+    // template <typename...Ts> bool looking_at_seq_helper(int ix) const {
     //  return true;
     // }
     // GCC 7.2 rules require non-empty unpack
-    template <typename...Ts> bool lookingAtSeqHelper(
+    template <typename...Ts> bool looking_at_seq_helper(
       int ix, lexeme lxm) const
     {
-      return lookingAt(lxm,ix);
+      return looking_at(lxm,ix);
     }
-    template <typename...Ts> bool lookingAtSeqHelper(
+    template <typename...Ts> bool looking_at_seq_helper(
       int ix, const char *lxm) const
     {
-      return lookingAtIdentEq(lxm,ix);
+      return looking_at_ident_eq(lxm,ix);
     }
     //
-    template <typename...Ts> bool lookingAtSeqHelper(
+    template <typename...Ts> bool looking_at_seq_helper(
       int ix, lexeme lxm, Ts...ts) const
     {
-      return lookingAt(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+      return looking_at(lxm,ix) && looking_at_seq_helper(ix + 1, ts...);
     }
-    template <typename...Ts> bool lookingAtSeqHelper(
+    template <typename...Ts> bool looking_at_seq_helper(
       int ix, const char *lxm, Ts...ts) const
     {
-      return lookingAtIdentEq(lxm,ix) && lookingAtSeqHelper(ix+1,ts...);
+      return looking_at_ident_eq(lxm, ix) &&
+             looking_at_seq_helper(ix + 1, ts...);
     }
   public:
     parser(
@@ -109,22 +110,22 @@ namespace cls {
       yyset_lineno(1, yy);
       yyset_column(1, yy);
 
-      unsigned inpOff = 0, bolOff = 0;
-      unsigned strLitOff;
+      unsigned inp_off = 0, bol_off = 0;
+      unsigned str_lit_off;
 
       lexeme lxm;
       while (true) {
-        lxm = yylex(yy, inpOff, strLitOff);
+        lxm = yylex(yy, inp_off, str_lit_off);
         uint32_t lno = (uint32_t)yyget_lineno(yy);
         uint32_t len =
           (lxm == lexemes::STRLIT) ?
-            inpOff - strLitOff : (uint32_t)yyget_leng(yy);
+            inp_off - str_lit_off : (uint32_t)yyget_leng(yy);
         uint32_t col = (uint32_t)yyget_column(yy) - len;
         uint32_t off =
           (lxm == lexemes::STRLIT) ?
-            strLitOff : (uint32_t)inpOff;
+            str_lit_off : (uint32_t)inp_off;
         if (lxm == lexeme::LEXICAL_ERROR) {
-          fatalAt(cls::loc(lno,col,off,len), "lexical error");
+          fatal_at(cls::loc(lno,col,off,len), "lexical error");
         }
 
         if (lxm == lexeme::NEWLINE) {
@@ -133,14 +134,14 @@ namespace cls {
           // and inferring the final column from the beginning of
           // the last line
           lno--;
-          col = inpOff - bolOff + 1;
-          bolOff = inpOff;
+          col = inp_off - bol_off + 1;
+          bol_off = inp_off;
         }
         // const char *str = yyget_text(yy);
         // printf("AT %u.%u(%u:%u:\"%s\"): %s\n",
-        //  lno,col,off,len,str,LexemeString(lxm));
+        //  lno, col, off, len, str, lexeme_string(lxm));
         // struct Loc loc(lno,col,off,len);
-        // ShowToken(inp,loc,std::cout);
+        // show_token(inp, loc, std::cout);
 
         if (lxm == END_OF_FILE) {
           m_eof = cls::token(lxm, lno, col, off, len); // update EOF w/ loc
@@ -151,7 +152,7 @@ namespace cls {
         if (lxm != lexeme::NEWLINE || !omit_newlines)
           m_tokens.emplace_back(lxm, lno, col, off, len);
         if (lxm != STRLIT)
-          inpOff += len;
+          inp_off += len;
       } // while
 
       yylex_destroy(yy);
@@ -160,27 +161,27 @@ namespace cls {
     parser& operator=(parser const&) = delete;
     parser() = delete;
 
-    // generate fatalAt, warningAt, ...
-    DIAGNOSTIC_MIXIN_MEMBERS(m_diagnostics, nextLoc());
+    // generate fatal_at, warning_at, ...
+    DIAGNOSTIC_MIXIN_MEMBERS(m_diagnostics, next_loc());
 
     const std::string &input() const {return m_input;}
 
-    bool endOfFile() const {
+    bool end_of_file() const {
       return m_tokens[m_offset].kind == END_OF_FILE;
     }
-    size_t tokensLeft() const {
+    size_t tokens_left() const {
       return m_tokens.size() - m_offset;
     }
 
-    std::string tokenString() const {
-      auto loc = nextLoc();
+    std::string token_string() const {
+      auto loc = next_loc();
       return input().substr(loc.offset, loc.extent);
     }
-    std::string tokenStringLiteral() const {
-      if (!lookingAt(STRLIT)) {
+    std::string token_string_literal() const {
+      if (!looking_at(STRLIT)) {
         fatal("expected string literal");
       }
-      auto str = tokenString();
+      auto str = token_string();
       std::stringstream ss;
       for (size_t i = 1; i < str.length() - 1; i++) {
         if (str[i] == '\\') {
@@ -189,11 +190,11 @@ namespace cls {
           case 'n': ss << '\n'; break;
           case 't': ss << '\t'; break;
           default: {
-            auto loc = nextLoc();
+            auto loc = next_loc();
             loc.column += (uint32_t)i;
             loc.offset += (uint32_t)i;
             loc.extent = 2;
-            fatalAt(loc, "invalid escape sequence in string literal");
+            fatal_at(loc, "invalid escape sequence in string literal");
           }
           }
           i++;
@@ -213,7 +214,7 @@ namespace cls {
         return m_tokens[k];
       }
     }
-    const cls::loc &nextLoc(int i = 0) const {
+    const cls::loc &next_loc(int i = 0) const {
       return next(i).at;
     }
     bool skip(int i = 1) {
@@ -224,24 +225,24 @@ namespace cls {
       m_offset = (size_t)k;
       return true;
     }
-    bool lookingAt(lexeme lx, int i = 0) const {
+    bool looking_at(lexeme lx, int i = 0) const {
       return next(i).kind == lx;
     }
     template <typename...Ts>
-    bool lookingAtSeq(Ts...ts) const {
-      return lookingAtSeqHelper(0,ts...);
+    bool looking_at_seq(Ts...ts) const {
+      return looking_at_seq_helper(0,ts...);
     }
-    bool lookingAtSymbol(const char *sym) const {
-      return tokenString() == sym;
+    bool looking_at_symbol(const char *sym) const {
+      return token_string() == sym;
     }
-    bool lookingAtIdent(int i = 0) const {
+    bool looking_at_ident(int i = 0) const {
       return next(i).kind == IDENT;
     }
-    bool lookingAtIdentEq(const char *v, int i = 0) const {
-      if (!lookingAt(IDENT)) {
+    bool looking_at_ident_eq(const char *v, int i = 0) const {
+      if (!looking_at(IDENT)) {
         return false;
       }
-      auto loc = nextLoc();
+      auto loc = next_loc();
       auto slen = strlen(v);
       if (loc.extent > slen)
         return false;
@@ -251,43 +252,44 @@ namespace cls {
       }
       return true;
     }
-    bool lookingAtIdentEq(const char *v1, const char *v2, int i = 0) {
-      return lookingAtIdentEq(v1, i) || lookingAtIdentEq(v2, i);
+    bool looking_at_ident_eq(const char *v1, const char *v2, int i = 0) {
+      return looking_at_ident_eq(v1, i) || looking_at_ident_eq(v2, i);
     }
-    bool lookingAtInt() const {
-      return lookingAt(INTLIT02) || lookingAt(INTLIT10) || lookingAt(INTLIT16);
+    bool looking_at_int() const {
+      return looking_at(INTLIT02) || looking_at(INTLIT10) ||
+             looking_at(INTLIT16);
     }
-    bool lookingAtFloat() const {
-      return lookingAt(FLTLIT);
+    bool looking_at_float() const {
+      return looking_at(FLTLIT);
     }
 
     void consume(lexeme lx) {
-      if (lookingAt(lx)) {
+      if (looking_at(lx)) {
         (void)skip();
       } else {
         fatal("expected ", to_syntax(lx));
       }
     }
-    bool consumeIf(lexeme lx) {
-      if (lookingAt(lx)) {
+    bool consume_if(lexeme lx) {
+      if (looking_at(lx)) {
         (void)skip();
         return true;
       }
       return false;
     }
-    std::string consumeIdent(const char *group = "identifier") {
-      if (!lookingAt(IDENT)) {
+    std::string consume_ident(const char *group = "identifier") {
+      if (!looking_at(IDENT)) {
         fatal("expected ", group);
       }
-      auto s = tokenString();
+      auto s = token_string();
       skip();
       return s;
     }
-    void consumeIdentEq(const char *kw, const char *group = "identifier") {
-      if (!lookingAt(IDENT)) {
+    void consume_ident_eq(const char *kw, const char *group = "identifier") {
+      if (!looking_at(IDENT)) {
         fatal("expected \"", group, "\"");
       }
-      auto at = nextLoc();
+      auto at = next_loc();
       if (at.extent != strlen(kw))
         fatal("expected \"", group, "\"");
       auto str = input().c_str() + at.offset;
@@ -297,15 +299,15 @@ namespace cls {
       skip();
     }
 
-    bool consumeIfIdentEq(const char *ident) {
-      if(lookingAtIdentEq(ident)) {
+    bool consume_if_ident_eq(const char *ident) {
+      if(looking_at_ident_eq(ident)) {
         skip();
         return true;
       }
       return false;
     }
-    bool consumeIfIdentEq(const char *ident1, const char *ident2) {
-      if(lookingAtIdentEq(ident1) || lookingAtIdentEq(ident2)) {
+    bool consume_if_ident_eq(const char *ident1, const char *ident2) {
+      if(looking_at_ident_eq(ident1) || looking_at_ident_eq(ident2)) {
         skip();
         return true;
       }
@@ -313,18 +315,18 @@ namespace cls {
     }
 
     template <typename T>
-    T consumeIntegral(const char *what = "int") noexcept {
+    T consume_integral(const char *what = "int") noexcept {
       T x = 0;
       try {
-        if (!lookingAtInt()) {
+        if (!looking_at_int()) {
           fatal("expected ", what);
         }
         int base =
-          lookingAt(INTLIT10) ? 10 :
-          lookingAt(INTLIT16) ? 16 :
-          lookingAt(INTLIT02) ? 2 :
-          0; // lookingAtInt() => unreachable; use 0
-        parseIntegralBody<T>(tokenString(), base, x);
+          looking_at(INTLIT10) ? 10 :
+          looking_at(INTLIT16) ? 16 :
+          looking_at(INTLIT02) ? 2 :
+          0; // looking_at_int() => unreachable; use 0
+        parse_integral_body<T>(token_string(), base, x);
       } catch (std::invalid_argument &) {
         fatal("expected ", what);
       } catch (std::out_of_range &) {
@@ -333,16 +335,16 @@ namespace cls {
       skip();
       return x;
     }
-    double consumeFloat(const char *what = "float") {
-      if (!lookingAtFloat()) {
+    double consume_float(const char *what = "float") {
+      if (!looking_at_float()) {
         fatal("expected ",what);
       }
       double x = 0.0;
       try {
-        auto str = tokenString();
+        auto str = token_string();
         char sfx = str.empty() ? 0 : str[str.size()-1];
         if (sfx == 'f' || sfx == 'F')
-          x = std::stof(str.substr(0,str.size()-1));
+          x = std::stof(str.substr(0, str.size()-1));
         else
           x = std::stod(str);
       } catch (std::invalid_argument &) {
@@ -353,8 +355,7 @@ namespace cls {
       skip();
       return x;
     }
-  }; // class Parser
-
+  }; // class parser
 } // namespace
 
 #endif

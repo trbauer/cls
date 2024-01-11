@@ -577,7 +577,7 @@ void list_device_info_for_device(
       std::cout << " " << std::setw(4);
       std::stringstream ss;
       cl_device_type    bits     = dev_type;
-      auto              checkBit = [&](cl_device_type bit, const char *what) {
+      auto              check_bit = [&](cl_device_type bit, const char *what) {
         if (bit & bits) {
           if (ss.tellp() > 0)
             ss << "|";
@@ -585,10 +585,10 @@ void list_device_info_for_device(
         }
         bits &= ~bit;
       };
-      checkBit(CL_DEVICE_TYPE_CPU, "CPU");
-      checkBit(CL_DEVICE_TYPE_GPU, "GPU");
-      checkBit(CL_DEVICE_TYPE_ACCELERATOR, "ACCELERATOR");
-      checkBit(CL_DEVICE_TYPE_DEFAULT, "DEFAULT");
+      check_bit(CL_DEVICE_TYPE_CPU, "CPU");
+      check_bit(CL_DEVICE_TYPE_GPU, "GPU");
+      check_bit(CL_DEVICE_TYPE_ACCELERATOR, "ACCELERATOR");
+      check_bit(CL_DEVICE_TYPE_DEFAULT, "DEFAULT");
       if (bits != 0) {
         if (ss.tellp() > 0)
           ss << "|";
@@ -623,7 +623,7 @@ void list_device_info_for_device(
   emit_param_name("MICRO_ARCHITECTURE");
   std::cout << format(get_device_microarch(dev_id)) << "\n";
   // emit_param_name("DRIVER_PATH");
-  // std::cout << getDriverPath(dev_id) << "\n";
+  // std::cout << get_driver_path(dev_id) << "\n";
 
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("PLATFORM");

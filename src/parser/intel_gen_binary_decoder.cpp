@@ -32,14 +32,14 @@ struct igb_decoder : decoder {
   // CTNI bits are usually contained within the ELF as a section,
   // but we can handle them directly
     if (peek<uint32_t>() == ELF_MAGIC) {
-      decElf();
+      dec_elf();
     } else if (peek<uint32_t>() == INTEL_GEN_DEVICE_BINARY_MAGIC) {
-      decCtni();
+      dec_ctni();
     }
   }
 
-  void decElf() {
-    decodeEq(ELF_MAGIC, "expected ELF input (bad magic)");
+  void dec_elf() {
+    decode_eq(ELF_MAGIC, "expected ELF input (bad magic)");
 
     seek(0x28);
     auto e_shoff = decode<uint64_t>();
@@ -72,7 +72,7 @@ struct igb_decoder : decoder {
         igb_decoder ctni(
           get_handler(), get_at(), get_bits(), offset() + sh_size, pi);
         ctni.seek(sh_offset);
-        ctni.decCtni();
+        ctni.dec_ctni();
         return;
       }
     }
@@ -81,19 +81,19 @@ struct igb_decoder : decoder {
 
   // strings lengths may or may not be specified as multiples of 4 length, but
   // they are always stored that way
-  size_t decodeStringLength() {
+  size_t decode_string_length() {
     auto n = decode<uint32_t>();
     return (n + 3) - ((n + 3)  % 4);
   }
-  // later pass the value from decodeStringLength() to this
-  std::string decodeString(size_t len) {
+  // later pass the value from decode_string_length() to this
+  std::string decode_string(size_t len) {
     char *str = (char *)alloca(len + 1);
-    decodeInto(str, len);
+    decode_into(str, len);
     str[len - 1] = 0; // I think they pad, but just in case, we'll do it too
     return std::string(str);
   }
 
-  void decodeKernelArgument(kernel_info &ki, size_t ptr_size) {
+  void decode_kernel_argument(kernel_info &ki, size_t ptr_size) {
     auto arg_ix = (int)decode<uint32_t>();
     if (ki.args.size() <= (size_t)arg_ix) {
       ki.args.resize(arg_ix + 1);
@@ -103,13 +103,13 @@ struct igb_decoder : decoder {
     // Why in God's name do they encode well-defined OpenCL binary
     // values all as strings, I don't know.  It frustrates me.
     //
-    auto addr_qual_len = decodeStringLength();
-    auto acc_qual_len = decodeStringLength();
-    auto arg_name_len = decodeStringLength();
-    auto type_name_len = decodeStringLength();
-    auto type_qual_len = decodeStringLength();
+    auto addr_qual_len = decode_string_length();
+    auto acc_qual_len = decode_string_length();
+    auto arg_name_len = decode_string_length();
+    auto type_name_len = decode_string_length();
+    auto type_qual_len = decode_string_length();
     //
-    auto addr_qual = decodeString(addr_qual_len);
+    auto addr_qual = decode_string(addr_qual_len);
     if (addr_qual == "__global" || addr_qual == "global") {
       ai.addr_qual = CL_KERNEL_ARG_ADDRESS_GLOBAL;
     } else if (addr_qual == "__constant" || addr_qual == "constant") {
@@ -125,7 +125,7 @@ struct igb_decoder : decoder {
         "in kernel ",ki.name," for arg ",arg_ix,
         ": invalid address qualifier encoded: ", addr_qual);
     }
-    auto acc_qual = decodeString(acc_qual_len);
+    auto acc_qual = decode_string(acc_qual_len);
     if (acc_qual == "NONE") {
       ki.args[arg_ix].accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
     } else if (acc_qual == "read_only" || acc_qual == "__read_only") {
@@ -142,14 +142,14 @@ struct igb_decoder : decoder {
         ": invalid access qualifier encoded: ", acc_qual);
     }
 
-    ki.args[arg_ix].name = decodeString(arg_name_len);
+    ki.args[arg_ix].name = decode_string(arg_name_len);
 
     // they store pointers as in the following example "uint*;8"
-    auto type_name = decodeString(type_name_len);
+    auto type_name = decode_string(type_name_len);
     size_t semi = type_name.find(';');
     size_t star = type_name.find('*');
     auto base_type = type_name.substr(0,std::min(semi,star));
-    const type *t = lookupBuiltinType(base_type, ptr_size);
+    const type *t = lookup_builtin_type(base_type, ptr_size);
     if (!t) {
       fatal(
         "in kernel ",ki.name," for arg ",arg_ix,
@@ -160,14 +160,14 @@ struct igb_decoder : decoder {
       // but handle harder stuff too like "uint***;8"
       for (size_t i = star; i < std::min(semi,type_name.size()); i++) {
         if (type_name[i] == '*') {
-          t = &pi.pointerTo(*t, ptr_size);
+          t = &pi.pointer_to(*t, ptr_size);
         }
       }
     }
     ki.args[arg_ix].arg_type = t;
     //
     ki.args[arg_ix].type_qual = CL_KERNEL_ARG_TYPE_NONE;
-    auto type_qual = decodeString(type_qual_len);
+    auto type_qual = decode_string(type_qual_len);
     if (type_qual != "NONE") {
       bool parsed_something = false;
       if (type_qual.find("const") != std::string::npos) {
@@ -198,7 +198,7 @@ struct igb_decoder : decoder {
   //   .../IGC/AdaptorOCL/ocl_igc_shared/executable_format
   //
   // C.f. SKernelBinaryHeaderCommon
-  void decCtni() {
+  void dec_ctni() {
     if (peek<uint32_t>() != INTEL_GEN_DEVICE_BINARY_MAGIC) {
       fatal("expected Intel GEN Device Binary magic");
     }
@@ -217,7 +217,7 @@ struct igb_decoder : decoder {
     // THIS may not be a problem, it may be reasonable for a host and device
     // to disagree on this
     // if (ptr_size != sizeof(void *)) {
-    //   fatalHere("GPUPointerSizeInBytes is not ",
+    //   fatal("GPUPointerSizeInBytes is not ",
     //     8*sizeof(void*), "b is this a ",8*ptr_size,"b binary");
     // }
     skip(sizeof(ptr_size));
@@ -243,7 +243,7 @@ struct igb_decoder : decoder {
       (void)shader_hash_code;
       //
       // strings sizes are aligned up to DW size
-      auto kernel_name_size = decodeStringLength();
+      auto kernel_name_size = decode_string_length();
       //
       auto kernel_patch_list_size = decode<uint32_t>();
       //
@@ -253,7 +253,7 @@ struct igb_decoder : decoder {
       auto kernel_surface_state_heap_size = decode<uint32_t>();
       auto kernel_text_unpadded_size = decode<uint32_t>();
       //
-      ki.name = decodeString(kernel_name_size);
+      ki.name = decode_string(kernel_name_size);
       //
       skip(
         kernel_general_state_heap_size +
@@ -276,7 +276,7 @@ struct igb_decoder : decoder {
           ki.reqd_word_group_size[2] = decode<uint32_t>();
           skip(patch_size - 8 - (4 + 4 + 4));
         } else if(patch_tag == PATCH_TOKEN_KERNEL_ARGUMENT_INFO) {
-          decodeKernelArgument(ki, ptr_size);
+          decode_kernel_argument(ki, ptr_size);
         } else {
           skip(patch_size - 8);
         }
@@ -287,7 +287,7 @@ struct igb_decoder : decoder {
   } //
 }; // struct igb_decoder
 
-program_info *cls::parseProgramInfoBinaryGEN(
+program_info *cls::parse_program_info_binary_gen(
   const opts &os,
   diagnostics &ds, loc at,
   const std::string &path)

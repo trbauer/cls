@@ -28,7 +28,7 @@ namespace cls
   }; // loc
   static constexpr loc NO_LOC {0,0,0,0};
 
-  void formatMessageWithContextImpl(
+  void format_message_with_context_impl(
     std::ostream &os,
     const loc &at,
     const text::ansi_literal *highlight,
@@ -37,7 +37,7 @@ namespace cls
     const std::string &message);
 
   template <typename...Ts>
-  void formatMessageWithContext(
+  void format_message_with_context(
     std::ostream &os,
     const loc &at,
     const text::ansi_literal *highlight,
@@ -47,7 +47,7 @@ namespace cls
   {
     std::stringstream ss;
     text::format_to(ss, ts...);
-    formatMessageWithContextImpl(
+    format_message_with_context_impl(
       os, at, highlight, message_color, input, ss.str());
   }
 
@@ -99,13 +99,13 @@ namespace cls
     const std::string &input() const {return m_input;}
     int verbosity() const {return m_verbosity;}
 
-    bool isVerbose() const {return verbosity() > 0;}
-    bool isDebug() const { return verbosity() > 1; }
-    bool isQuiet() const { return verbosity() < 0; }
+    bool is_verbose() const {return verbosity() > 0;}
+    bool is_debug() const { return verbosity() > 1; }
+    bool is_quiet() const { return verbosity() < 0; }
 
     // const warning_list &warnings() const {return m_warnings; }
 
-    void flushWarnings(std::ostream &os) {
+    void flush_warnings(std::ostream &os) {
       for (const auto &w : m_warnings) {
         w.str(os);
       }
@@ -114,7 +114,7 @@ namespace cls
 
     template <typename...Ts>
     [[noreturn]]
-    void internalAt(const loc &at, Ts... ts) const {
+    void internal_at(const loc &at, Ts... ts) const {
       throw diagnostic(
         diagnostic::INTERNAL,
         at,
@@ -123,26 +123,26 @@ namespace cls
     }
     template <typename...Ts>
     [[noreturn]]
-    void fatalAt(const loc &at, Ts... ts) const {
+    void fatal_at(const loc &at, Ts... ts) const {
       throw diagnostic(diagnostic::ERROR, at, text::format(ts...), m_input);
     }
     template <typename...Ts>
-    void warningAt(const loc &at, Ts... ts) {
+    void warning_at(const loc &at, Ts... ts) {
       m_warnings.emplace_back(
         diagnostic::WARNING, at, text::format(ts...), m_input);
     }
     template <typename...Ts>
-    void verboseAt(const loc &at, Ts... ts) const {
+    void verbose_at(const loc &at, Ts... ts) const {
       if (m_verbosity > 0)
-        formatMessageWithContext(
+        format_message_with_context(
           std::cout, at,
           &text::ANSI_GREEN, &text::ANSI_FADED,
           input(), ts...);
     }
     template <typename...Ts>
-    void debugAt(const loc &at, Ts... ts) const {
+    void debug_at(const loc &at, Ts... ts) const {
       if (m_verbosity > 1)
-        formatMessageWithContext(
+        format_message_with_context(
           std::cout, at,
           &text::ANSI_FADED_YELLOW, &text::ANSI_FADED,
           input(), ts...);
@@ -153,42 +153,42 @@ namespace cls
   // functions to redirect to the diagnostics object.
 #define DIAGNOSTIC_MIXIN_MEMBERS(DIAGS_MEMBER, DFT_AT)\
   template <typename...Ts> \
-  [[noreturn]] void internalAt(const loc &at, Ts... ts) const {\
-    (DIAGS_MEMBER).internalAt(at, ts...);\
+  [[noreturn]] void internal_at(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).internal_at(at, ts...);\
   }\
   template <typename...Ts>\
   [[noreturn]] void internal(Ts... ts) const {\
-    (DIAGS_MEMBER).internalAt(DFT_AT, ts...);\
+    (DIAGS_MEMBER).internal_at(DFT_AT, ts...);\
   }\
   template <typename...Ts>\
-  [[noreturn]] void fatalAt(const loc &at, Ts... ts) const {\
-    (DIAGS_MEMBER).fatalAt(at, ts...);\
+  [[noreturn]] void fatal_at(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).fatal_at(at, ts...);\
   }\
   template <typename...Ts>\
   [[noreturn]] void fatal(Ts... ts) const {\
-    (DIAGS_MEMBER).fatalAt(DFT_AT, ts...);\
+    (DIAGS_MEMBER).fatal_at(DFT_AT, ts...);\
   }\
-  template <typename...Ts> void warningAt(const loc &at, Ts... ts) const {\
-    (DIAGS_MEMBER).warningAt(at, ts...);\
+  template <typename...Ts> void warning_at(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).warning_at(at, ts...);\
   }\
   template <typename...Ts> void warning(Ts... ts) const {\
-    (DIAGS_MEMBER).warningAt(DFT_AT, ts...);\
+    (DIAGS_MEMBER).warning_at(DFT_AT, ts...);\
   }\
-  template <typename...Ts> void verboseAt(const loc &at, Ts... ts) const {\
-    (DIAGS_MEMBER).verboseAt(at, ts...);\
+  template <typename...Ts> void verbose_at(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).verbose_at(at, ts...);\
   }\
   template <typename...Ts> void verbose(Ts... ts) const {\
-    (DIAGS_MEMBER).verboseAt(DFT_AT, ts...);\
+    (DIAGS_MEMBER).verbose_at(DFT_AT, ts...);\
   }\
-  template <typename...Ts> void debugAt(const loc &at, Ts... ts) const {\
-    (DIAGS_MEMBER).debugAt(at, ts...);\
+  template <typename...Ts> void debug_at(const loc &at, Ts... ts) const {\
+    (DIAGS_MEMBER).debug_at(at, ts...);\
   }\
   template <typename...Ts> void debug(Ts... ts) const {\
-    (DIAGS_MEMBER).debugAt(DFT_AT, ts...);\
+    (DIAGS_MEMBER).debug_at(DFT_AT, ts...);\
   }\
-  bool isQuiet() const {return (DIAGS_MEMBER).isQuiet();}\
-  bool isVerbose() const {return (DIAGS_MEMBER).isVerbose();}\
-  bool isDebug() const {return (DIAGS_MEMBER).isDebug();}
+  bool is_quiet() const {return (DIAGS_MEMBER).is_quiet();}\
+  bool is_verbose() const {return (DIAGS_MEMBER).is_verbose();}\
+  bool is_debug() const {return (DIAGS_MEMBER).is_debug();}
 
 } // namespace cls
 

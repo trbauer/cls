@@ -58,7 +58,7 @@ struct device_object {
       CL_DEVICE_ADDRESS_BITS,
       bytes_per_addr) != CL_SUCCESS)
     {
-      ds.fatalAt(
+      ds.fatal_at(
         _spec->defined_at,
         "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
@@ -70,7 +70,7 @@ struct device_object {
   cl_context context = nullptr;
   cl_command_queue queue = nullptr;
 
-  void contextNotify(
+  void context_notify(
     const char *errinfo,
     const void *private_info, size_t cb,
     void *user_data)
@@ -270,19 +270,19 @@ struct cl_interface {
     const std::string &src)
     : m_diags(ds) { }
 
-  diagnostics &getDiagnostics() {return m_diags;}
+  diagnostics &get_diagnostics() {return m_diags;}
 
 
 #define CL_SYM_STR(X) #X
 #define CL_COMMAND(LOC, CL_FUNCTION, ...) \
   do { \
     cl_int _err = CL_FUNCTION(__VA_ARGS__); \
-    if (isDebug())\
-      debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
+    if (is_debug())\
+      debug_at(loc(), cls::status_to_symbol(_err), " <= ", \
         CL_SYM_STR(CL_FUNCTION), "(", \
         text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
-      fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
+      fatal_at(LOC, CL_SYM_STR(CL_FUNCTION), \
         " (", cls::status_to_symbol(_err), ")"); \
     } \
   } while(0)
@@ -290,30 +290,30 @@ struct cl_interface {
   do { \
     cl_int _err = 0; \
     ASSIGN_TO = CL_FUNCTION(__VA_ARGS__, &_err); \
-    if (isDebug())\
-      debugAt(loc(), cls::status_to_symbol(_err), " <= ", \
+    if (is_debug())\
+      debug_at(loc(), cls::status_to_symbol(_err), " <= ", \
         CL_SYM_STR(CL_FUNCTION), "(", \
           text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
-      fatalAt(LOC, CL_SYM_STR(CL_FUNCTION), \
+      fatal_at(LOC, CL_SYM_STR(CL_FUNCTION), \
         " (", cls::status_to_symbol(_err), ")"); \
     } \
   } while(0)
 
-  void withBufferMapRead(
+  void with_buffer_map_read(
     const loc &at,
     const surface_object *so,
     buffer_reader apply);
-  void withImageMapRead(
+  void with_image_map_read(
     const loc &at,
     const surface_object *so,
     image_reader apply);
 
-  void withBufferMapWrite(
+  void with_buffer_map_write(
     const loc &at,
     surface_object *so,
     buffer_writer apply);
-  void withImageMapWrite(
+  void with_image_map_write(
     const loc &at,
     const surface_object *so,
     image_writer apply);
@@ -336,7 +336,7 @@ struct interp_fatal_handler : cl_fatal_handler {
   template <typename...Ts>
   void debug(loc loc, Ts... ts) {
     if (os.verbosity >= 2) {
-      formatMessageWithContext(
+      format_message_with_context(
         std::cout, loc, &text::ANSI_GREEN, input(), ts...);
     }
   }
@@ -563,30 +563,30 @@ struct evaluator : cl_interface {
   /////////////////////////////////////////////////////////////////////////////
   // primitive value evaluation
   val eval(context &ec, const init_spec_atom *e);
-  val evalI(context &ec, const init_spec_atom *e);
+  val eval_i(context &ec, const init_spec_atom *e);
 
   template <typename T>
-  val evalToI(context &ec, const init_spec_atom *e) {
+  val eval_to_i(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     if (v.is_floating())
-      fatalAt(e->defined_at, "cannot implicitly convert float to int");
+      fatal_at(e->defined_at, "cannot implicitly convert float to int");
     if (v.is_signed()) {
       if ((T)v.s64 < std::numeric_limits<T>::min() ||
         (T)v.s64 > std::numeric_limits<T>::max())
       {
-        fatalAt(e->defined_at, "value out of range");
+        fatal_at(e->defined_at, "value out of range");
       }
       v = (T)v.s64;
     } else { // v.is_unsigned()
       if ((T)v.u64 > std::numeric_limits<T>::max()) {
-        fatalAt(e->defined_at, "value out of range");
+        fatal_at(e->defined_at, "value out of range");
       }
       v = (T)v.u64;
     }
     return v;
   }
   template <typename T>
-  val evalToF(context &ec, const init_spec_atom *e) {
+  val eval_to_f(context &ec, const init_spec_atom *e) {
     val v = eval(ec, e);
     //
     // implicit conversion from int to float is allowed
@@ -597,28 +597,28 @@ struct evaluator : cl_interface {
     //
     // we enforce bounds checking, but not precision
     // SPECIFY: do we care about min? we could RTZ
-    auto checkBounds =
+    auto check_bounds =
       [&](double low, double hi, double min) {
         if (std::isnan(v.f64) || std::isinf(v.f64))
           return; // unordered values are fine
         if (v.f64 < low || v.f64 > hi) {
-          fatalAt(e->defined_at,"value out of range");
+          fatal_at(e->defined_at,"value out of range");
         } else if (v.f64 != 0.0 && std::abs(v.f64) < min) {
-          fatalAt(e->defined_at,"value out of range");
+          fatal_at(e->defined_at,"value out of range");
         }
       };
     if (sizeof(T) == 8) {
-      checkBounds(
+      check_bounds(
         std::numeric_limits<double>::lowest(),
         std::numeric_limits<double>::max(),
         std::numeric_limits<double>::min());
     } else if (sizeof(T) == 4) {
-      checkBounds(
+      check_bounds(
         std::numeric_limits<float>::lowest(),
         std::numeric_limits<float>::max(),
         std::numeric_limits<float>::min());
     } else { // half
-      checkBounds(
+      check_bounds(
         -SFLT_MAX,
         SFLT_MAX,
         SFLT_MIN);
@@ -627,84 +627,84 @@ struct evaluator : cl_interface {
   }
 
   template <typename T>
-  val evalTo(context &ec,const init_spec_atom *e) {
+  val eval_to(context &ec,const init_spec_atom *e) {
     // we have to be careful about evaluating in this order
     // std::is_floating_point fails on half
     if (std::is_integral<T>()) {
-      return evalToI<T>(ec,e);
+      return eval_to_i<T>(ec,e);
     } else { // std::is_floating_point<T>()
-      return evalToF<T>(ec,e);
+      return eval_to_f<T>(ec,e);
     }
   }
-  val evalF(context &ec,const init_spec_atom *e);
-  val evalToF(context &ec,const init_spec_atom *e);
+  val eval_f(context &ec,const init_spec_atom *e);
+  val eval_to_f(context &ec,const init_spec_atom *e);
 
   /////////////////////////////////////////////////////////////////////////////
   // value generators for init_spec*
-  void setKernelArgImmediate(
+  void set_kernel_arg_immediate(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss,
     const refable<init_spec> &ris,
     const arg_info &ai); // top-level
-  void setKernelArgBuffer(
+  void set_kernel_arg_buffer(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
     const loc &arg_loc,
     const refable<init_spec> &ris,
     const arg_info &ai);
-  void setKernelArgImage(
+  void set_kernel_arg_image(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
     const loc &arg_loc,
     const refable<init_spec> &ris,
     const arg_info &ai);
-  void setKernelArgSLM(
+  void set_kernel_arg_slm(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
     const refable<init_spec> &ris,
     const arg_info &ai);
-  void setKernelArgSampler(
+  void set_kernel_arg_sampler(
     cl_uint arg_index,
     dispatch_command &dc,
     std::stringstream &ss, // debug string for arg
     const refable<init_spec> &ris,
     const arg_info &ai);
 
-  void evalInto(
+  void eval_into(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type &t);
-  void evalInto(
+  void eval_into(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_num &tn);
   template <typename T>
-  void evalIntoT(
+  void eval_into_t(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab);
-  void evalInto(
+  void eval_into(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_struct &ts);
-  void evalInto(
+  void eval_into(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
     arg_buffer &ab,
     const type_vector &tv);
-  void evalInto(
+  void eval_into(
     context &ec,
     const loc &arg_loc,
     const init_spec_atom *e,
@@ -751,7 +751,7 @@ struct compiled_script_impl: cl_interface {
   void execute(saveb_command &svc, const void *buf);
   void execute(savei_command &svc, const void *buf);
 private:
-  void executeDiffElem(
+  void execute_diff_elem(
     loc defined_at,
     double max_diff,
     size_t elem_ix,

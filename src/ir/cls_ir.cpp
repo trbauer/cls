@@ -157,7 +157,7 @@ void statement_list_spec::str(std::ostream &os, format_opts fopts) const {
   // will fit in 80 columns with ';' delims.  If so we repeat the output to
   // the requested output stream so that they can get their TTY behavior
   // right etc...
-  auto formatTo =
+  auto format_to =
     [&] (std::ostream &oss, const char *delim) {
       bool first = true;
       for (auto &s : statements) {
@@ -166,23 +166,23 @@ void statement_list_spec::str(std::ostream &os, format_opts fopts) const {
       }
     };
 
-  auto formatAsLines = [&]() {
+  auto format_as_lines = [&]() {
     std::string delim = "\n";
     for (int i = 0; i < indent; i++) {
       delim += "  ";
     }
-    formatTo(os, delim.c_str());
+    format_to(os, delim.c_str());
   };
 
   if (fopts.opts & format_opts::NO_SEMI_STATEMENT_LISTS) {
-    formatAsLines();
+    format_as_lines();
   } else {
     std::stringstream ss;
-    formatTo(ss, "; ");
+    format_to(ss, "; ");
     if (ss.tellp() <= 80) {
-      formatTo(os, "; ");
+      format_to(os, "; ");
     } else {
-      formatAsLines();
+      format_as_lines();
     }
   }
 }
@@ -200,11 +200,11 @@ void statement_spec::str(std::ostream &os, format_opts fopts) const {
   }
 }
 
-void device_spec::setSource(std::string name) {
+void device_spec::set_source(std::string name) {
   by_name_value = name;
   skind = skind::BY_NAME;
 }
-void device_spec::setSource(int index) {
+void device_spec::set_source(int index) {
   by_index_value = index;
   skind = skind::BY_INDEX;
 }
@@ -374,21 +374,21 @@ static void apply() {
   F(1.0,2.0);
 }
 template <const double &(*F)(const double &,const double &)>
-static void applyRef() {
+static void apply_ref() {
   F(1.0,2.0);
 }
 template <double (*F)(std::initializer_list<double> il)>
-static void applyInit() {
+static void apply_init() {
   F(1.0,2.0);
 }
 
-double minD(double,double) {return 0.0;}
+double min_d(double,double) {return 0.0;}
 void test()
 {
-  auto x1 = apply<minD>();
+  auto x1 = apply<min_d>();
   // auto x2 = apply<std::min<double>>(); // FAILS
-  applyRef<std::min<const double &>>(); // FAILS
-  applyInit<std::min<double>>();
+  apply_ref<std::min<const double &>>(); // FAILS
+  apply_init<std::min<double>>();
 //  std::min<double>(x);
 }
 
@@ -426,7 +426,7 @@ void test()
     diagnostics &ds,const loc &at,const val &vl,const val &vr)\
  {\
     if (vl.is_floating() || vr.is_floating()) {\
-      ds.fatalAt(at, "function/operator requires integral arguments");\
+      ds.fatal_at(at, "function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return std:: F (vl.as<int64_t>(),vr.as<int64_t>());\
@@ -439,7 +439,7 @@ void test()
       diagnostics &ds,const loc &at,const val &vl,const val &vr)\
   {\
     if (vl.is_floating() || vr.is_floating()) {\
-      ds.fatalAt(at,"function/operator requires integral arguments");\
+      ds.fatal_at(at,"function/operator requires integral arguments");\
       return val(0);\
     } else if (vl.is_signed() || vr.is_signed()) {\
       return (vl.as<int64_t>() OP vr.as<int64_t>());\
@@ -469,7 +469,7 @@ static val apply_div(
   if (vl.is_floating() || vr.is_floating()) {
     return vl.as<double>() / vr.as<double>();
   } else if (vr.s64 == 0) {
-    ds.fatalAt(at, "division by 0");
+    ds.fatal_at(at, "division by 0");
   } else if (vl.is_signed() || vr.is_signed()) {
     return vl.as<int64_t>() / vr.as<int64_t>();
   } else {
@@ -482,7 +482,7 @@ static val apply_mod(
   if (vl.is_floating() || vr.is_floating()) {
     return std::fmod(vl.as<double>(),vr.as<double>());
   } else if (vr.s64 == 0) {
-    ds.fatalAt(at, "modulus by 0");
+    ds.fatal_at(at, "modulus by 0");
   } else if (vl.is_signed() || vr.is_signed()) {
     return vl.as<int64_t>() % vr.as<int64_t>();
   } else {
@@ -563,7 +563,7 @@ void init_spec_bex::str(std::ostream &os, format_opts fopts) const
     os << e_op.symbol << "("; fmt(os, fopts, e_l); os <<
       ", "; fmt(os, fopts, e_r); os << ")";
   } else {
-    auto fmtWithPrec =
+    auto fmt_with_prec =
       [&](const init_spec *e) {
         if (e->skind == init_spec::IS_BEX &&
           ((const init_spec_bex *)e)->e_op.precedence > e_op.precedence)
@@ -575,9 +575,9 @@ void init_spec_bex::str(std::ostream &os, format_opts fopts) const
           fmt(os, fopts, e);
         }
       };
-    fmtWithPrec(e_l);
+    fmt_with_prec(e_l);
     os << e_op.symbol;
-    fmtWithPrec(e_r);
+    fmt_with_prec(e_r);
   }
 }
 
@@ -782,7 +782,7 @@ static val apply_negate(diagnostics &, const loc &, const val &v) {
 }
 static val apply_complement(diagnostics &ds, const loc &at, const val &v) {
   if (v.is_floating()) {
-    ds.fatalAt(at, "~ requires integer argument");
+    ds.fatal_at(at, "~ requires integer argument");
   } else if (v.is_signed()) {
     return ~v.as<int64_t>();
   } else {
@@ -839,11 +839,11 @@ template<int mode>
 static val apply_nearbyint_by(diagnostics &ds,const loc &at,const val &v) {
   auto old_mode = std::fegetround();
   if (old_mode < 0) {
-    ds.fatalAt(at,"cannot determine old rounding mode");
+    ds.fatal_at(at,"cannot determine old rounding mode");
   }
   double d = std::nearbyint(v.as<double>());
   if (std::fesetround(old_mode) != 0)
-    ds.fatalAt(at, "cannot restore old rounding mode");
+    ds.fatal_at(at, "cannot restore old rounding mode");
   return d;
 }
 #define UNR_OP_FLOAT_BOOL(F) \
@@ -851,7 +851,7 @@ static val apply_nearbyint_by(diagnostics &ds,const loc &at,const val &v) {
     if (v.is_floating()) { \
       return std:: F (v.as<double>()) ? 1 : 0; \
     } else { \
-      ds.fatalAt(at, "floating point input required"); \
+      ds.fatal_at(at, "floating point input required"); \
     } \
   }
 

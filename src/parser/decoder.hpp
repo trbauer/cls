@@ -40,23 +40,23 @@ namespace cls {
     ///////////////////////////////////////////////////////////////////////////
     template <typename...Ts>
     [[noreturn]]
-    void fatal(Ts...ts) const {fatalAt(off, ts...);}
+    void fatal(Ts...ts) const {fatal_at(off, ts...);}
     template <typename...Ts>
     [[noreturn]]
-    void fatalAt(size_t off, Ts...ts) const {
+    void fatal_at(size_t off, Ts...ts) const {
       std::stringstream ss;
       if (off != (size_t)-1)
         ss << "at binary offset 0x" << text::fmt_hex(off) << ": ";
       text::format_to(ss, ts...);
-      diags.fatalAt(at, ss.str());
+      diags.fatal_at(at, ss.str());
     }
 
     template <typename...Ts>
-    void warningAt(size_t off, Ts...ts) const {
+    void warning_at(size_t off, Ts...ts) const {
       std::stringstream ss;
       ss << "at binary offset 0x" << text::fmt_hex(off) << ": ";
       text::format_to(ss, ts...);
-      diags.warningAt(at, ss.str());
+      diags.warning_at(at, ss.str());
     }
 
     void skip(size_t len) {
@@ -73,37 +73,37 @@ namespace cls {
     template <typename T>
     T peek() const {
       T val;
-      peekInto(&val, sizeof(T));
+      peek_into(&val, sizeof(T));
       return val;
     }
     template <typename T>
     T peek(size_t at) const {
       T val;
-      peekInto(&val, sizeof(T), at);
+      peek_into(&val, sizeof(T), at);
       return val;
     }
-    void peekInto(void *val, size_t len) const {
-      peekInto(val, len, off);
+    void peek_into(void *val, size_t len) const {
+      peek_into(val, len, off);
     }
-    void peekInto(void *val, size_t len, size_t abs_off) const {
+    void peek_into(void *val, size_t len, size_t abs_off) const {
       if (abs_off + len > bits_length)
         fatal("premature end of file");
       memcpy(val, bits + abs_off, len);
     }
     ///////////////////////////////////////////////////////////////////////////
     // Read and advance
-    void decodeInto(void *val, size_t len) {
-      peekInto(val, len);
+    void decode_into(void *val, size_t len) {
+      peek_into(val, len);
       skip(len);
     }
     template <typename T>
     T decode() {
       T val;
-      decodeInto(&val, sizeof(T));
+      decode_into(&val, sizeof(T));
       return val;
     }
     template <typename T>
-    void decodeEq(T expected, const char *err) {
+    void decode_eq(T expected, const char *err) {
       auto value = peek<T>();
       if (value != expected) {
         fatal(err);
@@ -112,7 +112,7 @@ namespace cls {
     }
     //
     template <typename T>
-    static T swapByteOrder(T t) {
+    static T swap_byte_order(T t) {
       static_assert (CHAR_BIT == 8, "CHAR_BIT != 8");
 
       union { T u; uint8_t u8[sizeof(T)]; } src, dst;

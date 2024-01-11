@@ -12,7 +12,7 @@ std::string diagnostic::str() const
   return ss.str();
 }
 
-void cls::formatMessageWithContextImpl(
+void cls::format_message_with_context_impl(
   std::ostream &os,
   const cls::loc &at,
   const text::ansi_literal *highlight,
@@ -57,7 +57,7 @@ void diagnostic::str(std::ostream &os) const {
   str(os, input);
 }
 void diagnostic::str(std::ostream &os, const std::string &inp) const {
-  formatMessageWithContextImpl(
+  format_message_with_context_impl(
     os,
     at,
     level == ERROR ? &text::ANSI_RED : &text::ANSI_YELLOW,

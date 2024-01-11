@@ -62,7 +62,7 @@ static void fill_buffer_with_const_loop(
   arg_buffer &ab,
   const init_spec_atom *is)
 {
-  auto val = e->evalTo<T>(ec, is);
+  auto val = e->eval_to<T>(ec, is);
   size_t total_elems = ab.capacity / sizeof(T);
   for (size_t i = 0; i < total_elems; i++) {
     // THIS IS EVIL!!!!  MSVC 2017 allowed it GCC does not.
@@ -125,13 +125,13 @@ static void fill_buffer_rng_loop_int(
   val v_lo = std::numeric_limits<T>::min();
   val v_hi = std::numeric_limits<T>::max();
   if (isr->e_lo) {
-    v_lo = e->evalTo<T>(ec, isr->e_lo);
+    v_lo = e->eval_to<T>(ec, isr->e_lo);
   }
   if (isr->e_hi) {
-    v_hi = e->evalTo<T>(ec, isr->e_hi);
+    v_hi = e->eval_to<T>(ec, isr->e_hi);
   }
   if (v_lo.as<T>() > v_hi.as<T>()) {
-    e->fatalAt(isr->defined_at, "low bound > high bound");
+    e->fatal_at(isr->defined_at, "low bound > high bound");
   }
   std::uniform_int_distribution<R> dist(v_lo.as<T>(),v_hi.as<T>());
   size_t total_elems = ab.capacity / sizeof(T);
@@ -151,13 +151,13 @@ static void fill_buffer_rng_loop_flt(
   val v_lo = 0.0;
   val v_hi = 1.0;
   if (isr->e_hi) {
-    v_hi = e->evalToF(ec, isr->e_hi);
+    v_hi = e->eval_to_f(ec, isr->e_hi);
     if (isr->e_lo) {
-      v_lo = e->evalToF(ec, isr->e_lo);
+      v_lo = e->eval_to_f(ec, isr->e_lo);
     }
   }
   if (v_lo.as<T>() > v_hi.as<T>()) {
-    e->fatalAt(isr->defined_at,"low bound > high bound");
+    e->fatal_at(isr->defined_at,"low bound > high bound");
   }
   std::uniform_real_distribution<R> dist((R)v_lo.f64, (R)v_hi.f64);
   size_t total_elems = ab.capacity / sizeof(T);
@@ -215,7 +215,7 @@ static void fill_buffer_rng(
     const type_vector &tv = t.as<type_vector>();
     fill_buffer_rng(csi, ec, ab, isr, tv.element_type, at);
   } else {
-    csi.fatalAt(at,"unsupported type for random generator");
+    csi.fatal_at(at,"unsupported type for random generator");
   }
 }
 
@@ -230,11 +230,11 @@ static void fill_buffer_seq_loop(
 {
   val v_base((R)0);
   if (iss->base)
-    v_base = e->evalTo<R>(ec, iss->base);
+    v_base = e->eval_to<R>(ec, iss->base);
 
   val v_delta((R)1);
   if (iss->delta)
-    v_delta = e->evalTo<R>(ec, iss->delta);
+    v_delta = e->eval_to<R>(ec, iss->delta);
 
   R curr = v_base.as<R>(), delta = v_delta.as<R>();
   size_t total_elems = ab.capacity / sizeof(T);
@@ -284,7 +284,7 @@ static void fill_buffer_seq(
     const type_vector &tv = t.as<type_vector>();
     fill_buffer_seq(csi, ec, ab, iss, tv.element_type, at);
   } else {
-    csi.fatalAt(at,"unsupported type for sequence generator");
+    csi.fatal_at(at,"unsupported type for sequence generator");
   }
 }
 
@@ -300,7 +300,7 @@ static void fill_buffer_fseq_loop(
 {
   std::vector<T> vals;
   for (const auto *arg : isc->args) {
-    val v = e->evalTo<T>(ec, arg);
+    val v = e->eval_to<T>(ec, arg);
     vals.emplace_back(v.as<T>());
   }
 
@@ -319,7 +319,7 @@ static void fill_buffer_fseq(
   const loc &at)
 {
   if (isf->args.empty()) {
-    csi.internalAt(at, "fseq requires at least one argument");
+    csi.internal_at(at, "fseq requires at least one argument");
     return;
   }
   if (t.is<type_num>()) {
@@ -354,7 +354,7 @@ static void fill_buffer_fseq(
     const type_vector &tv = t.as<type_vector>();
     fill_buffer_fseq(csi, ec, ab, isf, tv.element_type, at);
   } else {
-    csi.fatalAt(at, "unsupported type for sequence generator");
+    csi.fatal_at(at, "unsupported type for sequence generator");
   }
 }
 
@@ -369,7 +369,7 @@ static void fill_buffer_cyc_loop(
 {
   std::vector<T> vals;
   for (const auto *arg : isc->args) {
-    val v = e->evalTo<T>(ec, arg);
+    val v = e->eval_to<T>(ec, arg);
     vals.emplace_back(v.as<T>());
   }
 
@@ -388,7 +388,7 @@ static void fill_buffer_cyc(
   const loc &at)
 {
   if (isc->args.empty()) {
-    csi.internalAt(at, "cyc requires at least one argument");
+    csi.internal_at(at, "cyc requires at least one argument");
     return;
   }
   if (t.is<type_num>()) {
@@ -423,12 +423,12 @@ static void fill_buffer_cyc(
     const type_vector &tv = t.as<type_vector>();
     fill_buffer_cyc(csi, ec, ab, isc, tv.element_type, at);
   } else {
-    csi.fatalAt(at, "unsupported type for sequence generator");
+    csi.fatal_at(at, "unsupported type for sequence generator");
   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-static void saveImage(
+static void save_image(
   std::string file_name,
   loc at,
   compiled_script_impl *csi,
@@ -442,7 +442,7 @@ static void saveImage(
   const void *bits)
 {
   if (so->image_desc.image_depth != 0) {
-    csi->fatalAt(at, "3D images not supported for saving");
+    csi->fatal_at(at, "3D images not supported for saving");
   }
   image::data_format fmt;
   switch (ch_ord) {
@@ -479,7 +479,7 @@ static void saveImage(
   // case CL_sBGRA:
   // case CL_UNORM_INT_101010_2:
   default:
-    csi->fatalAt(at, "unsupported channel order for saving");
+    csi->fatal_at(at, "unsupported channel order for saving");
   }
 
   switch (ch_type) {
@@ -488,7 +488,7 @@ static void saveImage(
   case CL_UNORM_INT8:
     break;
   default:
-    csi->fatalAt(at, "unsupported channel type for saving");
+    csi->fatal_at(at, "unsupported channel type for saving");
   }
   image img(width, std::max(height, (size_t)1), fmt);
   const uint8_t *host_src = (const uint8_t *)bits;
@@ -517,21 +517,21 @@ static void saveImage(
 #ifdef IMAGE_HPP_SUPPORTS_BMP
     img.save_bmp(file_name.c_str());
 #else
-    csi->fatalAt(at, "unsupported image format (not compiled with support)");
+    csi->fatal_at(at, "unsupported image format (not compiled with support)");
 #endif
   } else if (ext == ".png") {
 #ifdef IMAGE_HPP_SUPPORTS_PNG
     img.save_png(file_name.c_str());
 #else
-    csi->fatalAt(at, "unsupported image format (not compiled with support)");
+    csi->fatal_at(at, "unsupported image format (not compiled with support)");
 #endif
   } else {
-    csi->warningAt(at, "unrecognized image format; falling back to .ppm");
+    csi->warning_at(at, "unrecognized image format; falling back to .ppm");
     img.save_ppm(file_name.c_str(), so->size_in_bytes > 1024);
   }
 }
 
-static void saveBuffer(
+static void save_buffer(
   loc at,
   compiled_script_impl *csi,
   const surface_object *so,
@@ -546,13 +546,13 @@ static void saveBuffer(
 
 void compiled_script_impl::execute(dispatch_command &dc)
 {
-  debugAt(dc.dobj->spec->defined_at, "executing dispatch");
+  debug_at(dc.dobj->spec->defined_at, "executing dispatch");
 
   cl_command_queue queue = dc.dobj->queue;
   cl_kernel kernel = dc.kernel->kernel;
   loc dc_at = dc.spec->defined_at;
 
-  auto printSurfaces = [&] (bool is_pre) {
+  auto print_surfaces = [&] (bool is_pre) {
     for (const auto &sinfo : dc.surfaces) {
       const surface_object *so = std::get<0>(sinfo);
       if (is_pre && so->init->print_pre ||
@@ -568,19 +568,19 @@ void compiled_script_impl::execute(dispatch_command &dc)
           so->str() << "\n";
 
         if (is_image) {
-          withImageMapRead(
+          with_image_map_read(
             at,
             so,
             [&] (size_t row_pitch, size_t slice_pitch, const void *host_ptr)
           {
             if (is_print) {
-              fatalAt(dc.spec->defined_at,
+              fatal_at(dc.spec->defined_at,
                 "image printing not supported (:p or :P)");
             } else {
               std::stringstream ss;
               ss << "cls-surface-" << std::setfill('0') <<
                 std::setw(2) << so->memobj_index << ".ppm";
-              saveImage(
+              save_image(
                 ss.str(),
                 dc.spec->defined_at,
                 this, so,
@@ -593,7 +593,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
             }
           });
         } else {
-          withBufferMapRead(
+          with_buffer_map_read(
             at,
             so,
             [&] (const void *host_ptr) {
@@ -601,7 +601,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
                 int elems_per_row = is_pre ?
                   so->init->print_pre_elems_per_row :
                   so->init->print_post_elems_per_row;
-                formatBuffer(
+                format_buffer(
                   std::cout,
                   host_ptr,
                   so->size_in_bytes,
@@ -609,7 +609,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
                   elems_per_row);
                 std::cout << "\n";
               } else { // is_save
-                saveBuffer(dc.spec->defined_at, this, so, host_ptr);
+                save_buffer(dc.spec->defined_at, this, so, host_ptr);
               }
             });
         }
@@ -617,7 +617,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
     }
   };
 
-  printSurfaces(true);
+  print_surfaces(true);
 
   if (dc.dobj->md) {
     dc.dobj->md->activate();
@@ -656,7 +656,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
       clGetEventProfilingInfo,
         enq_evt, CL_PROFILING_COMMAND_END, sizeof(en), &en, nullptr);
     dc.prof_times.add((en - st)/1000.0/1000.0/1000.0);
-    debugAt(dc_at,
+    debug_at(dc_at,
       "CL_PROFILING_COMMAND_START: ", en, "; CL_PROFILING_COMMAND_END: ", en);
   }
 
@@ -664,7 +664,7 @@ void compiled_script_impl::execute(dispatch_command &dc)
     dc.dobj->md->deactivate();
     uint32_t rep_buf_len = dc.dobj->md->get_query_report_size();
     if (!rep_buf_len) {
-      fatalAt(dc_at, "mdapi_lib get_report_size() returned 0");
+      fatal_at(dc_at, "mdapi_lib get_report_size() returned 0");
     }
     char *rep_buf = new char[rep_buf_len];
     memset(rep_buf, 0, rep_buf_len);
@@ -677,11 +677,11 @@ void compiled_script_impl::execute(dispatch_command &dc)
         rep_buf,
         &output_size);
     if (rep_buf_len != output_size) {
-      fatalAt(dc_at, "mdapi_lib: get_report_size() returned wrong length");
+      fatal_at(dc_at, "mdapi_lib: get_report_size() returned wrong length");
     }
 
     if (!dc.dobj->md->parse_counter_buffer(dc.mdapi_ctrs, rep_buf)) {
-      fatalAt(
+      fatal_at(
           dc_at,
           "mdapi_lib: parsing counters failed (",
           dc.dobj->md->get_error(),
@@ -698,14 +698,14 @@ void compiled_script_impl::execute(dispatch_command &dc)
       sizeof(enq_evt_st), &enq_evt_st, nullptr);
   if (enq_evt_st != CL_COMPLETE) {
     // this is where NVidia might return -9999
-    fatalAt(dc_at, "synchronizing event status returned " ,
+    fatal_at(dc_at, "synchronizing event status returned " ,
       enq_evt_st, " (after wait)");
   }
 
   CL_COMMAND(dc_at,
     clReleaseEvent, enq_evt);
 
-  printSurfaces(false);
+  print_surfaces(false);
 
   CL_COMMAND(dc_at,
     clFinish, queue);
@@ -716,7 +716,7 @@ void compiled_script_impl::execute(
   const void *ref_host_ptr,
   const void *sut_host_ptr)
 {
-  debugAt(dfc.spec->defined_at, "executing surface diff");
+  debug_at(dfc.spec->defined_at, "executing surface diff");
 
   evaluator::context ec;
   if (dfc.so_ref->size_in_bytes == 0)
@@ -729,7 +729,7 @@ void compiled_script_impl::execute(
   } else if (elem_type->size() == 0 ||
     dfc.so_sut->size_in_bytes % elem_type->size() != 0)
   {
-    fatalAt(
+    fatal_at(
       dfc.spec->defined_at,
       "buffer size (", dfc.so_sut->size_in_bytes,
       " B) is not a multiple of diff element type ",
@@ -740,7 +740,7 @@ void compiled_script_impl::execute(
   const uint8_t *ref_host_ptr8 = (const uint8_t*)ref_host_ptr;
   const uint8_t *sut_host_ptr8 = (const uint8_t*)sut_host_ptr;
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
-    executeDiffElem(
+    execute_diff_elem(
       dfc.spec->defined_at,
       dfc.spec->max_diff,
       elem_ix,
@@ -752,13 +752,13 @@ void compiled_script_impl::execute(
 
 void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
 {
-  debugAt(dfc.spec->defined_at, "executing uniform diff");
+  debug_at(dfc.spec->defined_at, "executing uniform diff");
 
   evaluator::context ec;
   if (dfc.so->size_in_bytes == 0)
     return; // zero sized buffers always match
   if (!dfc.spec->ref.value->is_atom())
-    fatalAt(dfc.spec->defined_at, "only atoms supported as reference argument");
+    fatal_at(dfc.spec->defined_at, "only atoms supported as reference argument");
   const type *elem_type = dfc.element_type;
   if (elem_type == nullptr) {
     elem_type = (dfc.so->size_in_bytes > 4 && dfc.so->size_in_bytes % 4 == 0) ?
@@ -766,19 +766,19 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
   }
 
   // given an explicit type we make a broadcast comparison
-  arg_buffer ab_ref(getDiagnostics(), dfc.spec->defined_at, elem_type->size());
-  e->evalInto(ec,
+  arg_buffer ab_ref(get_diagnostics(), dfc.spec->defined_at, elem_type->size());
+  e->eval_into(ec,
     dfc.spec->defined_at,
     (const init_spec_atom *)dfc.spec->ref.value,
     ab_ref,
     *elem_type);
   if (ab_ref.num_left() != 0) {
-    fatalAt(dfc.spec->defined_at, "reference scalar value is wrong size");
+    fatal_at(dfc.spec->defined_at, "reference scalar value is wrong size");
   }
 
   if (elem_type->size() == 0 ||
     dfc.so->size_in_bytes % elem_type->size() != 0) {
-    fatalAt(
+    fatal_at(
       dfc.spec->defined_at,
       "buffer size (", dfc.so->size_in_bytes,
       " B) is not a multiple of diff element type ",
@@ -787,7 +787,7 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
   size_t total_elems = dfc.so->size_in_bytes/elem_type->size();
   const uint8_t *host_ptr8 = (const uint8_t*)host_ptr;
   for (size_t elem_ix = 0; elem_ix < total_elems; elem_ix++) {
-    executeDiffElem(
+    execute_diff_elem(
       dfc.spec->defined_at,
       dfc.spec->max_diff,
       elem_ix,
@@ -797,7 +797,7 @@ void compiled_script_impl::execute(diffu_command &dfc, const void *host_ptr)
   } // for elems
 }
 
-void compiled_script_impl::executeDiffElem(
+void compiled_script_impl::execute_diff_elem(
   loc defined_at,
   double max_diff,
   size_t elem_ix,
@@ -810,12 +810,12 @@ void compiled_script_impl::executeDiffElem(
 /*
   if (elem_type.is<type_struct>()) {
     const type_struct &s = elem_type.as<type_struct>();
-    return s.is_uniform() && isFloating(*s.elements[0]);
+    return s.is_uniform() && is_floating(*s.elements[0]);
   }
   return elem_type.is<type_num>() &&
     elem_type.as<type_num>().skind == type_num::FLOATING;
   */
-  auto reportMismatch = [&](int vec_elem, const char *extra_message) {
+  auto report_mismatch = [&](int vec_elem, const char *extra_message) {
     std::cerr << "mismatch on buffer element "
       << elem_ix << " (type " << elem_type.syntax() << ")\n";
     if (vec_elem >= 0)
@@ -823,23 +823,23 @@ void compiled_script_impl::executeDiffElem(
     if (extra_message)
       std::cerr << extra_message << "\n";
     std::cerr << "============== vs. (SUT) ==============\n";
-    formatBufferElementExt(std::cerr, elem_type, elem_sut);
+    format_buffer_element_ext(std::cerr, elem_type, elem_sut);
     std::cerr << "\n";
     std::cerr << "============== vs. (REF) ==============\n";
-    formatBufferElementExt(std::cerr, elem_type, elem_ref);
+    format_buffer_element_ext(std::cerr, elem_type, elem_ref);
     std::cerr << "\n";
     if (os.no_exit_on_diff_fail) {
-      warningAt(
+      warning_at(
         defined_at,
         "mismatch on element ", elem_ix, " (type ", elem_type.syntax(), ")");
     } else {
-      fatalAt(
+      fatal_at(
         defined_at,
         "mismatch on element ", elem_ix, " (type ", elem_type.syntax(), ")");
     }
   };
 
-  auto diffElem = [&](
+  auto diff_elem = [&](
     int vec_elem,
     const type_num &elem_type,
     const void *elem_ref,
@@ -860,32 +860,32 @@ void compiled_script_impl::executeDiffElem(
       elem_val_ref = *((const double *)elem_ref);
       break;
     default:
-      fatalAt(defined_at, "unsupported floating point type");
+      fatal_at(defined_at, "unsupported floating point type");
     }
     //
     if (std::isnan(elem_val_sut) && !std::isnan(elem_val_ref) ||
       !std::isnan(elem_val_sut) && std::isnan(elem_val_ref))
     {
-      reportMismatch(vec_elem, "one value is NaN");
+      report_mismatch(vec_elem, "one value is NaN");
     } else if (std::abs(elem_val_sut - elem_val_ref) > max_diff) {
-      reportMismatch(vec_elem,
+      report_mismatch(vec_elem,
         "value difference exceeds max allowable difference");
     }
   };
   //
-  auto isFloating = [&](const type &elem_type) {
+  auto is_floating = [&](const type &elem_type) {
     return elem_type.is<type_num>() &&
       elem_type.as<type_num>().skind == type_num::FLOATING;
   };
   //
-  if (isFloating(elem_type)) {
-    diffElem(-1, elem_type.as<type_num>(), elem_ref, elem_sut);
+  if (is_floating(elem_type)) {
+    diff_elem(-1, elem_type.as<type_num>(), elem_ref, elem_sut);
   } else if (elem_type.is<type_vector>() &&
-    isFloating(elem_type.as<type_vector>().element_type))
+    is_floating(elem_type.as<type_vector>().element_type))
   {
     const type_vector &tv = elem_type.as<type_vector>();
     for (int i = 0; i < (int)tv.length; i++) {
-      diffElem(i,
+      diff_elem(i,
         tv.element_type,
         (const uint8_t *)elem_ref + i*tv.element_type.size(),
         (const uint8_t *)elem_sut + i*tv.element_type.size());
@@ -895,13 +895,13 @@ void compiled_script_impl::executeDiffElem(
     elem_sut,
     elem_type.size()))
   {
-    reportMismatch(-1, nullptr);
+    report_mismatch(-1, nullptr);
   } // else: elements match
 }
 
 void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 {
-  debugAt(prc.spec->defined_at, "executing print");
+  debug_at(prc.spec->defined_at, "executing print");
 
   evaluator::context ec;
   if (prc.so && !prc.so->dispatch_uses.empty())
@@ -917,7 +917,7 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
   if (prc.element_type)
     std::cout << "<" << elem_type->syntax() << ">";
   std::cout << "[" << prc.so->str() << "] =>\n";
-  formatBuffer(
+  format_buffer(
     std::cout,
     host_ptr,
     prc.so->size_in_bytes,
@@ -928,26 +928,26 @@ void compiled_script_impl::execute(print_command &prc, const void *host_ptr)
 
 void compiled_script_impl::execute(saveb_command &svbc, const void *host_ptr)
 {
-  debugAt(svbc.spec->defined_at, "executing save");
+  debug_at(svbc.spec->defined_at, "executing save");
 
   std::ofstream of(svbc.spec->file, std::ios::binary);
   if (!of.good()) {
-    fatalAt(svbc.spec->defined_at, "failed to open file");
+    fatal_at(svbc.spec->defined_at, "failed to open file");
   }
   of.write((const char *)host_ptr, svbc.so->size_in_bytes);
   if (!of) {
-    fatalAt(svbc.spec->defined_at, "failed to write file");
+    fatal_at(svbc.spec->defined_at, "failed to write file");
   }
   of.flush();
 }
 void compiled_script_impl::execute(savei_command &svic, const void *host_ptr)
 {
-  debugAt(svic.spec->defined_at, "executing save_image");
+  debug_at(svic.spec->defined_at, "executing save_image");
 
   size_t row_pitch = svic.width *
     cls::channels_per_pixel(svic.channel_order) *
     cls::bytes_per_channel(svic.channel_type);
-  saveImage(
+  save_image(
     svic.spec->file, svic.spec->defined_at, this,
       svic.so,
       svic.width, svic.height,
@@ -958,7 +958,7 @@ void compiled_script_impl::execute(savei_command &svic, const void *host_ptr)
       host_ptr);
 }
 
-void cl_interface::withBufferMapRead(
+void cl_interface::with_buffer_map_read(
   const loc &at,
   const surface_object *so,
   buffer_reader apply)
@@ -987,7 +987,7 @@ void cl_interface::withBufferMapRead(
       nullptr);
 }
 
-void cl_interface::withBufferMapWrite(
+void cl_interface::with_buffer_map_write(
   const loc &at,
   surface_object *so,
   buffer_writer apply)
@@ -1016,7 +1016,7 @@ void cl_interface::withBufferMapWrite(
       nullptr);
 }
 
-void cl_interface::withImageMapRead(
+void cl_interface::with_image_map_read(
   const loc &at,
   const surface_object *so,
   image_reader apply)
@@ -1052,7 +1052,7 @@ void cl_interface::withImageMapRead(
       nullptr);
 }
 
-void cl_interface::withImageMapWrite(
+void cl_interface::with_image_map_write(
   const loc &at,
   const surface_object *so,
   image_writer apply)
@@ -1096,7 +1096,7 @@ void compiled_script_impl::init_surfaces()
     if (so->dummy_object)
       continue; // only used for a diff command
 
-    debugAt(so->init->defined_at, "initializing surface");
+    debug_at(so->init->defined_at, "initializing surface");
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
@@ -1110,19 +1110,19 @@ void compiled_script_impl::init_surfaces()
         elem_type = ai.arg_type->as<type_ptr>().element_type;
       }
     } else if (!so->dummy_object) { // no valid uses found
-      fatalAt(so->init->defined_at, "no uses of this surface found");
+      fatal_at(so->init->defined_at, "no uses of this surface found");
     }
 
-    bool canUndef =
+    bool can_undef =
       so->init->root->skind == init_spec_atom::IS_UND &&
       !so->init->print_post &&
       !so->init->print_pre &&
       !so->init->save_post;
-    if (canUndef) {
-      debugAt(so->init->defined_at,
+    if (can_undef) {
+      debug_at(so->init->defined_at,
         "skipping initialization (no save or printing needed)");
     } else if (so->skind == surface_object::SO_BUFFER) {
-      withBufferMapWrite(
+      with_buffer_map_write(
         so->init->defined_at,
         so,
         [&] (void *host_ptr) {
@@ -1130,7 +1130,7 @@ void compiled_script_impl::init_surfaces()
           init_surface(*so, ec, elem_type, host_ptr);
         });
     } else if (so->skind == surface_object::SO_IMAGE) {
-      withImageMapWrite(
+      with_image_map_write(
         so->init->defined_at,
         so,
         [&] (size_t, size_t, void *host_ptr) {
@@ -1141,7 +1141,7 @@ void compiled_script_impl::init_surfaces()
           }
         });
     } else {
-      internalAt(so->init->defined_at, "invalid surface kind");
+      internal_at(so->init->defined_at, "invalid surface kind");
     }
 
     auto t_duration =
@@ -1158,7 +1158,7 @@ void compiled_script_impl::init_surface(
   void *host_ptr)
 {
   arg_buffer ab(
-    getDiagnostics(), so.init->defined_at, host_ptr, so.size_in_bytes);
+    get_diagnostics(), so.init->defined_at, host_ptr, so.size_in_bytes);
   switch (so.init->root->skind) {
   case init_spec::IS_UND:
     // for undef we don't need to do anything to the surface
@@ -1166,16 +1166,16 @@ void compiled_script_impl::init_surface(
   case init_spec::IS_FIL: {
     const init_spec_file *isf = (const init_spec_file *)so.init->root;
     if (isf->flavor != init_spec_file::BIN) {
-      fatalAt(isf->defined_at, "only binary files supported at the moment");
+      fatal_at(isf->defined_at, "only binary files supported at the moment");
     }
     std::fstream fs(isf->path,std::ios_base::in|std::ios_base::binary);
     if (!fs.good()) {
-      fatalAt(isf->defined_at, "unable to open file");
+      fatal_at(isf->defined_at, "unable to open file");
     }
     fs.seekg(0, fs.end);
     size_t file_size = (size_t)fs.tellg();
     if (file_size != so.size_in_bytes) {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "file size doesn't match buffer (",
         file_size,
         " != ",
@@ -1185,7 +1185,7 @@ void compiled_script_impl::init_surface(
     fs.seekg(0, fs.beg);
     fs.read((char *)host_ptr,file_size);
     if (!fs) {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "failed to read all binary input from file");
     }
     ab.curr += file_size; // fake the advance
@@ -1193,7 +1193,7 @@ void compiled_script_impl::init_surface(
   }
   case init_spec::IS_RND:
     if (elem_type == nullptr) {
-      fatalAt(so.init->defined_at, "unable to infer element type for rng init");
+      fatal_at(so.init->defined_at, "unable to infer element type for rng init");
     } else if (elem_type->is<type_num>()) {
       // generator_state &gs =
       //  e->get_generator_state(dc, (const init_spec_rng *)so->spec->root, tn);
@@ -1213,13 +1213,13 @@ void compiled_script_impl::init_surface(
         elem_type->as<type_vector>().element_type,
         so.init->defined_at);
     } else {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "random inits can only apply to numeric and vector element types");
     }
     break;
   case init_spec::IS_SEQ:
     if (elem_type == nullptr) {
-      fatalAt(so.init->defined_at, "unable to infer element type for seq init");
+      fatal_at(so.init->defined_at, "unable to infer element type for seq init");
     } else if (elem_type->is<type_num>()) {
       fill_buffer_seq(
         *this,
@@ -1229,13 +1229,13 @@ void compiled_script_impl::init_surface(
         *elem_type,
         so.init->defined_at);
     } else {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "sequential inits can only apply to numeric element types");
     }
     break;
   case init_spec::IS_FSQ:
     if (elem_type == nullptr) {
-      fatalAt(so.init->defined_at, "unable to infer element type for cyc init");
+      fatal_at(so.init->defined_at, "unable to infer element type for cyc init");
     } else if (elem_type->is<type_num>() || elem_type->is<type_vector>()) {
       fill_buffer_fseq(
         *this,
@@ -1245,13 +1245,13 @@ void compiled_script_impl::init_surface(
         *elem_type,
         so.init->defined_at);
     } else {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "fseq inits can only apply to numeric element types");
     }
     break;
   case init_spec::IS_CYC:
     if (elem_type == nullptr) {
-      fatalAt(so.init->defined_at, "unable to infer element type for cyc init");
+      fatal_at(so.init->defined_at, "unable to infer element type for cyc init");
     } else if (elem_type->is<type_num>()) {
       fill_buffer_cyc(
         *this,
@@ -1261,7 +1261,7 @@ void compiled_script_impl::init_surface(
         *elem_type,
         so.init->defined_at);
     } else {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "cyc inits can only apply to numeric element types");
     }
     break;
@@ -1284,25 +1284,25 @@ void compiled_script_impl::init_surface(
   // but either way it needs evaluation
   default: {
     if (elem_type == nullptr) {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "unable to infer element type for scalar init");
     }
     size_t elem_size = elem_type->size();
     if (elem_size == 0) {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "cannot populate a buffer of zero byte type (e.g. void*)");
     } else if (ab.num_left() % elem_size != 0) {
-      fatalAt(so.init->defined_at,
+      fatal_at(so.init->defined_at,
         "surface size is not a multiple of element size");
     }
     // stamp out the first element and copy it as many times as needed
-    e->evalInto(ec,
+    e->eval_into(ec,
       so.init->defined_at,
       (const init_spec_atom *)so.init->root,
       ab,
       *elem_type);
     if (ab.size() != elem_size) {
-      internalAt(so.init->defined_at,
+      internal_at(so.init->defined_at,
         "surface initializer generated wrong element size");
     }
     while (ab.num_left() > 0) {
@@ -1313,7 +1313,7 @@ void compiled_script_impl::init_surface(
   } // switch
 
   if (so.init->root->skind != init_spec::IS_UND && ab.num_left() != 0) {
-    internalAt(so.init->defined_at,
+    internal_at(so.init->defined_at,
       "wrong number of elements written by surface initializer");
   }
 }
@@ -1321,7 +1321,7 @@ void compiled_script_impl::init_surface(
 void compiled_script::execute(int itr)
 {
   compiled_script_impl *csi = (compiled_script_impl *)impl;
-  csi->debugAt(cls::NO_LOC,
+  csi->debug_at(cls::NO_LOC,
     "compiled_script::execute starting iteration ", itr);
 
   csi->init_surfaces();
@@ -1340,7 +1340,7 @@ void compiled_script::execute(int itr)
     case script_instruction::DIFFU: {
       diffu_command *dfuc = (diffu_command *)si.dfuc;
       csi->verbose("EXECUTING  => ", dfuc->spec->spec::str());
-      csi->withBufferMapRead(
+      csi->with_buffer_map_read(
         dfuc->spec->defined_at,
         dfuc->so,
         [&] (const void *host_ptr) {csi->execute(*dfuc, host_ptr);});
@@ -1348,11 +1348,11 @@ void compiled_script::execute(int itr)
     }
     case script_instruction::DIFFS: {
       diffs_command *dfsc = (diffs_command *)si.dfsc;
-      csi->withBufferMapRead(
+      csi->with_buffer_map_read(
         dfsc->spec->defined_at,
         dfsc->so_ref,
         [&] (const void *ref_host_ptr) {
-          csi->withBufferMapRead(
+          csi->with_buffer_map_read(
             dfsc->spec->defined_at,
             dfsc->so_sut,
             [&] (const void *sut_host_ptr) {
@@ -1364,7 +1364,7 @@ void compiled_script::execute(int itr)
     case script_instruction::PRINT: {
       print_command *prc = (print_command *)si.prc;
       csi->debug("EXECUTING  => ", prc->spec->spec::str());
-      csi->withBufferMapRead(
+      csi->with_buffer_map_read(
         prc->spec->defined_at,
         prc->so,
         [&] (const void *host_ptr) {csi->execute(*prc, host_ptr);});
@@ -1373,12 +1373,12 @@ void compiled_script::execute(int itr)
     case script_instruction::SAVEB: {
       saveb_command *svbc = (saveb_command *)si.svbc;
       if (svbc->so->skind == surface_object::SO_IMAGE) {
-        csi->withImageMapRead(
+        csi->with_image_map_read(
           svbc->spec->defined_at,
           svbc->so,
           [&](size_t row_pitch, size_t slice_pitch, const void *host_ptr)
           {
-            saveImage(
+            save_image(
               svbc->spec->file,
               svbc->spec->defined_at,
               csi,
@@ -1391,7 +1391,7 @@ void compiled_script::execute(int itr)
               host_ptr);
           });
       } else {
-        csi->withBufferMapRead(
+        csi->with_buffer_map_read(
           svbc->spec->defined_at,
           svbc->so,
           [&](const void *host_ptr) {csi->execute(*svbc, host_ptr);});
@@ -1401,10 +1401,10 @@ void compiled_script::execute(int itr)
     case script_instruction::SAVEI: {
       savei_command *svic = (savei_command *)si.svic;
       if (svic->so->skind != surface_object::SO_BUFFER) {
-        csi->fatalAt(svic->spec->defined_at,
+        csi->fatal_at(svic->spec->defined_at,
           "save_image requires buffer argument");
       }
-      csi->withBufferMapRead(
+      csi->with_buffer_map_read(
         svic->spec->defined_at,
         svic->so,
         [&](const void *host_ptr) {csi->execute(*svic, host_ptr);});

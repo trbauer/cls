@@ -223,12 +223,12 @@ microarch get_device_microarch(cl_device_id d)
 {
   const auto vend = get_device_vendor(d);
   std::string nm = get_device_name(d);
-  auto nameHas = [&] (const char *substr) {
+  auto name_has1 = [&] (const char *substr) {
     return nm.find(substr) != std::string::npos;
   };
-  auto nameHasAny = [&] (std::initializer_list<const char *> substrs) {
+  auto name_has = [&] (std::initializer_list<const char *> substrs) {
     for (const char *substr : substrs) {
-      if (nameHas(substr)) {
+      if (name_has1(substr)) {
         return true;
       }
     }
@@ -237,34 +237,60 @@ microarch get_device_microarch(cl_device_id d)
   microarch arch = microarch::OTHER;
   if (vend == vendor::INTEL) {
     // https://en.wikipedia.org/wiki/Intel_Graphics_Technology
-    if (nameHas("HD Graphics")) {
-      if (nameHasAny({" 4200"," 4400"," 4600"," 4700"," 5000"," 5100"," 5200"})) {
+    if (name_has1("HD Graphics")) {
+      if (name_has(
+              {" 4200",
+               " 4400",
+               " 4600",
+               " 4700",
+               " 5000",
+               " 5100",
+               " 5200"})) {
         arch = microarch::INTEL_GEN7P5;
-      } else if (
-        nameHasAny({" 5300"," 5500"," 5600", " 5700",
-          " 6000", " 6100", " 6200", " 6300", " Gen8"}))
-      {
+      } else if (name_has(
+                     {" 5300",
+                      " 5500",
+                      " 5600",
+                      " 5700",
+                      " 6000",
+                      " 6100",
+                      " 6200",
+                      " 6300",
+                      " Gen8"})) {
         arch = microarch::INTEL_GEN8;
-      } else if (
-        nameHasAny({" 510"," 515"," 520"," 530"," 540"," 550"," 580", "Gen9"}))
-      {
+      } else if (name_has(
+                     {" 510",
+                      " 515",
+                      " 520",
+                      " 530",
+                      " 540",
+                      " 550",
+                      " 580",
+                      "Gen9"})) {
         arch = microarch::INTEL_GEN9;
-      } else if (nameHasAny({" 610"," 615"," 620"," 630"," 640"," 650"})) {
-        if (nameHas("UHD Graphics")) {
+      } else if (name_has({" 610", " 615", " 620", " 630", " 640", " 650"})) {
+        if (name_has1("UHD Graphics")) {
           arch = microarch::INTEL_GEN9P7;
         } else {
           arch = microarch::INTEL_GEN9P5;
         }
-      } else if (nameHasAny({" 910"," 915"," 920"," 930"," 940"," 950", " Gen11"})) {
-          arch = microarch::INTEL_GEN11;
-      } else if (nameHasAny({" 710", " 730", " 740", " 750", " 770"})) {
-          arch = microarch::INTEL_XELPG;
+      } else if (name_has(
+                     {" 910",
+                      " 915",
+                      " 920",
+                      " 930",
+                      " 940",
+                      " 950",
+                      " Gen11"})) {
+        arch = microarch::INTEL_GEN11;
+      } else if (name_has({" 710", " 730", " 740", " 750", " 770"})) {
+        arch = microarch::INTEL_XELPG;
       } else {
-          // TODO: later GEN architectures
+        arch = microarch::INTEL_XEUNK;
       }
-    } else if (nameHas("Data Center GPU")) {
+    } else if (name_has1("Data Center GPU")) {
       arch = microarch::INTEL_XEHPC;
-    } else if (nameHasAny(
+    } else if (name_has(
                    {"A310",
                     "A380",
                     "A580",
@@ -275,29 +301,28 @@ microarch get_device_microarch(cl_device_id d)
                     "A50",
                     "A60"})) {
       arch = microarch::INTEL_XEHPG;
-    } else if(nameHas("Intel(R) Core(TM)")) {
-      // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...)
+    } else if (name_has1("Intel(R) Core(TM)")) {
+      arch = microarch::INTEL_CPU_UNK;
     }
   } else if (vend == vendor::NVIDIA) {
-    if (nameHasAny({"GTX 950","GTX 960","GTX 970","GTX 980"})) {
+    if (name_has({"GTX 950", "GTX 960", "GTX 970", "GTX 980"})) {
       arch = microarch::NVIDIA_MAX;
-    } else if (nameHasAny({"GTX 1050", "GTX 1060", "GTX 1070", "GTX 1080"})) {
+    } else if (name_has({"GTX 1050", "GTX 1060", "GTX 1070", "GTX 1080"})) {
       arch = microarch::NVIDIA_PAS;
-    } else if (nameHasAny({})) {
+    } else if (name_has({})) {
       // not sure what Volta used (no GTX parts?)
       arch = microarch::NVIDIA_VOL;
-    } else if (nameHasAny({"GTX 1650", "GTX 1660", "RTX 20"})) {
+    } else if (name_has({"GTX 1650", "GTX 1660", "RTX 20"})) {
       arch = microarch::NVIDIA_TUR;
-    } else if (nameHasAny({"RTX 30"})) {
+    } else if (name_has({"RTX 30"})) {
       arch = microarch::NVIDIA_AMP;
-    } else if (nameHasAny({"RTX 40"})) {
+    } else if (name_has({"RTX 40"})) {
       arch = microarch::NVIDIA_HOP;
     } else {
-      // TODO: non GTX parts
-      arch = microarch::OTHER;
+      arch = microarch::NVIDIA_UNK;
     }
   } else if (vend == vendor::AMD) {
-  // TODO:
+    arch = microarch::AMD_UNK;
   }
   return arch;
 }

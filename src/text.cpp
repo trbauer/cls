@@ -45,15 +45,15 @@ static void enable_colored_io()
   // https://docs.microsoft.com/en-us/windows/console/setconsolemode
   // https://bugs.php.net/bug.php?id=72768
   // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
-  auto enableOnHandle = [](DWORD H_CODE) {
+  auto enable_on_handle = [](DWORD H_CODE) {
     DWORD mode;
     HANDLE h = GetStdHandle(H_CODE);
     GetConsoleMode(h, &mode);
     mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     SetConsoleMode(h, mode);
   };
-  enableOnHandle(STD_ERROR_HANDLE);
-  enableOnHandle(STD_OUTPUT_HANDLE);
+  enable_on_handle(STD_ERROR_HANDLE);
+  enable_on_handle(STD_OUTPUT_HANDLE);
   enabled = true;
 }
 
@@ -97,13 +97,13 @@ std::vector<std::string> text::to_words(const std::string &str)
 {
   std::vector<std::string> ws;
   size_t off = 0;
-  auto skipSpaces = [&]() {
+  auto skip_spaces = [&]() {
     while (off < str.size() && isspace(str[off]))
       off++;
   };
 
   while (off < str.size()) {
-    skipSpaces();
+    skip_spaces();
 
     size_t start = off;
     while (off < str.size() && !isspace(str[off]))
@@ -313,12 +313,12 @@ std::string text::format_buffer_diff(
   size_t n_elems,
   size_t elem_w,
   unsigned cols,
-  bool showChars)
+  bool show_chars)
 {
   std::stringstream ss;
   ss << std::hex << std::setfill('0');
   if (elem_w != 1 && elem_w != 2 && elem_w != 4 && elem_w != 8)
-    return format_buffer_diff(b, r, n_elems * elem_w, 1, cols, showChars);
+    return format_buffer_diff(b, r, n_elems * elem_w, 1, cols, show_chars);
   //    FATAL("invalid element width");
   cols = cols == 0 ? 16 : cols;
   if (cols == 0)
@@ -354,7 +354,7 @@ std::string text::format_buffer_diff(
       emit_elem(buf, i);
     }
     if (i % cols == cols - 1 || i == n_elems - 1) {
-      if (elem_w == 1 && showChars) {
+      if (elem_w == 1 && show_chars) {
         ss << ' ';
         for (size_t k = i - cols + 1; k <= i; k++)
         {
@@ -383,7 +383,7 @@ std::string text::format_buffer_diff(
           }
           ss << " ";
         }
-        if (elem_w == 1 && showChars) {
+        if (elem_w == 1 && show_chars) {
           for (size_t k = i - cols + 1; k <= i; k++) {
             if (ref && buf[k] != ref[k])
               ss << ANSI_GREEN;

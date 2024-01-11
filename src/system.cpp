@@ -74,7 +74,7 @@ using namespace sys;
 int sys::last_error() {return (int)GetLastError();}
 std::string sys::format_last_error(int e = last_error())
 {
-  LPVOID msgBuf;
+  LPVOID msg_buf;
   FormatMessageA(
     FORMAT_MESSAGE_ALLOCATE_BUFFER |
       FORMAT_MESSAGE_FROM_SYSTEM |
@@ -82,10 +82,10 @@ std::string sys::format_last_error(int e = last_error())
     nullptr,
     (DWORD)e,
     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-    (LPSTR)&msgBuf,
+    (LPSTR)&msg_buf,
     0, nullptr);
-  std::string s((const char *)msgBuf);
-  LocalFree(msgBuf);
+  std::string s((const char *)msg_buf);
+  LocalFree(msg_buf);
   return s;
 }
 #else // !_WIN32
@@ -278,8 +278,8 @@ bool sys::path_exists(const std::string &path)
   //    FATAL("kdc -off failed to generate .daf file (is DafEnable set?)\n");
   //  }
   //  FindClose(h);
-  DWORD dwAttrib = GetFileAttributesA(path.c_str());
-  return (dwAttrib != INVALID_FILE_ATTRIBUTES);
+  DWORD dw_attrib = GetFileAttributesA(path.c_str());
+  return (dw_attrib != INVALID_FILE_ATTRIBUTES);
 #else
   struct stat sb = {0};
   if (stat(path.c_str(), &sb)) {

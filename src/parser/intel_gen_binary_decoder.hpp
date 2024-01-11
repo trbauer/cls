@@ -12,7 +12,7 @@ namespace cls
 {
   constexpr uint32_t ELF_MAGIC = 0x464C457F; // "\7FELF"
 
-  cls::k::program_info *parseProgramInfoBinaryGEN(
+  cls::k::program_info *parse_program_info_binary_gen(
     const opts &os,
     diagnostics &ds, loc at,
     const std::string &path);

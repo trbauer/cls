@@ -17,7 +17,7 @@ using namespace cls::k;
 using namespace cls;
 
 
-std::string cls::k::arg_info::typeSyntax() const
+std::string cls::k::arg_info::type_syntax() const
 {
   std::stringstream ss;
   const char *sep = "";
@@ -73,7 +73,7 @@ program_info::~program_info()
   }
 }
 
-const type &program_info::pointerTo(const type &t_ref, size_t ptr_size)
+const type &program_info::pointer_to(const type &t_ref, size_t ptr_size)
 {
   for (const type *t : types) {
     if (t->is<type_ptr>() && t->as<type_ptr>().element_type == &t_ref) {
@@ -115,14 +115,14 @@ struct karg_parser : cls::parser
   // also handle simple typedefs
   // typedef int s32;
   void parse() {
-    while (!endOfFile()) {
-      if (lookingAtIdentEq("typedef")) {
+    while (!end_of_file()) {
+      if (looking_at_ident_eq("typedef")) {
         skip();
-        parseTypedef();
+        parse_typedef();
       }
 
-      if (lookingAtIdentEq("__kernel") || lookingAtIdentEq("kernel")) {
-        parseKernel();
+      if (looking_at_ident_eq("__kernel") || looking_at_ident_eq("kernel")) {
+        parse_kernel();
       } else {
         skip();
       }
@@ -130,11 +130,11 @@ struct karg_parser : cls::parser
   }
 
   // look up a typedef'd or built-in type
-  const cls::type *findType(std::string type_name) const {
+  const cls::type *find_type(std::string type_name) const {
     auto itr = typedefs.find(type_name);
     if (itr != typedefs.end())
       return itr->second;
-    return lookupBuiltinType(type_name, bytes_per_addr);
+    return lookup_builtin_type(type_name, bytes_per_addr);
   }
 
   //
@@ -144,61 +144,61 @@ struct karg_parser : cls::parser
   // We don't handle more complicated stuff
   //   typedef int* myintptr_t;
   //   typedef int (*round_function)(float x);
-  void parseTypedef() {
-    if (!lookingAtIdent()) {
+  void parse_typedef() {
+    if (!looking_at_ident()) {
       return; // something too hard
     }
-    auto id = consumeIdent();
+    auto id = consume_ident();
     if (id == "struct" || id == "union" || id == "class") {
       // TODO: handle structures and unions
       // typedef struct {int x, y;} point_t;
       return;
     }
-    const type *existing = findType(id);
+    const type *existing = find_type(id);
     if (existing == nullptr) { // unknown type
       return;
     }
-    if (!lookingAtIdent()) {
+    if (!looking_at_ident()) {
       return;
     }
-    auto eq = consumeIdent();
-    if (!lookingAt(SEMI)) {
+    auto eq = consume_ident();
+    if (!looking_at(SEMI)) {
       return;
     }
     typedefs[eq] = existing;
   }
 
-  void parseKernel() {
+  void parse_kernel() {
     skip(); // kernel
 
     pi.kernels.emplace_back();
     kernel_info &k = pi.kernels.back();
 
-    consumeIdentEq("void", "void");
-    k.name = consumeIdent("kernel name");
-    skipPreprocessorLineDirectives();
+    consume_ident_eq("void", "void");
+    k.name = consume_ident("kernel name");
+    skip_preprocessor_line_directives();
     consume(LPAREN);
-    skipPreprocessorLineDirectives();
-    while (!lookingAt(RPAREN)) {
-      skipPreprocessorLineDirectives();
-      parseArg(k);
-      if (!consumeIf(COMMA)) {
+    skip_preprocessor_line_directives();
+    while (!looking_at(RPAREN)) {
+      skip_preprocessor_line_directives();
+      parse_arg(k);
+      if (!consume_if(COMMA)) {
         break;
       }
     }
     consume(RPAREN);
   }
 
-  int parseTypeQualsOpt() {
+  int parse_type_quals_opt() {
     int qs = CL_KERNEL_ARG_TYPE_NONE;
     while (true) {
-      if (consumeIfIdentEq("const")) {
+      if (consume_if_ident_eq("const")) {
         qs |= CL_KERNEL_ARG_TYPE_CONST;
-      } else if (consumeIfIdentEq("restrict")) {
+      } else if (consume_if_ident_eq("restrict")) {
         qs |= CL_KERNEL_ARG_TYPE_RESTRICT;
-      } else if (consumeIfIdentEq("volatile")) {
+      } else if (consume_if_ident_eq("volatile")) {
         qs |= CL_KERNEL_ARG_TYPE_VOLATILE;
-      } else if (consumeIfIdentEq("pipe")) {
+      } else if (consume_if_ident_eq("pipe")) {
         qs |= CL_KERNEL_ARG_TYPE_PIPE;
       } else {
         break;
@@ -207,20 +207,20 @@ struct karg_parser : cls::parser
     return qs;
   }
 
-  void skipPreprocessorLineDirectives() {
+  void skip_preprocessor_line_directives() {
     // e.g. #line 1082 "convolution_gpu_bfyx_f16_1x1_264.cl"
-    auto loc = nextLoc();
-    if (loc.column == 1 && lookingAt(HASH)) {
+    auto loc = next_loc();
+    if (loc.column == 1 && looking_at(HASH)) {
       skip();
-      auto loc2 = nextLoc();
-      while (!endOfFile() && loc2.line == loc.line) {
+      auto loc2 = next_loc();
+      while (!end_of_file() && loc2.line == loc.line) {
         skip();
-        loc2 = nextLoc();
+        loc2 = next_loc();
       }
     }
   }
 
-  void parseArg(kernel_info &k) {
+  void parse_arg(kernel_info &k) {
     k.args.emplace_back();
     arg_info &a = k.args.back();
 
@@ -229,58 +229,58 @@ struct karg_parser : cls::parser
     bool is_restrict = false;
     bool is_pipe = false;
 
-    a.type_qual |= parseTypeQualsOpt();
+    a.type_qual |= parse_type_quals_opt();
 
-    if (consumeIfIdentEq("global","__global")) {
+    if (consume_if_ident_eq("global","__global")) {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_GLOBAL;
-    } else if (consumeIfIdentEq("constant","__constant")) {
+    } else if (consume_if_ident_eq("constant","__constant")) {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_CONSTANT;
-    } else if (consumeIfIdentEq("local","__local")) {
+    } else if (consume_if_ident_eq("local","__local")) {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_LOCAL;
-    } else if (consumeIfIdentEq("private","__private")) {
+    } else if (consume_if_ident_eq("private","__private")) {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
     } else {
       a.addr_qual = CL_KERNEL_ARG_ADDRESS_PRIVATE;
     }
 
-    a.type_qual |= parseTypeQualsOpt();
+    a.type_qual |= parse_type_quals_opt();
 
-    if (consumeIfIdentEq("read_only","__read_only")) {
+    if (consume_if_ident_eq("read_only","__read_only")) {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_READ_ONLY;
-    } else if (consumeIfIdentEq("write_only","__write_only")) {
+    } else if (consume_if_ident_eq("write_only","__write_only")) {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_WRITE_ONLY;
-    } else if (consumeIfIdentEq("read_write","__read_write")) {
+    } else if (consume_if_ident_eq("read_write","__read_write")) {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_READ_WRITE;
     } else {
       a.accs_qual = CL_KERNEL_ARG_ACCESS_NONE;
     }
 
-    loc type_loc = nextLoc();
+    loc type_loc = next_loc();
     bool explicit_signed_or_unsigned = false;
 
-    auto type_name = consumeIdent("qualifier or type");
+    auto type_name = consume_ident("qualifier or type");
     if ((type_name == "unsigned" || type_name == "signed")) {
-      if (lookingAtIdentEq("char") || lookingAtIdentEq("short") ||
-        lookingAtIdentEq("int") || lookingAtIdentEq("long"))
+      if (looking_at_ident_eq("char") || looking_at_ident_eq("short") ||
+        looking_at_ident_eq("int") || looking_at_ident_eq("long"))
       {
         // e.g. unsigned int
         type_name += ' ';
-        type_name += consumeIdent("type");
+        type_name += consume_ident("type");
       }
     }
-    auto t = findType(type_name);
+    auto t = find_type(type_name);
     if (t == nullptr) {
-      fatalAt(type_loc,"unrecognized type");
+      fatal_at(type_loc,"unrecognized type");
     }
     a.arg_type = t;
-    while (consumeIf(MUL)) {
-      a.arg_type = &pi.pointerTo(*a.arg_type, bytes_per_addr);
+    while (consume_if(MUL)) {
+      a.arg_type = &pi.pointer_to(*a.arg_type, bytes_per_addr);
       // this allows (global char *const *name)
       //                           ^^^^^
       // maybe useful for SVM
       //
       // we discard it because it's not an attribute of the outermost pointer
-      (void)parseTypeQualsOpt();
+      (void)parse_type_quals_opt();
     }
 
     // omit address qualifier for images
@@ -292,16 +292,16 @@ struct karg_parser : cls::parser
       }
     }
 
-    if (lookingAtIdent()) {
-      a.name = consumeIdent();
+    if (looking_at_ident()) {
+      a.name = consume_ident();
     }
-    if (!lookingAt(RPAREN) && !lookingAt(COMMA)) {
+    if (!looking_at(RPAREN) && !looking_at(COMMA)) {
       fatal("syntax in argument");
     }
   }
 };
 
-static cls::k::program_info *parseProgramInfoText(
+static cls::k::program_info *parse_program_info_text(
   const cls::opts &os,
   cls::diagnostics &ds, cls::loc at,
   const cls::program_source &src,
@@ -339,18 +339,18 @@ static cls::k::program_info *parseProgramInfoText(
     cpp = text::load_c_preprocessed(src.path, ss_opts.str());
   } else {
     if (!sys::file_exists(os.cpp_override_path))
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "unable to find C Preprocessor from command line option "
         "for kernel analysis");
     cpp = text::load_c_preprocessed_using(
       os.cpp_override_path, src.path, ss_opts.str());
   }
   if (!cpp.succeeded()) {
-    ds.fatalAt(at,
+    ds.fatal_at(at,
       "C preprocessor ", cpp.status_to_string(), ":\n",
       "CPP: ", cpp.cpp_path, "\n", cpp.output);
   } else if (os.verbosity >= 2) {
-    ds.debugAt(at, "used preprocessor: ", cpp.cpp_path);
+    ds.debug_at(at, "used preprocessor: ", cpp.cpp_path);
   }
   // suffix the build options so that line numbers all map correctly
   // (when we decide to support #line directives)
@@ -368,7 +368,7 @@ static cls::k::program_info *parseProgramInfoText(
     ppc_path += sys::path_separator;
     ppc_path += sys::replace_extension(src.path, ".pp.cl");
     std::ofstream of(ppc_path);
-    ds.verboseAt(at, ppc_path, ": dumping preprocessed");
+    ds.verbose_at(at, ppc_path, ": dumping preprocessed");
     of << cpp_inp;
   }
 
@@ -385,12 +385,12 @@ static cls::k::program_info *parseProgramInfoText(
     d.str(ss, cpp_inp);
     ss << "\n";
     ss << "SEE: debug-out.cl";
-    ds.fatalAt(at, ss.str());
+    ds.fatal_at(at, ss.str());
   }
   return pi;
 }
 
-static program_info *parseProgramInfoBinary(
+static program_info *parse_program_info_binary(
   const opts &os,
   diagnostics &ds, loc at,
   const std::string &path,
@@ -398,29 +398,29 @@ static program_info *parseProgramInfoBinary(
 {
   // auto bits = sys::read_file_binary(path);
   auto ma = get_device_microarch(dev_id);
-  if (isIntelGEN(ma)) {
-    return parseProgramInfoBinaryGEN(os, ds, at, path);
+  if (is_intel_gen(ma)) {
+    return parse_program_info_binary_gen(os, ds, at, path);
   } else {
     // TODO: would love to handle more binary formats
     // PTX won't work because it lacks type information we need unify
     // arg initializers with arguments
-    ds.fatalAt(at,
-      "parseProgramInfoBinary: "
+    ds.fatal_at(at,
+      "parse_program_info_binary: "
       "argument info from binaries not supported yet on this device");
     return nullptr;
   }
 }
 
-program_info *cls::k::parseProgramInfo(
+program_info *cls::k::parse_program_info(
   const opts &os,
   diagnostics &ds, loc at,
   const program_source &src,
   cl_device_id dev_id)
 {
   if (src.kind == program_source::BINARY) {
-    return parseProgramInfoBinary(os, ds, at, src.path, dev_id);
+    return parse_program_info_binary(os, ds, at, src.path, dev_id);
   } else if (src.kind == program_source::SPIRV) {
-    return parseProgramInfoBinarySPIRV(os, ds, at, src.path);
+    return parse_program_info_binary_spirv(os, ds, at, src.path);
   } else { // TEXT
     // loading from binary gives us a pointer size to sanity check,
     // for here we just trust the OpenCL C runtime compiler to tell the truth
@@ -430,16 +430,16 @@ program_info *cls::k::parseProgramInfo(
     if (get_device_info(
       dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
     {
-      ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+      ds.fatal_at(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
     }
     bytes_per_addr /= 8;
-    auto *pi = parseProgramInfoText(os, ds, at, src, bytes_per_addr);
+    auto *pi = parse_program_info_text(os, ds, at, src, bytes_per_addr);
     pi->pointer_size = bytes_per_addr;
     return pi;
   }
 }
 
-program_info *cls::k::parseProgramInfoFromAPI(
+program_info *cls::k::parse_program_info_from_api(
   const cls::opts &os,
   cls::diagnostics &ds, cls::loc at,
   cl_program program,
@@ -448,14 +448,14 @@ program_info *cls::k::parseProgramInfoFromAPI(
   cl_uint ks_len = 0;
   auto err = clCreateKernelsInProgram(program, 0, nullptr, &ks_len);
   if (err != CL_SUCCESS) {
-    ds.fatalAt(at,
+    ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
       status_to_symbol(err));
   }
   cl_kernel *ks = (cl_kernel*)alloca(sizeof(*ks) * ks_len);
   err = clCreateKernelsInProgram(program, ks_len, ks, nullptr);
   if (err != CL_SUCCESS) {
-    ds.fatalAt(at,
+    ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
       status_to_symbol(err));
   }
@@ -467,7 +467,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
   if (get_device_info(
     dev_id, CL_DEVICE_ADDRESS_BITS, bytes_per_addr) != CL_SUCCESS)
   {
-    ds.fatalAt(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
+    ds.fatal_at(at, "clGetDeviceInfo(CL_DEVICE_ADDRESS_BITS)");
   }
   bytes_per_addr /= 8;
   pi->pointer_size = bytes_per_addr;
@@ -485,7 +485,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       nullptr,
       &knm_len);
     if (err != CL_SUCCESS) {
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
         status_to_symbol(err));
@@ -502,7 +502,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       knm,
       nullptr);
     if (err != CL_SUCCESS) {
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
         status_to_symbol(err));
@@ -518,7 +518,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       &ki.reqd_word_group_size[0],
       nullptr);
     if (err != CL_SUCCESS) {
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelWorkGroupInfo(CL_KERNEL_GLOBAL_WORK_SIZE): ",
         status_to_symbol(err));
@@ -532,7 +532,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       &ka_len,
       nullptr);
     if (err != CL_SUCCESS) {
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_NUM_ARGS): ",
         status_to_symbol(err));
@@ -548,7 +548,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
       ki.args.emplace_back();
       arg_info &ai = ki.args.back();
 
-      auto getStringParam = [&] (cl_int param, const char *param_name) {
+      auto get_string_param = [&] (cl_int param, const char *param_name) {
         cl_int err = 0;
         size_t len = 0;
         err = clGetKernelArgInfo(
@@ -559,7 +559,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
           nullptr,
           &len);
         if (err != CL_SUCCESS) {
-          ds.fatalAt(at,
+          ds.fatal_at(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
             status_to_symbol(err));
@@ -573,7 +573,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
           buf,
           nullptr);
         if (err != CL_SUCCESS) {
-          ds.fatalAt(at,
+          ds.fatal_at(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
             status_to_symbol(err));
@@ -582,24 +582,24 @@ program_info *cls::k::parseProgramInfoFromAPI(
         return std::string(buf);
       };
 
-      ai.name = getStringParam(CL_KERNEL_ARG_NAME,"CL_KERNEL_ARG_NAME");
+      ai.name = get_string_param(CL_KERNEL_ARG_NAME,"CL_KERNEL_ARG_NAME");
       auto full_type_name =
-        getStringParam(CL_KERNEL_ARG_TYPE_NAME,"CL_KERNEL_ARG_TYPE_NAME");
+        get_string_param(CL_KERNEL_ARG_TYPE_NAME,"CL_KERNEL_ARG_TYPE_NAME");
       // e.g. float*
       bool is_pointer = false;
       auto star = full_type_name.find("*");
-      std::string type_name = full_type_name.substr(0,star);
+      std::string type_name = full_type_name.substr(0, star);
 
-      const type *t = lookupBuiltinType(type_name, bytes_per_addr);
+      const type *t = lookup_builtin_type(type_name, bytes_per_addr);
       if (t == nullptr) {
-        ds.fatalAt(at,
+        ds.fatal_at(at,
           "failed to parse program info program: "
           "unable to lookup type ", type_name, " from program object");
       }
       ai.arg_type = t;
       for (size_t i = star; i < full_type_name.size(); i++) {
         if (full_type_name[i] == '*')
-          ai.arg_type = &pi->pointerTo(*ai.arg_type, bytes_per_addr);
+          ai.arg_type = &pi->pointer_to(*ai.arg_type, bytes_per_addr);
       }
 
       err = clGetKernelArgInfo(
@@ -610,7 +610,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.addr_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        ds.fatalAt(at,
+        ds.fatal_at(at,
           "failed to parse program info program object: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ADDRESS_QUALIFIER): ",
           status_to_symbol(err));
@@ -624,7 +624,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.accs_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        ds.fatalAt(at,
+        ds.fatal_at(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ACCESS_QUALIFIER): ",
           status_to_symbol(err));
@@ -638,7 +638,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
         &ai.type_qual,
         nullptr);
       if (err != CL_SUCCESS) {
-        ds.fatalAt(at,
+        ds.fatal_at(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_TYPE_QUALIFIER): ",
           status_to_symbol(err));
@@ -646,7 +646,7 @@ program_info *cls::k::parseProgramInfoFromAPI(
     } // for kernel args
     err = clReleaseKernel(ks[k_ix]);
     if (err != CL_SUCCESS) {
-      ds.fatalAt(at,
+      ds.fatal_at(at,
         "failed to parse program info program: clReleaseKernel(): ",
         status_to_symbol(err));
     }

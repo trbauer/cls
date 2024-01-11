@@ -64,11 +64,11 @@ static uint16_t avx_f32_to_f16(float f, bool set_qnan)
 {
   // should be on all 3rd generation or newer Intel CPUs (HSW/SNB)
   // _MM_FROUND_NO_EXC
-  const auto oldCsr = _mm_getcsr();
-  _mm_setcsr(oldCsr | _MM_FROUND_NO_EXC);
+  const auto old_csr = _mm_getcsr();
+  _mm_setcsr(old_csr | _MM_FROUND_NO_EXC);
   uint16_t w16 = (uint16_t)_mm_cvtsi128_si32(
     _mm_cvtps_ph(_mm_set_ss(f), _MM_FROUND_TO_NEAREST_INT));
-  _mm_setcsr(oldCsr);
+  _mm_setcsr(old_csr);
 
   if (!set_qnan && half::is_snan(f)) {
     // see comment in avx_f16_to_f32
