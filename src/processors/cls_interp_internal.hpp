@@ -1,5 +1,5 @@
 #include "cls_interp.hpp"
-#include "../cl_headers.hpp"
+#include "../cl_lib.hpp"
 #include "../devices.hpp"
 #include "../half.hpp"
 // #include "../list_map.hpp"
@@ -31,18 +31,27 @@ using namespace cls::k;
 //
 struct device_object {
   const device_spec *spec; // first definition of this device; SPECIFY: others?
+  cl_lib            *cl;
+  mdapi_lib         *md;
   cl_device_id       device;
   std::string        callback_prefix; // e.g. "[1.2: Intel HD]: "
   size_t             pointer_size; // in bytes
 
   device_object(
-    diagnostics &ds, const device_spec *_spec, cl_device_id dev_id)
-    : spec(_spec), device(dev_id)
+      diagnostics       &ds,
+      const device_spec *_spec,
+      cl_device_id       dev_id,
+      int                verbosity)
+      : spec(_spec),
+        device(dev_id),
+        cl(new cl_lib(verbosity, dev_id)),
+        md(nullptr)
   {
     std::stringstream ss;
     ss << "[" << spec->defined_at.line << "." <<
       spec->defined_at.column << "]: ";
     callback_prefix = ss.str();
+
     cl_uint bytes_per_addr;
     if (getDeviceInfo(
       dev_id,
@@ -55,15 +64,8 @@ struct device_object {
     }
     pointer_size = bytes_per_addr / 8;
   }
-  // device_object(const device_object &) = delete;
-  // device_object &operator=(const device_object &) = delete;
-  ~device_object() {
-    if (queue) {
-
-    }
-    if (context) {
-    }
-  }
+  device_object(const device_object &) = delete;
+  device_object &operator=(const device_object &) = delete;
 
   cl_context context = nullptr;
   cl_command_queue queue = nullptr;
@@ -147,7 +149,6 @@ struct surface_object {
   }
 };
 
-
 // Interpreter dispatch object
 //
 // All dispatch_spec's are converted into these objects.
@@ -168,6 +169,7 @@ struct dispatch_command {
 
   sampler                                          wall_times;
   sampler                                          prof_times;
+  metric_map                                       mdapi_ctrs;
 
   dispatch_command(const dispatch_spec *_spec, kernel_object *_kernel)
     : spec(_spec), kernel(_kernel)

@@ -89,7 +89,6 @@ cl_int getDeviceInfo(cl_device_id d, cl_device_info info, cl_uint &value)
   return err;
 }
 
-
 bool getDeviceByName(
   const cls::opts &opts,
   std::string substr,
@@ -150,7 +149,7 @@ cl_device_id getDeviceByIndex(const cls::opts &os, int dev_ix)
   return dev_id;
 }
 
-cl_device_id getDeviceDefault(const cls::opts &)
+cl_device_id getDeviceDefault()
 {
   auto ds = getDeviceIds();
   if (ds.empty()) {
@@ -258,27 +257,41 @@ microarch getDeviceMicroArchitecture(cl_device_id d)
         }
       } else if (nameHasAny({" 910"," 915"," 920"," 930"," 940"," 950", " Gen11"})) {
           arch = microarch::INTEL_GEN11;
-      } else if (nameHasAny({" Gen12LP"})) {
-          // I'm guessing on this one, I don't really know the product names
-          arch = microarch::INTEL_GEN12;
+      } else if (nameHasAny({" 710", " 730", " 740", " 750", " 770"})) {
+          arch = microarch::INTEL_XELPG;
       } else {
           // TODO: later GEN architectures
       }
+    } else if (nameHas("Data Center GPU")) {
+      arch = microarch::INTEL_XEHPC;
+    } else if (nameHasAny(
+                   {"A310",
+                    "A380",
+                    "A580",
+                    "A750",
+                    "A770",
+                    "A30M",
+                    "A40",
+                    "A50",
+                    "A60"})) {
+      arch = microarch::INTEL_XEHPG;
     } else if(nameHas("Intel(R) Core(TM)")) {
-      // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...
+      // TODO: no thanks; this is a huge task (need to define all the CPUs we care about...)
     }
   } else if (vend == vendor::NVIDIA) {
     if (nameHasAny({"GTX 950","GTX 960","GTX 970","GTX 980"})) {
       arch = microarch::NVIDIA_MAX;
-    } else if (nameHasAny({"GTX 1050","GTX 1060","GTX 1070","GTX 1080"})) {
+    } else if (nameHasAny({"GTX 1050", "GTX 1060", "GTX 1070", "GTX 1080"})) {
       arch = microarch::NVIDIA_PAS;
     } else if (nameHasAny({})) {
       // not sure what Volta used (no GTX parts?)
       arch = microarch::NVIDIA_VOL;
-    } else if (nameHasAny({"GTX 1650","GTX 1660","RTX 2050","RTX 2060","RTX 2070","RTX 2080"})) {
+    } else if (nameHasAny({"GTX 1650", "GTX 1660", "RTX 20"})) {
       arch = microarch::NVIDIA_TUR;
-    } else if (nameHasAny({"RTX 3070","RTX 3080","RTX 3090"})) {
+    } else if (nameHasAny({"RTX 30"})) {
       arch = microarch::NVIDIA_AMP;
+    } else if (nameHasAny({"RTX 40"})) {
+      arch = microarch::NVIDIA_HOP;
     } else {
       // TODO: non GTX parts
       arch = microarch::OTHER;
@@ -294,28 +307,6 @@ bool hasExtension(cl_device_id dev, const char *ext)
 {
   std::string exts = getDeviceInfo(dev, CL_DEVICE_EXTENSIONS);
   return exts.find(ext) != std::string::npos;
-}
-
-
-// We use the old 1.0 style command queue creation since the host running
-// this might not be 1.2+.
-#ifdef _MSC_VER
-// disable the deprecation warning on clCreateCommandQueue
-#pragma warning(disable : 4996)
-#endif
-cl_int makeCommandQueue(
-  bool profiling_queue,
-  cl_device_id dev_id,
-  cl_context &ctx,
-  cl_command_queue &queue)
-{
-  cl_command_queue_properties props = 0;
-  if (profiling_queue) {
-    props |= CL_QUEUE_PROFILING_ENABLE;
-  }
-  cl_int err;
-  queue = clCreateCommandQueue(ctx, dev_id, props, &err);
-  return err;
 }
 
 #if 0

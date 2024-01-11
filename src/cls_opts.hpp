@@ -20,10 +20,13 @@ struct opts {
   int                         iterations = 1;
   bool                        list_devices = false;
   std::vector<cl_device_id>   list_devices_specific;
+  std::vector<std::string>    list_metrics; // -lm
+  enum {NAT,TRANS,CSV}        metric_format = NAT;
   bool                        no_cleanup = false;
   bool                        no_exit_on_diff_fail = false;
   bool                        parse_only = false;
   bool                        prof_time = false;
+  std::string                 metric_counter_set;
   bool                        save_preprocessed = false;
   bool                        save_binaries = false;
   bool                        show_all_times = false;

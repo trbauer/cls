@@ -138,21 +138,26 @@ file(GLOB CLS_PARSE
 file(GLOB CLS_PROC
   "src/processors/*.hpp" "src/processors/*.cpp"
 )
+file(GLOB MDAPI_SRC
+  "deps/mdapi/*.h" "deps/mdapi/*.hpp" "deps/mdapi/*.cpp"
+)
 
-source_group("Source" FILES ${CLS_ROOT})
-source_group("Source\\IR" FILES ${CLS_IR})
-source_group("Source\\Parser" FILES ${CLS_PARSE})
-source_group("Source\\Interpreters" FILES ${CLS_PROC})
+source_group("src" FILES ${CLS_ROOT})
+source_group("src\\ir" FILES ${CLS_IR})
+source_group("src\\parser" FILES ${CLS_PARSE})
+source_group("src\\interp" FILES ${CLS_PROC})
 if (${USE_LODE_PNG})
-  source_group("Source\\LodePNG" FILES ${LODE_PNG_SRC})
+  source_group("src\\deps\\lodepng" FILES ${LODE_PNG_SRC})
 endif()
+source_group("src\\deps\\mdapi" FILES ${MDAPI_SRC})
 
 set(CLS_SOURCES
   ${CLS_ROOT}
   ${CLS_IR}
   ${CLS_PARSE}
   ${CLS_PROC}
-  ${LODE_PNG_SRC})
+  ${LODE_PNG_SRC}
+  ${MDAPI_SRC})
 
 add_executable("${CLS_EXE}" ${CLS_SOURCES})
 
@@ -229,15 +234,15 @@ endif()
 
 target_include_directories("${CLS_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS})
 if (WIN32)
-target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES})
+  target_link_libraries("${CLS_EXE}" "${OpenCL_LIBRARIES}" SetupAPI Shlwapi)
 else()
-target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES} "dl" "pthread")
+  target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES} "dl" "pthread")
 endif()
 
-target_compile_features(${CLS_EXE} PRIVATE cxx_std_17)
-
+# target_compile_features(${CLS_EXE} PRIVATE cxx_std_17)
+target_compile_features(${CLS_EXE} PRIVATE cxx_std_20)
 
 set_target_properties("${CLS_EXE}" PROPERTIES
-  CXX_STANDARD 17
+  CXX_STANDARD 20
   OUTPUT_NAME  "${CLS_EXE}"
 )

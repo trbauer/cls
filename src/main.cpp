@@ -2,11 +2,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <tuple>
 
+#include "cl_lib.hpp"
 #include "devices.hpp"
 #include "ir/cls_ir.hpp"
 #include "opts.hpp"
@@ -15,6 +17,8 @@
 #include "stats.hpp"
 #include "system.hpp"
 #include "text.hpp"
+#include "../deps/mdapi/mdapi_wrapper.hpp"
+
 
 enum class units
 {
@@ -23,10 +27,15 @@ enum class units
   UNITS_S,
 };
 
-static void runFile(
-  struct cls::opts &opts,
+static void run_file(
+  struct cls::opts &os,
   std::string file_name,
   std::string file_contents);
+
+static void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
+static void emit_metrics_trns(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
+static void emit_metrics_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
+// static void emit_metrics_trns_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
 
 int main(int argc, const char **argv)
 {
@@ -102,8 +111,6 @@ int main(int argc, const char **argv)
     " -l=0       lists device 0\n"
     " -l=GTX     lists the device with \"GTX\" as a substring of "
     "its CL_DEVICE_NAME\n"
-    "\n"
-    "(Use -h=h for more info)"
     "",
     opts::ALLOW_MULTI|opts::FLAG_VALUE,
     [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
@@ -117,10 +124,44 @@ int main(int argc, const char **argv)
         os.list_devices_specific.push_back(getDeviceByName(os, value));
       }
   });
+  cmdspec.defineOpt(
+      "lm",
+      "list-metrics",
+      "METRIC?",
+      "list the metric sets by name",
+      "Lists metric sets.\n"
+      "EXAMPLES:\n"
+      " -l           list all metrics\n"
+      " -l=compute   lists all metrics with compute in the name\n"
+      "",
+      opts::ALLOW_MULTI | opts::FLAG_VALUE,
+      [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
+        os.list_metrics.push_back(value);
+      });
+  cmdspec.defineOpt(
+      "mf",
+      "metric-format",
+      "FORMAT",
+      "specifies the output format for metrics",
+      "The outputs can be (n)aturally ordered, (t)ransposed, or (c)sv.\n",
+      opts::NONE,
+      [&](const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
+        std::string s = value;
+        if (s == "n" || s == "nat" || s == "natural") {
+          os.metric_format = cls::opts::NAT;
+        } else if (s == "t" || s == "trans" || s == "transposed") {
+          os.metric_format = cls::opts::TRANS;
+        } else if (s == "c" || s == "csv" || s == "csv") {
+          os.metric_format = cls::opts::CSV;
+        } else {
+          eh("invalid format (must be n, t, or c)");
+        }
+      });
+
   cmdspec.defineFlag(
       "q", "quiet", "lower verbosity", "generate minimal output", opts::NONE,
-      [] (const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
-          opts.verbosity = -1;
+      [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
+          os.verbosity = -1;
       });
   cmdspec.defineExtraHelpSection("syn", "all syntax information",
     cls::CLS_SYNTAX_ALL());
@@ -134,18 +175,73 @@ int main(int argc, const char **argv)
     cls::CLS_SYN_SEX());
 
   auto &g = cmdspec.defineGroup("t", "profiling options");
-  g.defineFlag("W",nullptr,"profiles with wall timers", "", opts::NONE,
-    os.wall_time);
-  g.defineFlag("CL",nullptr,"profiles with OCL prof timers", "", opts::NONE,
-    os.prof_time);
+  g.defineFlag(
+      "W", nullptr, "profiles with wall timers", "", opts::NONE, os.wall_time);
+  g.defineFlag(
+      "CL",
+      nullptr,
+      "profiles with OCL prof timers",
+      "",
+      opts::NONE,
+      os.prof_time);
+  g.defineOpt(
+      "MD",
+      nullptr,
+      "MetricSet",
+      "profiles with MDAPI counters (Intel Only)",
+      "",
+      opts::NONE,
+      [&](const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
+          opts.metric_counter_set = value;
+
+          mdapi_lib *md_lib = new mdapi_lib();
+          if (!md_lib->is_loaded()) {
+            eh("failed to load MDAPI library");
+            delete md_lib;
+            return;
+          }
+          const auto mss = md_lib->list_metric_sets();
+          if (opts.metric_counter_set == "") {
+            std::stringstream ss;
+            ss << "MDAPI Versions " << md_lib->get_version() << "\n";
+            ss << "expected metric set name; one of:\n";
+            for (const ms_info &mis : mss) {
+              ss << " * " << mis.set << "\n";
+              if (opts.verbosity >= 1) {
+                for (const auto &m : mis.metrics) {
+                  ss << "   - " << m << "\n";
+                }
+              }            }
+            delete md_lib;
+            eh(ss.str());
+          } else {
+            bool found = false;
+            for (const ms_info &mis : mss) {
+              if (mis.set == opts.metric_counter_set) {
+                found = true;
+              }
+            }
+            if (!found) {
+              std::stringstream ss;
+              ss << "invalid metric set name (-tMD= to list)\n";
+              for (const ms_info &mis : mss) {
+                ss << " * " << mis.set << "\n";
+              }
+              eh(ss.str());
+            }
+          }
+          delete md_lib;
+      });
+
   cmdspec.defineFlag(
-    nullptr,"use-kernel-arg-info",
-    "uses OpenCL 1.2+ kernel arg info in argument inference",
-    "This can fail if there are typedefs or custom types.  "
-    "By default we attempt to parse the source."
-    "",
-    opts::NONE,
-    os.use_kernel_arg_info);
+      nullptr,
+      "use-kernel-arg-info",
+      "uses OpenCL 1.2+ kernel arg info in argument inference",
+      "This can fail if there are typedefs or custom types.  "
+      "By default we attempt to parse the source."
+      "",
+      opts::NONE,
+      os.use_kernel_arg_info);
 
   cmdspec.defineOpt(
     "v","verbosity","INT","sets the output level","",opts::FLAG_VALUE,
@@ -194,8 +290,14 @@ int main(int argc, const char **argv)
   if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);
   }
-
-  if (os.list_devices) {
+  if (!os.list_metrics.empty() && os.list_devices) {
+    std::cerr << "-l mutually exclusive with -lm\n";
+    return EXIT_FAILURE;
+  }
+  if (!os.list_metrics.empty()) {
+    list_mdapi_metrics(os.verbosity, os.list_metrics);
+    return EXIT_SUCCESS;
+  } else if (os.list_devices) {
     listDeviceInfo(os);
     return EXIT_SUCCESS;
   }
@@ -204,7 +306,7 @@ int main(int argc, const char **argv)
     return EXIT_FAILURE;
   }
   if (os.input_expr.size() > 0) {
-    runFile(os, "<interactive>", os.input_expr);
+    run_file(os, "<interactive>", os.input_expr);
   }
   for (std::string file : os.input_files) {
     if (!sys::file_exists(file)) {
@@ -212,7 +314,7 @@ int main(int argc, const char **argv)
       return EXIT_FAILURE;
     }
     auto file_text = sys::read_file_text(file);
-    runFile(os, file, file_text);
+    run_file(os, file, file_text);
   }
 
   // funky stuff happens with ANSI coloring without explicit flushing
@@ -222,7 +324,7 @@ int main(int argc, const char **argv)
   return EXIT_SUCCESS;
 }
 
-static void runFile(
+static void run_file(
   struct cls::opts &os,
   std::string file_name,
   std::string file_contents)
@@ -271,7 +373,7 @@ static void runFile(
   const auto duration_compile =
     std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::high_resolution_clock::now() - start_compile);
-  const auto compile_time_s = duration_compile.count()/1000.0/1000.0;
+  const auto compile_time_s = duration_compile.count() / 1000.0 / 1000.0;
 
   sampler execute_times;
   for (int i = 0; i < os.iterations; i++) {
@@ -356,6 +458,20 @@ static void runFile(
     }
   }
 
+  if (!os.metric_counter_set.empty()) {
+    const auto &mdcs = cs.get_mdapi_ctrs();
+     if (os.metric_format == cls::opts::NAT) {
+      emit_metrics(os, mdcs);
+    } else if (os.metric_format == cls::opts::TRANS) {
+      emit_metrics_trns(os, mdcs);
+    } else if (os.metric_format == cls::opts::CSV) {
+      emit_metrics_csv(os, mdcs);
+    } else {
+      std::cerr << "unexpected output format for -mf=..\n";
+      exit(EXIT_INTERNAL_ERROR);
+    }
+  }
+
   for (const auto &p_ds : dispatch_times) {
     const cls::dispatch_spec &ds = *std::get<0>(p_ds);
     const sampler &ts = std::get<1>(p_ds);
@@ -384,4 +500,128 @@ static void runFile(
   std::cerr.flush();
   if (!os.no_cleanup)
     cs.destroy();
+} // run_file
+
+
+static std::string format_metric_value(const metric_val::mval &mv) {
+  std::stringstream ss;
+  if (std::holds_alternative<bool>(mv.value)) {
+    ss << ((bool)mv ? "T" : "F");
+  } else if (std::holds_alternative<float>(mv.value)) {
+    ss << std::fixed << std::setprecision(3) << (float)mv;
+  } else if (std::holds_alternative<uint64_t>(mv.value)) {
+    ss << (uint64_t)mv;
+  } else if (std::holds_alternative<std::string>(mv.value)) {
+    ss << (std::string)mv;
+  } else {
+    ss << "?";
+  }
+  return ss.str();
+}
+
+
+static void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs) {
+  for (const auto &m : mdcs) {
+    const cls::dispatch_spec *ds = std::get<0>(m);
+    std::cout << "==============";
+    ds->str(std::cout, cls::format_opts());
+    std::cout << "\n";
+    const metric_map &mm = std::get<1>(m);
+    unsigned max_col_len = 0;
+    for (const metric_val &col : mm.columns) {
+      if (col.is_info && os.verbosity <= 1)
+        continue;
+      std::cout << "  " << std::setw(28) << col.metric;
+      max_col_len = std::max(max_col_len, (unsigned)col.values.size());
+    }
+    std::cout << "\n";
+    for (unsigned row_ix = 0; row_ix < max_col_len; row_ix++) {
+      std::cout << "  ";
+      for (const metric_val &col : mm.columns) {
+        if (col.is_info && os.verbosity <= 1)
+          continue;
+        std::cout << "  ";
+        std::stringstream ss;
+        if (row_ix >= (unsigned)col.values.size()) {
+          ss << "-";
+        } else {
+          const metric_val::mval &mv = col.values[row_ix];
+          ss << format_metric_value(mv);
+        }
+        std::cout << std::setw(28) << ss.str();
+      }
+      std::cout << "\n";
+    }
+  }
+}
+
+static void
+emit_metrics_trns(const cls::opts &os, const cls::mdapi_ctrs &mdcs)
+{
+  for (const auto &m : mdcs) {
+    const cls::dispatch_spec *ds = std::get<0>(m);
+    std::cout << "==============";
+    ds->str(std::cout, cls::format_opts());
+    std::cout << "\n";
+    const metric_map &mm = std::get<1>(m);
+    unsigned max_metric_col = 0, max_units_col = 0;
+    for (const metric_val &col : mm.columns) {
+      max_metric_col = std::max(max_metric_col, (unsigned)col.metric.size());
+      max_units_col = std::max(max_units_col, (unsigned)col.units.size());
+    }
+
+    for (const metric_val &col : mm.columns) {
+      if (col.is_info && os.verbosity <= 1)
+        continue;
+      std::cout << "  " << std::setw(max_metric_col) << std::left << col.metric;
+      std::cout << "  " << std::setw(max_units_col) << std::left << col.units;
+      for (const auto &mv : col.values) {
+        std::cout << "  " << std::setw(16) << std::right
+                  << format_metric_value(mv);
+      }
+      std::cout << "\n";
+    }
+  }
+}
+
+static void emit_metrics_csv(const cls::opts &os, const cls::mdapi_ctrs &mdcs)
+{
+  const char *OUTPUT_CSV_FILE = "metrics.csv";
+  std::ofstream ofs {OUTPUT_CSV_FILE, std::ofstream::out};
+  if (!ofs.good()) {
+    std::cerr << OUTPUT_CSV_FILE << ": failed to open file\n";
+    exit(EXIT_FAILURE);
+  }
+  for (const auto &m : mdcs) {
+    const cls::dispatch_spec *ds = std::get<0>(m);
+    ofs << "\"";
+    ds->str(ofs, cls::format_opts());
+    ofs << "\"";
+    ofs << "\n";
+    const metric_map &mm = std::get<1>(m);
+    unsigned max_col_len = 0;
+    for (const metric_val &col : mm.columns) {
+      if (col.is_info && os.verbosity <= 1)
+        continue;
+      ofs << "," << col.metric;
+      max_col_len = std::max(max_col_len, (unsigned)col.values.size());
+    }
+    ofs << "\n";
+    for (unsigned row_ix = 0; row_ix < max_col_len; row_ix++) {
+      for (const metric_val &col : mm.columns) {
+        if (col.is_info && os.verbosity <= 1)
+          continue;
+        std::stringstream ss;
+        if (row_ix < (unsigned)col.values.size()) {
+          const metric_val::mval &mv = col.values[row_ix];
+          ss << format_metric_value(mv);
+        }
+        ofs << "," << ss.str();
+      }
+      ofs << "\n";
+    } // cols
+  }
+  if (os.verbosity >= 0) {
+    std::cout << OUTPUT_CSV_FILE << ": wrote data to file\n";
+  }
 }

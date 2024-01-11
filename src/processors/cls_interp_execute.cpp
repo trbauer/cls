@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 
+
 void compiled_script::destroy()
 {
   delete (compiled_script_impl *)impl;
@@ -20,7 +21,7 @@ disp_times compiled_script::get_wall_times() const
   disp_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const dispatch_command *dc : csi->dispatches)
-    ts.emplace_back(dc->spec,dc->wall_times);
+    ts.emplace_back(dc->spec, dc->wall_times);
   return ts;
 }
 
@@ -29,7 +30,7 @@ disp_times compiled_script::get_prof_times() const
   disp_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const dispatch_command *dc : csi->dispatches)
-    ts.emplace_back(dc->spec,dc->prof_times);
+    ts.emplace_back(dc->spec, dc->prof_times);
   return ts;
 }
 
@@ -38,8 +39,17 @@ init_times compiled_script::get_init_times() const
   init_times ts;
   const compiled_script_impl *csi = (const compiled_script_impl *)impl;
   for (const surface_object *so : csi->surfaces)
-    ts.emplace_back(so->init,so->init_times);
+    ts.emplace_back(so->init, so->init_times);
   return ts;
+}
+mdapi_ctrs compiled_script::get_mdapi_ctrs() const
+{
+  mdapi_ctrs cs;
+  const compiled_script_impl *csi = (const compiled_script_impl *)impl;
+  for (const dispatch_command *dc : csi->dispatches) {
+    cs.emplace_back(dc->spec, dc->mdapi_ctrs);
+  }
+  return cs;
 }
 
 
@@ -609,6 +619,10 @@ void compiled_script_impl::execute(dispatch_command &dc)
 
   printSurfaces(true);
 
+  if (dc.dobj->md) {
+    dc.dobj->md->activate();
+  }
+
   auto start_execute = std::chrono::high_resolution_clock::now();
 
   cl_event enq_evt;
@@ -644,6 +658,37 @@ void compiled_script_impl::execute(dispatch_command &dc)
     dc.prof_times.add((en - st)/1000.0/1000.0/1000.0);
     debugAt(dc_at,
       "CL_PROFILING_COMMAND_START: ", en, "; CL_PROFILING_COMMAND_END: ", en);
+  }
+
+  if (dc.dobj->md) {
+    dc.dobj->md->deactivate();
+    uint32_t rep_buf_len = dc.dobj->md->get_query_report_size();
+    if (!rep_buf_len) {
+      fatalAt(dc_at, "mdapi_lib get_report_size() returned 0");
+    }
+    char *rep_buf = new char[rep_buf_len];
+    memset(rep_buf, 0, rep_buf_len);
+    size_t output_size = 0;
+    CL_COMMAND(dc_at,
+      clGetEventProfilingInfo,
+        enq_evt,
+        CL_PROFILING_COMMAND_PERFCOUNTERS_INTEL,
+        (size_t)rep_buf_len,
+        rep_buf,
+        &output_size);
+    if (rep_buf_len != output_size) {
+      fatalAt(dc_at, "mdapi_lib: get_report_size() returned wrong length");
+    }
+
+    if (!dc.dobj->md->parse_counter_buffer(dc.mdapi_ctrs, rep_buf)) {
+      fatalAt(
+          dc_at,
+          "mdapi_lib: parsing counters failed (",
+          dc.dobj->md->get_error(),
+          ")");
+    }
+
+    delete[] rep_buf;
   }
 
   cl_int enq_evt_st = 0;

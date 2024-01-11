@@ -1,7 +1,8 @@
 #ifndef DEVICES_HPP
 #define DEVICES_HPP
 #include "cls_opts.hpp"
-#include "cl_headers.hpp"
+#include "cl_lib.hpp"
+#include "../deps/mdapi/mdapi_wrapper.hpp"
 
 #include <string>
 
@@ -32,8 +33,7 @@ cl_device_id    getDeviceByIndex(
   const cls::opts &opts,
   int dev_ix);
 
-cl_device_id    getDeviceDefault(
-  const cls::opts &opts);
+cl_device_id    getDeviceDefault();
 
 void            listDeviceInfo(
   const cls::opts &opts);
@@ -77,7 +77,11 @@ enum class microarch {
   INTEL_GEN9P7 = ((static_cast<int>(vendor::INTEL) << 16) | 0x0097), // KBL+
   INTEL_GEN10  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00A0),
   INTEL_GEN11  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00B0),
-  INTEL_GEN12  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00C0),
+  INTEL_XELPG  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00C0),
+  INTEL_XEHPG  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00D0), // ARC
+  INTEL_XEHPC  = ((static_cast<int>(vendor::INTEL) << 16) | 0x00E0), // MAX
+  INTEL_XE2LPG = ((static_cast<int>(vendor::INTEL) << 16) | 0x0100),
+  INTEL_XE2HPG = ((static_cast<int>(vendor::INTEL) << 16) | 0x0200),
   //
   // SPECIFY: we could split this up even more GV100, GV102, ... etc...
   // SPECIFY: or even maybe re-arrange by CUDA capability?
@@ -86,6 +90,7 @@ enum class microarch {
   NVIDIA_VOL  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0007),
   NVIDIA_TUR  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0008),
   NVIDIA_AMP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0009),
+  NVIDIA_HOP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x000A),
   //
   OTHER       = 0x7FFF0000,
 };
@@ -93,7 +98,7 @@ enum class microarch {
 static inline bool isIntelGEN(microarch p) {
   return
     static_cast<int>(p) >= static_cast<int>(microarch::INTEL_GEN7P5) &&
-    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_GEN12);
+    static_cast<int>(p) <= static_cast<int>(microarch::INTEL_XE2HPG);
 }
 
 microarch   getDeviceMicroArchitecture(cl_device_id d);
@@ -108,13 +113,18 @@ static const char *format(microarch ma)
   case microarch::INTEL_GEN9P7: return "intc_gen9p7";
   case microarch::INTEL_GEN10:  return "intc_gen10";
   case microarch::INTEL_GEN11:  return "intc_gen11";
-  case microarch::INTEL_GEN12:  return "intc_gen12";
+  case microarch::INTEL_XELPG:  return "intc_xelpg";
+  case microarch::INTEL_XEHPG:  return "intc_xehpg";
+  case microarch::INTEL_XEHPC:  return "intc_xehpc";
+  case microarch::INTEL_XE2LPG: return "intc_xe2lpg";
+  case microarch::INTEL_XE2HPG: return "intc_xe2hpg";
   //
   case microarch::NVIDIA_MAX:   return "nvda_max";
   case microarch::NVIDIA_PAS:   return "nvda_pas";
   case microarch::NVIDIA_VOL:   return "nvda_vol";
   case microarch::NVIDIA_TUR:   return "nvda_tur";
   case microarch::NVIDIA_AMP:   return "nvda_amp";
+  case microarch::NVIDIA_HOP:   return "nvda_hop";
   //
   default:
     return "?";
@@ -123,12 +133,4 @@ static const char *format(microarch ma)
 
 // const char *getDriverPath(cl_device_id d);
 
-// uses OpenCL 1.0 functions to create the command queue so that 1.1
-// implementations can still functions
-cl_int            makeCommandQueue(
-  bool profiling_queue,
-  cl_device_id dev_id,
-  cl_context &context,
-  cl_command_queue &queue);
-
-#endif
+#endif // DEVICES_HPP

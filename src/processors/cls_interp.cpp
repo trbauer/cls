@@ -47,6 +47,14 @@ compiled_script_impl::~compiled_script_impl()
     CL_COMMAND(dobj->spec->defined_at,
       clReleaseContext,
         dobj->context);
+
+    delete dobj->cl;
+    dobj->cl = nullptr;
+
+    if (dobj->md) {
+      delete dobj->md;
+      dobj->md = nullptr;
+    }
   }
 
   for (const auto &s : samplers) {

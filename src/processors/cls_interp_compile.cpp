@@ -4,6 +4,8 @@
 #include "../system.hpp"
 #include "../text.hpp"
 #include "cls_interp_internal.hpp"
+#include "../cl_lib.hpp"
+#include "../../deps/mdapi/mdapi_wrapper.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -24,7 +26,10 @@ struct script_compiler : cl_interface {
     const opts &_os,
     const script &_s,
     compiled_script_impl *_csi)
-    : cl_interface(ds, _s.source), os(_os), s(_s), csi(_csi)
+      : cl_interface(ds, _s.source),
+        os(_os),
+        s(_s),
+        csi(_csi)
   {
   }
   void compile();
@@ -607,12 +612,66 @@ static void CL_CALLBACK dispatchContextNotify(
   dobj->contextNotify(errinfo, private_info, cb, user_data);
 }
 
+// We use the old 1.0 style command queue creation since the host running
+// this might not be 1.2+.
+#ifdef _MSC_VER
+// disable the deprecation warning on clCreateCommandQueue
+#pragma warning(disable : 4996)
+#endif
+static cl_command_queue makeCommandQueue(
+  script_compiler &ds,
+  loc at,
+  const cl_lib &cl,
+  const mdapi_lib *md,
+  bool profiling_queue,
+  std::string metric_counter_set,
+  cl_device_id dev_id,
+  cl_context &ctx)
+{
+  cl_command_queue queue = nullptr;
+  cl_command_queue_properties props = 0;
+  if (profiling_queue) {
+    props |= CL_QUEUE_PROFILING_ENABLE;
+  }
+  cl_int err = 0;
+  const char *cl_function = "clCreateCommandQueue";
+  if (!metric_counter_set.empty()) {
+    props |= CL_QUEUE_PROFILING_ENABLE; // -tMD implies -tCL?
+    if (!isIntelGEN(getDeviceMicroArchitecture(dev_id))) {
+      ds.fatalAt(at, "-tMD=.. set, but device does not support MDAPI");
+    }
+    if (md == nullptr) {
+      ds.internalAt(at, "-tMD=.. set, but library not loaded");
+    }
+    if (cl.clCreatePerfCountersCommandQueueINTEL == nullptr) {
+      ds.fatalAt(
+          at,
+          "-tMD=.. cannot find clCreatePerfCountersCommandQueueINTEL "
+          "on this device");
+    }
+
+    cl_function = "clCreatePerfCountersCommandQueueINTEL";
+    cl_uint mdapi_config = md->get_configuration();
+    queue                = cl.clCreatePerfCountersCommandQueueINTEL(
+        ctx, dev_id, props, mdapi_config, &err);
+  } else {
+    queue = clCreateCommandQueue(ctx, dev_id, props, &err);
+  }
+  if (err != CL_SUCCESS) {
+    ds.fatalAt(
+      at,
+      cl_function, ": failed to create command queue for device "
+      "(", status_to_symbol(err), ")");
+  }
+  return queue;
+}
+
 device_object &script_compiler::createDeviceObject(const device_spec *ds)
 {
   cl_device_id dev_id;
   switch (ds->skind) {
   case device_spec::BY_DEFAULT:
-    dev_id = getDeviceDefault(os);
+    dev_id = getDeviceDefault();
     break;
   case device_spec::BY_INDEX:
     if (!getDeviceByIndex(os, ds->by_index_value, dev_id)) {
@@ -637,8 +696,25 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
   }
 
   device_object &dobj =
-    csi->devices.emplace_back(dev_key,
-      getDiagnostics(), ds, dev_id);
+      csi->devices.emplace_back(dev_key, getDiagnostics(), ds, dev_id, os.verbosity);
+  if (!os.metric_counter_set.empty()) {
+    if (!isIntelGEN(getDeviceMicroArchitecture(dev_id))) {
+      fatalAt(ds->defined_at, "-tMD=.. set but device does not support MDAPI");
+    }
+    dobj.md = new mdapi_lib();
+    if (!dobj.md->is_loaded())
+      fatalAt(
+          ds->defined_at,
+          "-tMD=",
+          os.metric_counter_set,
+          ": failed to load MDAPI library (", dobj.md->get_error(), ")");
+    if (!dobj.md->bind(os.metric_counter_set.c_str()))
+      fatalAt(
+          ds->defined_at,
+          "-tMD=", os.metric_counter_set, ": failed to bind to counter set");
+  }
+  cl_lib *cl = new cl_lib(os.verbosity, dev_id);
+
   cl_context context;
   // const cl_context_properties props {...};
   CL_COMMAND_CREATE(context, ds->defined_at,
@@ -655,16 +731,16 @@ device_object &script_compiler::createDeviceObject(const device_spec *ds)
     debugAt(ds->defined_at, "created context on ", dev_nm);
   }
 
-  cl_command_queue cq;
-  auto cl_err = makeCommandQueue(os.prof_time, dev_id, dobj.context, cq);
-  if (cl_err != CL_SUCCESS) {
-    fatalAt(
+  dobj.queue = makeCommandQueue(
+      *this,
       ds->defined_at,
-      "clCreateCommandQueue: failed to create command queue for device "
-      "(", status_to_symbol(cl_err), ")");
-  }
-  dobj.queue = cq;
-  // test((*dobj.context)(),cq);
+      *dobj.cl,
+      dobj.md,
+      os.prof_time,
+      os.metric_counter_set,
+      dev_id,
+      dobj.context);
+
   return dobj;
 }
 
@@ -1137,7 +1213,7 @@ compiled_script cls::compile(
   auto *csi = new compiled_script_impl(ds, os, s);
   cs.impl = csi;
 
-  script_compiler sc(ds, os, s, csi);
+  script_compiler sc {ds, os, s, csi};
   sc.compile();
 
   return cs;
