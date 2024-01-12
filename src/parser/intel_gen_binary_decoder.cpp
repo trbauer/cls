@@ -148,7 +148,7 @@ struct igb_decoder : decoder {
     auto type_name = decode_string(type_name_len);
     size_t semi = type_name.find(';');
     size_t star = type_name.find('*');
-    auto base_type = type_name.substr(0,std::min(semi,star));
+    auto base_type = type_name.substr(0, std::min(semi, star));
     const type *t = lookup_builtin_type(base_type, ptr_size);
     if (!t) {
       fatal(
@@ -158,7 +158,7 @@ struct igb_decoder : decoder {
     if (star != std::string::npos) {
       // something like "uint*;8";
       // but handle harder stuff too like "uint***;8"
-      for (size_t i = star; i < std::min(semi,type_name.size()); i++) {
+      for (size_t i = star; i < std::min(semi, type_name.size()); i++) {
         if (type_name[i] == '*') {
           t = &pi.pointer_to(*t, ptr_size);
         }

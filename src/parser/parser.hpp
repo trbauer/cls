@@ -139,9 +139,9 @@ namespace cls {
         }
         // const char *str = yyget_text(yy);
         // printf("AT %u.%u(%u:%u:\"%s\"): %s\n",
-        //  lno, col, off, len, str, lexeme_string(lxm));
-        // struct Loc loc(lno,col,off,len);
-        // show_token(inp, loc, std::cout);
+        //  lno, col, off, len,str, lexeme_string(lxm));
+        // struct loc at{lno, col, off, len};
+        // show_token(inp, at, std::cout);
 
         if (lxm == END_OF_FILE) {
           m_eof = cls::token(lxm, lno, col, off, len); // update EOF w/ loc

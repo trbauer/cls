@@ -127,7 +127,7 @@ const type *cls::lookup_builtin_type(std::string name, size_t bytes_per_addr)
   } else {
     auto pos = name.find(' ');
     if (pos != std::string::npos) {
-      auto tk1 = name.substr(0,pos);
+      auto tk1 = name.substr(0, pos);
       auto tk2 = name.substr(pos);
       if (tk2 == "char" || tk2 == "short" || tk2 == "int" || tk2 == "long") {
         if (tk1 == "signed") {
