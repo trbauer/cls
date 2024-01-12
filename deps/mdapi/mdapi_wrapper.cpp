@@ -75,7 +75,7 @@ static void *load_mdapi_lib()
 {
   void *ret = NULL;
   if (MDAPI_FULLPATH) {
-    ret = dlopen(metricsLibraryName.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    ret = dlopen(MDAPI_FULLPATH, RTLD_LAZY | RTLD_LOCAL);
   } else {
     if (ret == NULL) {
       ret = dlopen(MDAPI_LIB, RTLD_LAZY | RTLD_LOCAL);
@@ -90,6 +90,10 @@ static void *load_mdapi_lib()
   return ret;
 }
 
+static void *load_sym(void *lib, const char *sym)
+{
+  return dlsym(lib, sym);
+}
 #else
 #error "Invalid host platform"
 #endif

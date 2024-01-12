@@ -967,6 +967,7 @@ void script_compiler::compile()
     };
     switch (si.skind)
     {
+    case script_instruction::DISPATCH: break; // skip
     case script_instruction::DIFFS: {
       diffs_command *dfsc = si.dfsc;
       // sut surface

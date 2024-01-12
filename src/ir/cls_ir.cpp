@@ -134,13 +134,18 @@ static void fmt(std::ostream &os, format_opts fopts, const S *s) {
 
 void spec::str(std::ostream &os, format_opts fopts) const {
   switch (skind) {
-  case spec::STATEMENT_SPEC: ((const statement_spec*)this)->str(os,fopts); break;
-  case spec::STATEMENT_LIST_SPEC: ((const statement_list_spec*)this)->str(os,fopts); break;
+  case spec::STATEMENT_SPEC:
+    ((const statement_spec*)this)->str(os, fopts);
+    break;
+  case spec::STATEMENT_LIST_SPEC:
+    ((const statement_list_spec*)this)->str(os, fopts);
+    break;
   //
-  case spec::INIT_SPEC: ((const init_spec*)this)->str(os,fopts); break;
-  case spec::DEVICE_SPEC: ((const device_spec*)this)->str(os,fopts); break;
-  case spec::PROGRAM_SPEC: ((const program_spec*)this)->str(os,fopts); break;
-  case spec::KERNEL_SPEC: ((const kernel_spec*)this)->str(os,fopts); break;
+  case spec::INIT_SPEC: ((const init_spec*)this)->str(os, fopts); break;
+  case spec::DEVICE_SPEC: ((const device_spec*)this)->str(os, fopts); break;
+  case spec::PROGRAM_SPEC: ((const program_spec*)this)->str(os, fopts); break;
+  case spec::KERNEL_SPEC: ((const kernel_spec*)this)->str(os, fopts); break;
+  default: os << "???"; break;
   }
 }
 
@@ -614,6 +619,8 @@ void init_spec_file::str(std::ostream &os, format_opts fopts) const
   case file_flavor::TXT_COL:
     os << "text_col" << "," << col << "," << sep;
     break;
+  default:
+    os << "init_spec_file(?)";
   }
   os << ">(\"" << path << "\")";
 }

@@ -104,6 +104,7 @@ namespace cls
       case type_builtin::IMAGE2D_ARRAY_MSAA_DEPTH:
       case type_builtin::IMAGE3D:
         return true;
+      default: break;
       }
       return false;
     }
@@ -390,6 +391,15 @@ namespace cls
     constexpr type(type_ptr t) : var(t) { }
     constexpr type(type_vector t) : var(t) { }
 
+    // template <typename T>
+    // operator const T&() const {return std::get<T>(var);}
+
+    template <typename T>
+    constexpr bool is() const noexcept {return std::holds_alternative<T>(var);}
+
+    template <typename T>
+    constexpr const T &as() const {return std::get<T>(var);}
+
     constexpr size_t size() const {
       if (is<type_array>()) {
         return as<type_array>().size();
@@ -413,15 +423,6 @@ namespace cls
     }
 
     std::string syntax() const;
-
-    // template <typename T>
-    // operator const T&() const {return std::get<T>(var);}
-
-    template <typename T>
-    constexpr bool is() const noexcept {return std::holds_alternative<T>(var);}
-
-    template <typename T>
-    constexpr const T &as() const {return std::get<T>(var);}
   }; // types
 
 
