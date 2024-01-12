@@ -628,16 +628,16 @@ namespace cls
 
     param_map                                           param_uses;
 
-    let_spec(loc loc,std::string ident, spec *_value = nullptr)
-      : statement_spec(loc, statement_spec::LET)
+    let_spec(loc at, std::string ident, spec *_value = nullptr)
+      : statement_spec(at, statement_spec::LET)
       , identifier(ident)
-      , value(value) { }
+      , value(_value) { }
     void str(std::ostream &os, format_opts fopts) const;
   };
   // barrier
   struct barrier_spec : statement_spec {
-    barrier_spec(loc loc) : statement_spec(loc, statement_spec::BARRIER) { }
-    void str(std::ostream &os,format_opts fopts) const {os << "barrier";}
+    barrier_spec(loc at) : statement_spec(at, statement_spec::BARRIER) { }
+    void str(std::ostream &os, format_opts fopts) const {os << "barrier";}
   };
   // diff(REF,SUT)       => exits the program non-zero if there is a difference
   // diff<TYPE>(REF,SUT) => exits the program non-zero if there is a difference
