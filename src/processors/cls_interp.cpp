@@ -1004,7 +1004,13 @@ void evaluator::set_kernel_arg_image(
     so->image_init_bytes = image_arg_data;
   }
   //
-  dc.surfaces.emplace_back(so, ai.arg_type->as<type_builtin>(), ai, at);
+  if (!ai.arg_type->as<type_builtin>().is_surface()) {
+    fatal_at(
+        ism->defined_at,
+        "argument ", ai.name, " mismatches image initializer "
+        "(e.g. kernel arg should image2d_t");
+  }
+  dc.surfaces.emplace_back(so, *ai.arg_type, ai, at);
   //
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
