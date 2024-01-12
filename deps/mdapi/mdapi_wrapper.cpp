@@ -198,12 +198,14 @@ struct mdapi_wrapper_impl {
       CloseMetricsDevice(m_device);
       m_device = nullptr;
     }
+    if (lib) {
 #ifdef _WIN32
-    (void)FreeLibrary((HMODULE)lib);
+      (void)FreeLibrary((HMODULE)lib);
 #else
-    (void)dlclose(lib);
+      (void)dlclose(lib);
 #endif
-    lib = nullptr;
+      lib = nullptr;
+    }
   }
 
   std::string get_version() {

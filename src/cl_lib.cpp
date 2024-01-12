@@ -13,7 +13,7 @@ using namespace cls;
 #ifdef WIN32
   const char *LIB_FILE = "OpenCL.dll";
 #else
-  const char *LIB_FILE = "OpenCL.so";
+  const char *LIB_FILE = "libOpenCL.so";
 #endif
 
 const cl_lib cl_lib::DEFAULT {0, nullptr};
