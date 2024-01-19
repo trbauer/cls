@@ -47,10 +47,70 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
   };
 
   //////////////////////////
-  clGetDeviceInfo = (clGetDeviceInfo_Fn)get("clGetDeviceInfo");
-  clCreateCommandQueue = (clCreateCommandQueue_Fn)get("clCreateCommandQueue");
-  clGetEventProfilingInfo =
-      (clGetEventProfilingInfo_Fn)get("clGetEventProfilingInfo");
+#define BIND_SYM(FSYM) \
+  FSYM = (FSYM##_Fn)get(#FSYM)
+
+  BIND_SYM(clGetPlatformIDs);
+  BIND_SYM(clGetPlatformInfo);
+  //
+  BIND_SYM(clGetDeviceIDs);
+  BIND_SYM(clGetDeviceInfo);
+  //
+  BIND_SYM(clCreateContext);
+  BIND_SYM(clGetContextInfo);
+  BIND_SYM(clReleaseContext);
+  //
+  BIND_SYM(clCreateCommandQueue);
+  BIND_SYM(clCreateCommandQueueWithProperties);
+  BIND_SYM(clReleaseCommandQueue);
+  //
+  BIND_SYM(clCreateBuffer);
+  BIND_SYM(clReleaseMemObject);
+  BIND_SYM(clGetMemObjectInfo);
+  BIND_SYM(clGetImageInfo);
+  //
+  BIND_SYM(clSVMAlloc);
+  BIND_SYM(clSVMFree);
+  //
+  BIND_SYM(clCreateImage);
+  BIND_SYM(clCreateSamplerWithProperties);
+  BIND_SYM(clReleaseSampler);
+  //
+  BIND_SYM(clCreateProgramWithSource);
+  BIND_SYM(clCreateProgramWithBinary);
+  BIND_SYM(clCreateProgramWithBuiltInKernels);
+  BIND_SYM(clCreateProgramWithIL);
+  BIND_SYM(clBuildProgram);
+  BIND_SYM(clReleaseProgram);
+  //
+  BIND_SYM(clBuildProgram);
+  BIND_SYM(clCreateKernel);
+  BIND_SYM(clCreateKernelsInProgram);
+  BIND_SYM(clSetKernelArg);
+  BIND_SYM(clSetKernelArgSVMPointer);
+  BIND_SYM(clGetKernelInfo);
+  BIND_SYM(clGetKernelArgInfo);
+  BIND_SYM(clGetKernelWorkGroupInfo);
+  BIND_SYM(clGetKernelWorkGroupInfo);
+  BIND_SYM(clGetKernelSubGroupInfo);
+  BIND_SYM(clReleaseKernel);
+  //
+  BIND_SYM(clWaitForEvents);
+  BIND_SYM(clGetEventInfo);
+  BIND_SYM(clReleaseEvent);
+  BIND_SYM(clGetEventProfilingInfo);
+  //
+  BIND_SYM(clFlush);
+  BIND_SYM(clFinish);
+  BIND_SYM(clEnqueueReadBuffer);
+  BIND_SYM(clEnqueueWriteBuffer);
+  BIND_SYM(clEnqueueReadImage);
+  BIND_SYM(clEnqueueWriteImage);
+  BIND_SYM(clEnqueueMapBuffer);
+  BIND_SYM(clEnqueueMapImage);
+  BIND_SYM(clEnqueueUnmapMemObject);
+  BIND_SYM(clEnqueueNDRangeKernel);
+  //
   clGetExtensionFunctionAddressForPlatform =
       (clGetExtensionFunctionAddressForPlatform_Fn)find(
           "clGetExtensionFunctionAddressForPlatform");
