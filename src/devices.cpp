@@ -1,3 +1,4 @@
+#include "cl_lib.hpp"
 #include "devices.hpp"
 #include "text.hpp"
 #include "system.hpp"
@@ -24,18 +25,24 @@ static std::vector<cl_device_id> get_device_ids()
 {
   cl_platform_id *ps;
   cl_uint nps = 0;
-  CL_COMMAND(clGetPlatformIDs, 0, nullptr, &nps);
-  ps = (cl_platform_id *)alloca(sizeof(*ps)*(nps+1));
-  CL_COMMAND(clGetPlatformIDs, nps, ps, nullptr);
+  CL_COMMAND(cl_lib::DEFAULT.clGetPlatformIDs, 0, nullptr, &nps);
+  ps = (cl_platform_id *)alloca(sizeof(*ps) * (nps + 1));
+  CL_COMMAND(cl_lib::DEFAULT.clGetPlatformIDs, nps, ps, nullptr);
   //
   std::vector<cl_device_id> ds;
   for (cl_uint i = 0; i < nps; i++) {
     if (ps[i] == nullptr)
       continue;
     cl_uint nds;
-    CL_COMMAND(clGetDeviceIDs, ps[i], CL_DEVICE_TYPE_ALL, 0, nullptr, &nds);
+    CL_COMMAND(
+        cl_lib::DEFAULT.clGetDeviceIDs,
+        ps[i],
+        CL_DEVICE_TYPE_ALL,
+        0,
+        nullptr,
+        &nds);
     ds.resize(ds.size() + nds);
-    CL_COMMAND(clGetDeviceIDs,
+    CL_COMMAND(cl_lib::DEFAULT.clGetDeviceIDs,
       ps[i],
       CL_DEVICE_TYPE_ALL,
       nds,
@@ -51,14 +58,14 @@ cl_int get_device_info(
 {
   size_t n;
   //
-  auto err = clGetDeviceInfo(d, info, 0, nullptr, &n);
+  auto err = cl_lib::DEFAULT.clGetDeviceInfo(d, info, 0, nullptr, &n);
   if (err != CL_SUCCESS)
     return err;
   //
   char *str = (char *)alloca(n + 1);
   memset(str, 0, n + 1);
   //
-  err = clGetDeviceInfo(d, info, n + 1, str, nullptr);
+  err = cl_lib::DEFAULT.clGetDeviceInfo(d, info, n + 1, str, nullptr);
   if (err == CL_SUCCESS)
     value = str;
   return err;
@@ -69,12 +76,12 @@ std::string get_device_info(
 {
   size_t n;
   //
-  CL_COMMAND(clGetDeviceInfo, d, info, 0, nullptr, &n);
+  CL_COMMAND(cl_lib::DEFAULT.clGetDeviceInfo, d, info, 0, nullptr, &n);
   //
   char *str = (char *)alloca(n + 1);
   memset(str, 0, n + 1);
   //
-  CL_COMMAND(clGetDeviceInfo, d, info, n + 1, str, nullptr);
+  CL_COMMAND(cl_lib::DEFAULT.clGetDeviceInfo, d, info, n + 1, str, nullptr);
   //
   return std::string(str);
 }
@@ -85,7 +92,7 @@ std::string get_device_name(cl_device_id d)
 }
 cl_int get_device_info(cl_device_id d, cl_device_info info, cl_uint &value)
 {
-  auto err = clGetDeviceInfo(d, info, sizeof(value), &value, nullptr);
+  auto err = cl_lib::DEFAULT.clGetDeviceInfo(d, info, sizeof(value), &value, nullptr);
   return err;
 }
 
@@ -196,7 +203,7 @@ cl_spec get_device_spec(cl_device_id d) {
 vendor get_device_vendor(cl_device_id d)
 {
   cl_uint vendor = 0;
-  CL_COMMAND(clGetDeviceInfo,
+  CL_COMMAND(cl_lib::DEFAULT.clGetDeviceInfo,
     d, CL_DEVICE_VENDOR_ID, sizeof(vendor), &vendor, nullptr);
   if (vendor == 0x8086) {
     return vendor::INTEL;

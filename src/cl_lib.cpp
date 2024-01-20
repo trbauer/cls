@@ -26,9 +26,6 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
     std::cerr << LIB_FILE << ": failed to load\n";
     return;
   }
-  if (dev_id == nullptr) {
-    dev_id = get_device_default();
-  }
 
   auto get = [&](const char *func) {
     void *f = sys::get_symbol_address(lib, func);
@@ -114,6 +111,43 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
   clGetExtensionFunctionAddressForPlatform =
       (clGetExtensionFunctionAddressForPlatform_Fn)find(
           "clGetExtensionFunctionAddressForPlatform");
+  if (dev_id == nullptr) {
+    // this is really get_device_default()
+    cl_int err;
+    cl_uint nps = 0;
+    err = clGetPlatformIDs(0, nullptr, &nps);
+    if (err != CL_SUCCESS) {
+      std::cerr << "cl_lib: clGetPlatformIDs(0, nullptr, &nps) failed: "
+                << cls::status_to_symbol(err) << "\n";
+      exit(EXIT_INTERNAL_ERROR);
+    }
+    std::vector<cl_platform_id> ps {nps};
+    err = clGetPlatformIDs(nps, ps.data(), nullptr);
+    if (err != CL_SUCCESS) {
+      std::cerr << "cl_lib: clGetPlatformIDs(...) failed: "
+                << cls::status_to_symbol(err) << "\n";
+      exit(EXIT_INTERNAL_ERROR);
+    }
+
+    for (cl_uint i = 0; i < nps; i++) {
+      if (ps[i] == nullptr)
+        continue;
+      cl_uint nds = 0;
+      err = clGetDeviceIDs(ps[i], CL_DEVICE_TYPE_ALL, 1, &dev_id, &nds);
+      if (err != CL_SUCCESS) {
+        std::cerr << "cl_lib: clGetDeviceIDs(...) failed: "
+                  << cls::status_to_symbol(err) << "\n";
+        exit(EXIT_INTERNAL_ERROR);
+      }
+      if (nds > 0)
+        break; // dev_id is set
+    }
+    if (dev_id == nullptr) {
+      std::cerr << "cl_lib: unable to find device\n";
+      // which would be strange since we've bound all these APIs here!
+      exit(EXIT_INTERNAL_ERROR);
+    }
+  }
 
   //////////////////////////
   // load extensions

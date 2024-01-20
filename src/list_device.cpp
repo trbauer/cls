@@ -161,7 +161,8 @@ static void emit_device_info(
 {
   T value;
 
-  auto err = clGetDeviceInfo(dev_id, param, sizeof(T), &value, nullptr);
+  auto err = cl_lib::DEFAULT.clGetDeviceInfo(
+      dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
        << ANSI_RESET;
@@ -184,7 +185,8 @@ static void emit_device_info_mem(
     std::ostream &os, cl_device_id dev_id, cl_device_info param)
 {
   T    value;
-  auto err = clGetDeviceInfo(dev_id, param, sizeof(T), &value, nullptr);
+  auto err = cl_lib::DEFAULT.clGetDeviceInfo(
+      dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
        << ANSI_RESET;
@@ -218,7 +220,7 @@ void emit_device_info(
     const char       *units)
 {
   size_t size;
-  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
+  auto err1 = cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
        << ANSI_RESET;
@@ -226,7 +228,8 @@ void emit_device_info(
   }
 
   char *value = (char *)alloca(size + 1);
-  auto  err2  = clGetDeviceInfo(dev_id, param, size, value, nullptr);
+  auto  err2 =
+      cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
        << ANSI_RESET;
@@ -251,7 +254,8 @@ static void emit_platform_info(
     const char      *units = nullptr)
 {
   T    value;
-  auto err = clGetPlatformInfo(plt_id, param, sizeof(T), &value, nullptr);
+  auto err = cl_lib::DEFAULT.clGetPlatformInfo(
+      plt_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
        << ANSI_RESET;
@@ -277,7 +281,8 @@ void emit_platform_info(
     const char       *units)
 {
   size_t size;
-  auto   err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  auto   err1 =
+      cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
        << ANSI_RESET;
@@ -285,7 +290,8 @@ void emit_platform_info(
   }
 
   char *value = (char *)alloca(size + 1);
-  auto  err2  = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  auto  err2 =
+      cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
        << ANSI_RESET;
@@ -312,7 +318,7 @@ static void emit_device_info(
     const char    *units = nullptr)
 {
   cl_uint array_length;
-  auto    err1 = clGetDeviceInfo(
+  auto    err1 = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param_len, sizeof(array_length), &array_length, nullptr);
   if (err1 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1)
@@ -321,8 +327,8 @@ static void emit_device_info(
   }
 
   T   *value = (T *)alloca(array_length * sizeof(T));
-  auto err2 =
-      clGetDeviceInfo(dev_id, param, array_length * sizeof(T), value, nullptr);
+  auto err2 = cl_lib::DEFAULT.clGetDeviceInfo(
+      dev_id, param, array_length * sizeof(T), value, nullptr);
   if (err2 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
        << ANSI_RESET;
@@ -355,7 +361,8 @@ static void emit_device_info_array(
     Formatter<T> format_element_value)
 {
   size_t bytes_needed = 0;
-  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
+  auto   err1 =
+      cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
   if (err1 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << " (query)]"
        << ANSI_RESET;
@@ -370,7 +377,8 @@ static void emit_device_info_array(
   T *values = (T *)alloca(bytes_needed * sizeof(T));
   memset(values, 0, bytes_needed);
 
-  auto err2 = clGetDeviceInfo(dev_id, param, bytes_needed, values, nullptr);
+  auto err2 = cl_lib::DEFAULT.clGetDeviceInfo(
+      dev_id, param, bytes_needed, values, nullptr);
   if (err2 != CL_SUCCESS) {
     os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
        << ANSI_RESET;
@@ -402,19 +410,20 @@ static std::string get_device_info_string(
     cl_device_id dev_id, const char *what, cl_device_info param)
 {
   size_t size = 0;
-  auto   err1 = clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
+  auto err1 = cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
               << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
-    return "";
+    return "?";
   }
 
   char *value = (char *)alloca(size + 1);
-  auto  err2  = clGetDeviceInfo(dev_id, param, size, value, nullptr);
+  auto  err2 =
+      cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
               << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
-    return "";
+    return "?";
   }
   value[size] = 0;
   return std::string(value);
@@ -423,19 +432,21 @@ static std::string get_platform_info_string(
     cl_platform_id plt_id, const char *what, cl_platform_info param)
 {
   size_t size = 0;
-  auto   err1 = clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
+  auto   err1 =
+      cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
               << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
-    return "";
+    return "?";
   }
 
   char *value = (char *)alloca(size + 1);
-  auto  err2  = clGetPlatformInfo(plt_id, param, size, value, nullptr);
+  auto  err2 =
+      cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
               << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
-    return "";
+    return "?";
   }
   value[size] = 0;
   return std::string(value);
@@ -470,7 +481,7 @@ void list_device_info_for_device(
     const cls::opts &os, cl_device_id dev_id, int dev_ix)
 {
   cl_platform_id plt_id  = nullptr;
-  auto           plt_res = clGetDeviceInfo(
+  auto           plt_res = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, CL_DEVICE_PLATFORM, sizeof(plt_id), &plt_id, nullptr);
 
 #if defined(__GNUC__) && __GNUC__ >= 6
@@ -567,7 +578,7 @@ void list_device_info_for_device(
   std::cout << ANSI_RESET;
   if (os.verbosity <= 0) {
     cl_device_type dev_type;
-    auto           dt_err = clGetDeviceInfo(
+    auto           dt_err = cl_lib::DEFAULT.clGetDeviceInfo(
         dev_id, CL_DEVICE_TYPE, sizeof(dev_type), &dev_type, nullptr);
     if (dt_err) {
       std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " << ANSI_RED
