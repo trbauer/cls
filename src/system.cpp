@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "text.hpp"
+#include "fatal.hpp" // for for fatal exit
 
 #include <atomic>
 #include <fstream>
@@ -624,7 +625,7 @@ void sys::read_file_binary(std::string fname, bits &cs)
 {
   std::ifstream file(fname, std::ios::binary);
   if (!file.good()) {
-    FATAL("%s: file not found", fname.c_str());
+    cls::fatal(fname, ": file not found");
   }
   while (true) {
     int c = file.get();
@@ -647,7 +648,7 @@ std::string sys::read_file_text(std::string fname)
   std::string s;
   std::ifstream file(fname);
   if (!file.good()) {
-    FATAL("%s: file not found", fname.c_str());
+    cls::fatal(fname, ": file not found", fname);
   }
   s.append(std::istreambuf_iterator<char>(file),
             std::istreambuf_iterator<char>());
@@ -659,11 +660,10 @@ void sys::write_bin_file(
 {
   std::ofstream of(fname, std::ios::binary);
   if (!of.good())
-    FATAL("%s: failed to open output buffer file for writing",
-      fname.c_str());
+    cls::fatal(fname, ": failed to open output buffer file for writing");
   of.write((const char *)buf, buflen);
   if (!of.good())
-    FATAL("%s: error writing file", fname.c_str());
+    cls::fatal(fname, ": error writing file");
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -740,7 +740,7 @@ static void process_reader(process_io_args args)
         }
         break;
       }
-      FATAL("process_reader failed %d\n", (int)err);
+      cls::fatal("process_reader failed ", (int)err);
     } else if (nr == 0) {
       break;
     } else {
@@ -769,7 +769,7 @@ static void process_writer(process_io_args args)
       if (err = ERROR_BROKEN_PIPE) {
         break;
       }
-      FATAL("process_writer failed %d\n", (int)err);
+      cls::fatal("process_writer failed ", (int)err);
     }
   }
 }
@@ -1263,25 +1263,18 @@ static bool open_reg_key(
   };
 
   HKEY root;
-  if (strip_prefix(path,"HKLM") ||
-    strip_prefix(path,"HKEY_LOCAL_MACHINE"))
-  {
+  if (strip_prefix(path, "HKLM") || strip_prefix(path, "HKEY_LOCAL_MACHINE")) {
     root = HKEY_LOCAL_MACHINE;
-  } else if (strip_prefix(path,"HKCU") ||
-    strip_prefix(path,"HKEY_CURRENT_USER"))
-  {
+  } else if (
+      strip_prefix(path, "HKCU") || strip_prefix(path, "HKEY_CURRENT_USER")) {
     root = HKEY_CURRENT_USER;
-  } else if (strip_prefix(path,"HKCR") ||
-    strip_prefix(path,"HKEY_CLASSES_ROOT"))
-  {
+  } else if (
+      strip_prefix(path, "HKCR") || strip_prefix(path, "HKEY_CLASSES_ROOT")) {
     root = HKEY_CLASSES_ROOT;
-  } else if (strip_prefix(path,"HKCC") ||
-    strip_prefix(path,"HKEY_CURRENT_CONFIG"))
-  {
+  } else if (
+      strip_prefix(path, "HKCC") || strip_prefix(path, "HKEY_CURRENT_CONFIG")) {
     root = HKEY_CURRENT_CONFIG;
-  } else if (strip_prefix(path,"HKU") ||
-    strip_prefix(path,"HKEY_USERS"))
-  {
+  } else if (strip_prefix(path, "HKU") || strip_prefix(path, "HKEY_USERS")) {
     root = HKEY_USERS;
   } else {
     return false;
@@ -1534,7 +1527,7 @@ void sys::hide_cursor(struct cursor_info &ci)
   if (_isatty(_fileno(stdin)) &&
     !GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &ci.info))
   {
-    FATAL("hide_cursor_win32: GetConsoleCursorInfo()");
+    cls::fatal("hide_cursor_win32: GetConsoleCursorInfo()");
   }
 
   CONSOLE_CURSOR_INFO new_ci = ci.info;
@@ -1543,7 +1536,7 @@ void sys::hide_cursor(struct cursor_info &ci)
   if (_isatty(_fileno(stdin)) &&
     !SetConsoleCursorInfo(stdout_handle, &new_ci))
   {
-    FATAL("hide_cursor_win32: SetConsoleCursorInfo()");
+    cls::fatal("hide_cursor_win32: SetConsoleCursorInfo()");
   }
 }
 void sys::restore_cursor(const struct cursor_info &ci)
@@ -1551,7 +1544,7 @@ void sys::restore_cursor(const struct cursor_info &ci)
   if (_isatty(_fileno(stdin)) &&
     !SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &ci.info))
   {
-    FATAL("SetConsoleCursorInfo(restore)");
+    cls::fatal("SetConsoleCursorInfo(restore)");
   }
 }
 
@@ -1573,7 +1566,5 @@ void sys::restore_cursor(const struct cursor_info &ci)
   printf("\e[?25h"); // show cursor
   // system("setterm -cursor on");
 }
-#endif
-
-
-#endif
+#endif // _WIN32
+#endif // 0

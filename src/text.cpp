@@ -1,3 +1,4 @@
+#include "fatal.hpp"
 #include "system.hpp"
 #include "text.hpp"
 
@@ -201,7 +202,7 @@ void text::format_buffer(
 {
   bool using_cols = elems_per_row == 0;
   if (max_cols != 0 && elems_per_row != 0) {
-    FATAL("text::format_buffer can only accept maxcols xor elems_per_row");
+    cls::fatal("text::format_buffer can only accept maxcols xor elems_per_row");
   }
   else if (max_cols == 0 && elems_per_row == 0) {
     max_cols = sys::get_terminal_width();
@@ -319,7 +320,7 @@ std::string text::format_buffer_diff(
   ss << std::hex << std::setfill('0');
   if (elem_w != 1 && elem_w != 2 && elem_w != 4 && elem_w != 8)
     return format_buffer_diff(b, r, n_elems * elem_w, 1, cols, show_chars);
-  //    FATAL("invalid element width");
+
   cols = cols == 0 ? 16 : cols;
   if (cols == 0)
     cols = (elem_w == 1 || elem_w == 2) ? 16 :

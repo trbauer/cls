@@ -143,7 +143,6 @@ void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs)
   } else if (os.metric_format == cls::opts::CSV) {
     emit_metrics_csv(os, mdcs);
   } else {
-    std::cerr << "unexpected output format for -mf=..\n";
-    exit(EXIT_INTERNAL_ERROR);
+    cls::fatal_internal("unexpected output format for -mf=..\n");
   }
 }

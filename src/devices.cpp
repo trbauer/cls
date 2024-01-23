@@ -1,5 +1,6 @@
 #include "cl_lib.hpp"
 #include "devices.hpp"
+#include "fatal.hpp"
 #include "text.hpp"
 #include "system.hpp"
 
@@ -118,7 +119,8 @@ bool get_device_by_name(
     err_msg = text::format("no matching device found from set:\n", ss.str());
     return false;
   } else if (matching.size() > 1) {
-    err_msg = text::format("device name string is ambiguous in set:\n", ss.str());
+    err_msg =
+        text::format("device name string is ambiguous in set:\n", ss.str());
     return false;
   } else {
     dev_id = matching.front();
@@ -132,8 +134,8 @@ cl_device_id get_device_by_name(
 {
   cl_device_id dev_id;
   std::string err_msg;
-  if (!get_device_by_name(os,substr,dev_id,err_msg)) {
-    FATAL("%s", err_msg.c_str());
+  if (!get_device_by_name(os, substr, dev_id, err_msg)) {
+    cls::fatal(err_msg);
   }
   return dev_id;
 }
@@ -151,7 +153,7 @@ cl_device_id get_device_by_index(const cls::opts &os, int dev_ix)
 {
   cl_device_id dev_id;
   if (!get_device_by_index(os, dev_ix, dev_id)) {
-    FATAL("device index out of bounds");
+    cls::fatal("device index out of bounds");
   }
   return dev_id;
 }
@@ -160,7 +162,7 @@ cl_device_id get_device_default()
 {
   auto ds = get_device_ids();
   if (ds.empty()) {
-    std::cerr << "get_device_default: no devices found\n";
+    cls::fatal("get_device_default: no devices found");
   }
   return ds[0];
 }

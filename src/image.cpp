@@ -1,4 +1,5 @@
 #include "image.hpp"
+#include "fatal.hpp"
 #include "system.hpp"
 #ifdef USE_LODE_PNG
 // up from src and in deps
@@ -38,7 +39,7 @@ image::image(size_t w, size_t h, size_t p, enum data_format f)
   , format(f)
 {
   if (p < bytes_per_pixel(f) * w)
-    FATAL("image::image: pitch is too small for width*bytes-per-pixel");
+    cls::fatal("image::image: pitch is too small for width*bytes-per-pixel");
   memset(bits, 0, pitch*alloc_height);
 }
 image::image(size_t w, size_t h, enum data_format f)
@@ -56,7 +57,7 @@ size_t image::bytes_per_pixel(enum data_format f) {
   case image::ARGB:
   case image::BGRA:
     return 4;
-  default: FATAL("invalid image format %d", (int)f);
+  default: cls::fatal("invalid image format: ", f);
   }
 }
 
@@ -70,9 +71,9 @@ void image::assign(
 {
   const size_t bpp = bytes_per_pixel(f);
   if (ah < h) {
-    FATAL("invalid allocation height");
+    cls::fatal("image::assign: invalid allocation height");
   } else if (p < w * bpp) {
-    FATAL("invalid pitch");
+    cls::fatal("image::assign: invalid pitch");
   }
 
   release();
@@ -128,7 +129,7 @@ image image::convert(enum data_format to) const {
         r = *ibits++;
         a = *ibits++;
       } else {
-        FATAL("image::convert: invalid format");
+        cls::fatal("image::convert: invalid format");
       }
 
       if (copy.format == image::I) {
@@ -159,7 +160,7 @@ image image::convert(enum data_format to) const {
         *obits++ = r;
         *obits++ = a;
       } else {
-        FATAL("image::convert: invalid format");
+        cls::fatal("image::convert: invalid format");
       }
     }
     ibits += pitch_slack;
@@ -200,7 +201,7 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
 #define FAIL(X) \
   do { \
     if (fatal_if_error) { \
-      FATAL("image::load_ppm: could not open file"); \
+      cls::fatal("image::load_ppm: could not open file"); \
     } else { \
       return nullptr; \
     } \
@@ -208,7 +209,7 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
 
   std::ifstream ifs(file, std::ifstream::binary);
   if (!ifs.is_open())
-    FAIL("image::load_ppm: could not open file");
+    cls::fatal("image::load_ppm: could not open file");
 
   std::string ln;
   auto getLine = [&]() {
@@ -224,12 +225,12 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
   while (ifs.peek() == '#')
     getLine();
   if (!getLine()) {
-    FAIL("image::load_ppm: error parsing file");
+    cls::fatal("image::load_ppm: error parsing file");
   }
   bool is_p6 = ln == "P6";
   bool is_p3 = ln == "P3";
   if (!is_p6 && !is_p3) {
-    FAIL("image::load_ppm: error parsing file");
+    cls::fatal("image::load_ppm: error parsing file");
   }
 
   while (ifs.peek() == '#')
@@ -244,11 +245,11 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
     ifs.get();
   }
   if (!ifs)
-    FAIL("image::load_ppm: error parsing image header");
+    cls::fatal("image::load_ppm: error parsing image header");
   if (max_value <= 0 || width <= 0 || height <= 0)
-    FAIL("image::load_ppm: invalid image dimensions");
+    cls::fatal("image::load_ppm: invalid image dimensions");
   if (max_value > 255)
-    FAIL("image::load_ppm: only single byte-per-channel images supported");
+    cls::fatal("image::load_ppm: only single byte-per-channel images supported");
   // size_t data_start = (size_t)ifs.tellg();
   image *i = new image(width, height, image::RGB);
   if (is_p6) { // binary
@@ -259,13 +260,13 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
         int r = -1, g = -1, b = -1;
         ifs >> r;
         if (!ifs || r < 0 || r > max_value)
-          FAIL("image::load_ppm: error reading pixel");
+          cls::fatal("image::load_ppm: error reading pixel");
         ifs >> g;
         if (!ifs || g < 0 || g > max_value)
-          FAIL("image::load_ppm: error reading pixel");
+          cls::fatal("image::load_ppm: error reading pixel");
         ifs >> b;
         if (!ifs || b < 0 || b > max_value)
-          FAIL("image::load_ppm: error reading pixel");
+          cls::fatal("image::load_ppm: error reading pixel");
         i->bits[h*i->pitch + 3*w + 0] = (uint8_t)r;
         i->bits[h*i->pitch + 3*w + 1] = (uint8_t)g;
         i->bits[h*i->pitch + 3*w + 2] = (uint8_t)b;
@@ -276,7 +277,7 @@ image *image::load_ppm(const char *file, bool fatal_if_error)
   }
   // size_t data_end = (size_t)ifs.tellg();
   if (ifs.get() != EOF) { // can't use ifs.eof()
-    FAIL("image::load_ppm: expected end of file");
+    cls::fatal("image::load_ppm: expected end of file");
   }
   return i;
 }
@@ -399,7 +400,7 @@ static void *create_bmp_image_data(const image &img, size_t &out_size)
         g = *img_bits++;
         r = *img_bits++;
       } else {
-        FATAL("create_bmp_image_data: invalid format");
+        cls::fatal("create_bmp_image_data: invalid format");
       }
 #if 0
       // Got rid of this because I kept adding formats and needed a uniform
@@ -427,7 +428,7 @@ static void *create_bmp_image_data(const image &img, size_t &out_size)
         g = *img_bits++;
         b = *img_bits++;
       } else {
-        FATAL("create_bmp_image_data: invalid format");
+        cls::fatal("create_bmp_image_data: invalid format");
       }
 #endif
       // TODO: support intensity images?
@@ -466,7 +467,7 @@ void image::save_bmp(const char *file_name) const
 
   std::ofstream file(file_name, std::ios::binary);
   if (!file.is_open()) {
-    FATAL("image::save_bmp: could not open file");
+    cls::fatal("image::save_bmp: could not open file");
   }
   file.write((const char *)&bfh, sizeof(bfh));
   // no color table: using BITMAPINFOHEADER
@@ -482,7 +483,7 @@ image *image::load_bmp(const char *file_name, bool fatal_if_error)
   std::ifstream file(file_name, std::ios::binary);
   if (!file.is_open()) {
     if (fatal_if_error)
-      FATAL("%s: failed to open", file_name);
+      cls::fatal(file_name, ": failed to open");
     return nullptr;
   }
   file.seekg(0, std::ios::end);
@@ -494,30 +495,31 @@ image *image::load_bmp(const char *file_name, bool fatal_if_error)
   std::vector<uint8_t> buffer((size_t)size);
   if (!file.read((char *)buffer.data(), size)) {
     if (fatal_if_error)
-      FATAL("%s: failed to read", file_name);
+      cls::fatal(file_name, ": failed to read");
     return nullptr;
   }
   BITMAPFILEHEADER& bfh = (BITMAPFILEHEADER&)buffer[0];
   if (bfh.bfType != 0x4D42) {
     if (fatal_if_error)
-      FATAL("%s: not a bitmap file", file_name);
+      cls::fatal("%s: not a bitmap file", file_name);
     return nullptr;
   }
   BITMAPINFO& bi = (BITMAPINFO&)buffer[sizeof(BITMAPFILEHEADER)];
   BITMAPINFOHEADER& bih = bi.bmiHeader;
   if (bih.biCompression != BI_RGB) {
     if (fatal_if_error)
-      FATAL("%s: unsupported format (bih.biCompression != BI_RGB)", file_name);
+      cls::fatal(
+          file_name, ": unsupported format (bih.biCompression != BI_RGB)");
     return nullptr;
   }
   if (bih.biClrUsed != 0) {
     if (fatal_if_error)
-      FATAL("%s: unsupported format (biClrUsed != 0)", file_name);
+      cls::fatal(file_name, ": unsupported format (biClrUsed != 0)");
     return nullptr;
   }
   if (bih.biClrImportant != 0) {
     if (fatal_if_error)
-      FATAL("%s: unsupported format (biClrImportant != 0)", file_name);
+      cls::fatal(file_name, ": unsupported format (biClrImportant != 0)");
     return nullptr;
   }
 
@@ -560,7 +562,7 @@ image *image::load_png(const char *file, bool fatal_if_error)
   if (err) {
     auto err_str = lodepng_error_text(err);
     if (fatal_if_error)
-      FATAL("%s: failed to decode PNG: %s",file,err_str);
+      cls::fatal(file, ": failed to decode PNG: ", err_str);
     else
       return nullptr;
   }
@@ -579,7 +581,7 @@ void image::save_png(const char *file) const
   auto err =
     lodepng_encode32_file(file, bits, (unsigned)width, (unsigned)height);
   if (err) {
-    FATAL("%s: failed to write PNG (%s)",file,lodepng_error_text(err));
+    cls::fatal(file, ": failed to write PNG (", lodepng_error_text(err), ")");
   }
 }
 #endif
@@ -635,7 +637,7 @@ void image::resize(
             *row++ = fill.g;
             *row++ = fill.b;
           } else {
-            FATAL("INTERNAL: image::resize: unexpected format");
+            cls::fatal("INTERNAL: image::resize: unexpected format");
           }
         }
         // clear the tail
@@ -684,11 +686,11 @@ void image::resize(
             *new_row++ = fill.g;
             *new_row++ = fill.b;
           } else {
-            FATAL("image::resize: unexpected format");
+            cls::fatal("image::resize: unexpected format");
           }
         }
       } else { // new_width < old_width
-               // copy old
+        // copy old
         memcpy(new_row, old_row, 3 * new_width);
         // no new fill
       }
@@ -721,10 +723,10 @@ void image::resize(
           *new_row++ = fill.g;
           *new_row++ = fill.b;
         } else {
-          FATAL("image::resize: unexpected format");
+          cls::fatal("image::resize: unexpected format");
         }
       }
-      // zero slack
+      // zero the slack
       memset(new_row + 3 * new_width, 0, pitch - bytes_per_px * new_width);
     }
     // zero the rest of the allocation height

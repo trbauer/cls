@@ -18,11 +18,11 @@
   } while (0)
 
 #define WARNING(...) \
-  sys::message_for_level(1,__VA_ARGS__)
+  sys::message_for_level(1, __VA_ARGS__)
 #define VERBOSE(...) \
-  sys::message_for_level(-1,__VA_ARGS__)
+  sys::message_for_level(-1, __VA_ARGS__)
 #define DEBUG(...) \
-  sys::message_for_level(-2,__VA_ARGS__)
+  sys::message_for_level(-2, __VA_ARGS__)
 
 namespace sys {
   extern int desired_message_verbosity;
@@ -45,29 +45,30 @@ static bool streq(const char *s1, const char *s2) {
       strlen(s1) == strlen(s2) &&
       strncmp(s1,s2,strlen(s1)) == 0;
 }
-static bool strpfx(const char *pfx, const char *str) {
-  return strncmp(pfx,str,strlen(pfx)) == 0;
+static bool strpfx(const char *pfx, const char *str)
+{
+  return strncmp(pfx, str, strlen(pfx)) == 0;
 }
-static bool strpfx(const char *pfx, std::string str) {
+static bool strpfx(const char *pfx, std::string str)
+{
   return strpfx(pfx, str.c_str());
 }
-static bool strsfx(const char *sfx, std::string str) {
+static bool strsfx(const char *sfx, std::string str)
+{
   return str.rfind(sfx) == str.size() - strlen(sfx);
 }
 
 
-///////////////////////////////////////////////////////////////////////////////
-// MISCELLANEOUS
-namespace sys {
-  template <typename T>
-  static T align_round_up(T x, T a) {
-    return (x + a - 1) - ((x + a - 1) % a);
-  }
-}
-
 
 namespace sys
 {
+  /////////////////////////////////////////////////////////////////////////////
+  // MISCELLANEOUS
+  template <typename T>
+  constexpr static T align_round_up(T x, T a) {
+    return (x + a - 1) - ((x + a - 1) % a);
+  }
+
   using bits = std::vector<uint8_t>;
 
   //////////////////////////////////////////////////////////////////////////////

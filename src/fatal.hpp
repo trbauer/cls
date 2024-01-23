@@ -14,6 +14,20 @@
 
 namespace cls
 {
+  [[noreturn]]
+  void fatal_message_and_exit(int code, std::string s);
+
+  template <typename...Ts>
+  [[noreturn]]
+  void fatal(Ts... ts) {
+    cls::fatal_message_and_exit(EXIT_FAILURE, text::format(ts...));
+  }
+  template <typename...Ts>
+  [[noreturn]]
+  void fatal_internal(Ts... ts) {
+    cls::fatal_message_and_exit(EXIT_INTERNAL_ERROR, text::format(ts...));
+  }
+
   struct loc {
     uint32_t line, column, offset, extent;
     constexpr loc() : line(0), column(0), offset(0), extent(0) {}

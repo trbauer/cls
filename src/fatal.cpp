@@ -12,6 +12,15 @@ std::string diagnostic::str() const
   return ss.str();
 }
 
+void cls::fatal_message_and_exit(int code, std::string s)
+{
+  std::cerr << s;
+  if (!s.empty() && s[s.length() - 1] != '\n')
+    std::cerr << '\n';
+  std::cerr.flush();
+  exit(code);
+}
+
 void cls::format_message_with_context_impl(
   std::ostream &os,
   const cls::loc &at,
