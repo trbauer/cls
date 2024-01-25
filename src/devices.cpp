@@ -17,7 +17,7 @@
     cl_int _err = CL_FUNCTION(__VA_ARGS__); \
     if (_err != CL_SUCCESS) { \
       std::cerr << CL_SYM_STR(CL_FUNCTION) << ": " \
-        << cls::status_to_symbol(_err) << "\n"; \
+        << cl_lib::status_to_symbol(_err) << "\n"; \
       exit(EXIT_FAILURE); \
     } \
   } while(0)

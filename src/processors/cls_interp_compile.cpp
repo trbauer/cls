@@ -117,7 +117,7 @@ static void emit_compiled_kernel_workgroup_property(
   auto err =
     clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
-    std::cout << text::ANSI_RED << status_to_symbol(err);
+    std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
     std::cout << text::ANSI_FADED_YELLOW;
     if (is_mem && !units) {
@@ -152,7 +152,7 @@ static void emit_compiled_kernel_property(
   auto err =
     clGetKernelInfo(kernel, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
-    std::cout << text::ANSI_RED << status_to_symbol(err);
+    std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
     std::cout << text::ANSI_FADED_YELLOW;
     if (is_mem && !units) {
@@ -183,14 +183,14 @@ static void emit_compiled_kernel_property_str(
   size_t n;
   auto err = clGetKernelInfo(kernel, param, 0, nullptr, &n);
   if (err != CL_SUCCESS) {
-    std::cout << text::ANSI_RED << status_to_symbol(err);
+    std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
     std::vector<char> cs;
     cs.resize(n + 1, 0);
     err =
         clGetKernelInfo(kernel, param, n, cs.data(), nullptr);
     if (err != CL_SUCCESS) {
-      std::cout << text::ANSI_RED << status_to_symbol(err);
+      std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
     } else {
       const char *val = cs.data();
       std::cout << text::ANSI_FADED_YELLOW;
@@ -246,7 +246,7 @@ static void emit_compiled_kernel_subgroup_property(
   auto err =
     fn(kernel, device, param, inp_size, inp, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
-    std::cout << text::ANSI_RED << status_to_symbol(err);
+    std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
     std::cout << text::ANSI_FADED_YELLOW;
     if (is_mem && !units) {
@@ -384,14 +384,14 @@ kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
       clCreateKernelsInProgram(po->program, 0, nullptr, &nks);
     if (err != CL_SUCCESS) {
       fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
     all_ks.resize(nks);
     err =
       clCreateKernelsInProgram(po->program, nks, all_ks.data(), nullptr);
     if (err != CL_SUCCESS) {
       fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
     ss << "valid kernels in the program are:\n";
     for (cl_kernel k : all_ks) {
@@ -399,19 +399,22 @@ kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
       auto err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, 0, nullptr, &n);
       if (err != CL_SUCCESS)
         fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-          status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
 
       char *name = (char *)alloca(n + 1);
       memset(name, 0, n + 1);
       err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n + 1, name, nullptr);
       if (err != CL_SUCCESS)
         fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-          status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
       ss << " * " << name << "\n";
     }
     fatal_at(ks->defined_at,"unable to find kernel in program\n",ss.str());
   } else {
-    fatal_at(ks->defined_at,"error creating kernel",status_to_symbol(err_ck));
+    fatal_at(
+        ks->defined_at,
+        "error creating kernel",
+        cl_lib::status_to_symbol(err_ck));
   }
 
   // find the kernel info from the program info
@@ -530,11 +533,11 @@ program_object &script_compiler::compile_program(const program_spec *ps)
       if ((errd = get_device_info(
         po.device->device, CL_DEVICE_NAME, dev_nm)) != CL_SUCCESS)
       {
-        dev_nm = status_to_symbol(errd);
+        dev_nm = cl_lib::status_to_symbol(errd);
       }
       fatal_at(ps->defined_at,
         ps->path, ": failed to ", do_what, " with ", with_what,
-        " (", status_to_symbol(err), ") on device [", dev_nm, "]");
+        " (", cl_lib::status_to_symbol(err), ") on device [", dev_nm, "]");
     };
 
   std::string build_opts = ps->build_options;
@@ -593,7 +596,9 @@ program_object &script_compiler::compile_program(const program_spec *ps)
         po.device->device));
     } else if (bp_err != CL_SUCCESS) {
       fatal_at(
-        ps->defined_at, "failed to build program ", status_to_symbol(bp_err));
+          ps->defined_at,
+          "failed to build program ",
+          cl_lib::status_to_symbol(bp_err));
     }
 
     if (os.save_binaries) {
@@ -804,7 +809,7 @@ static cl_command_queue make_command_queue(
     ds.fatal_at(
       at,
       cl_function, ": failed to create command queue for device "
-      "(", status_to_symbol(err), ")");
+      "(", cl_lib::status_to_symbol(err), ")");
   }
   return queue;
 }

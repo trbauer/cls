@@ -164,7 +164,7 @@ static void emit_device_info(
   auto err = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err) << "]"
        << ANSI_RESET;
     return;
   }
@@ -188,7 +188,7 @@ static void emit_device_info_mem(
   auto err = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err) << "]"
        << ANSI_RESET;
     return;
   }
@@ -222,7 +222,7 @@ void emit_device_info(
   size_t size;
   auto err1 = cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err1) << "]"
        << ANSI_RESET;
     return;
   }
@@ -231,7 +231,7 @@ void emit_device_info(
   auto  err2 =
       cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
        << ANSI_RESET;
     return;
   }
@@ -257,7 +257,7 @@ static void emit_platform_info(
   auto err = cl_lib::DEFAULT.clGetPlatformInfo(
       plt_id, param, sizeof(T), &value, nullptr);
   if (err != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err) << "]"
        << ANSI_RESET;
     return;
   }
@@ -284,7 +284,7 @@ void emit_platform_info(
   auto   err1 =
       cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err1) << "]"
        << ANSI_RESET;
     return;
   }
@@ -293,7 +293,7 @@ void emit_platform_info(
   auto  err2 =
       cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
        << ANSI_RESET;
     return;
   }
@@ -321,7 +321,7 @@ static void emit_device_info(
   auto    err1 = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param_len, sizeof(array_length), &array_length, nullptr);
   if (err1 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1)
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err1)
        << " (size query)]" << ANSI_RESET;
     return;
   }
@@ -330,7 +330,7 @@ static void emit_device_info(
   auto err2 = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param, array_length * sizeof(T), value, nullptr);
   if (err2 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
        << ANSI_RESET;
     return;
   }
@@ -364,8 +364,8 @@ static void emit_device_info_array(
   auto   err1 =
       cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &bytes_needed);
   if (err1 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err1) << " (query)]"
-       << ANSI_RESET;
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err1)
+       << " (query)]" << ANSI_RESET;
     return;
   } else if (bytes_needed % sizeof(T) != 0) {
     os << ANSI_RED
@@ -380,7 +380,7 @@ static void emit_device_info_array(
   auto err2 = cl_lib::DEFAULT.clGetDeviceInfo(
       dev_id, param, bytes_needed, values, nullptr);
   if (err2 != CL_SUCCESS) {
-    os << ANSI_RED << "[ERROR: " << cls::status_to_symbol(err2) << "]"
+    os << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
        << ANSI_RESET;
     return;
   }
@@ -413,7 +413,8 @@ static std::string get_device_info_string(
   auto err1 = cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
-              << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
+              << "[ERROR: " << cl_lib::status_to_symbol(err1) << "]"
+              << ANSI_RESET;
     return "?";
   }
 
@@ -422,7 +423,8 @@ static std::string get_device_info_string(
       cl_lib::DEFAULT.clGetDeviceInfo(dev_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     std::cerr << "clGetDeviceInfo(" << what << "): " << ANSI_RED
-              << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
+              << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
+              << ANSI_RESET;
     return "?";
   }
   value[size] = 0;
@@ -436,7 +438,8 @@ static std::string get_platform_info_string(
       cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, 0, nullptr, &size);
   if (err1 != CL_SUCCESS) {
     std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
-              << "[ERROR: " << cls::status_to_symbol(err1) << "]" << ANSI_RESET;
+              << "[ERROR: " << cl_lib::status_to_symbol(err1) << "]"
+              << ANSI_RESET;
     return "?";
   }
 
@@ -445,7 +448,8 @@ static std::string get_platform_info_string(
       cl_lib::DEFAULT.clGetPlatformInfo(plt_id, param, size, value, nullptr);
   if (err2 != CL_SUCCESS) {
     std::cerr << "clGetPlatformInfo(" << what << "): " << ANSI_RED
-              << "[ERROR: " << cls::status_to_symbol(err2) << "]" << ANSI_RESET;
+              << "[ERROR: " << cl_lib::status_to_symbol(err2) << "]"
+              << ANSI_RESET;
     return "?";
   }
   value[size] = 0;
@@ -582,7 +586,7 @@ void list_device_info_for_device(
         dev_id, CL_DEVICE_TYPE, sizeof(dev_type), &dev_type, nullptr);
     if (dt_err) {
       std::cout << "clGetDeviceInfo(CL_DEVICE_TYPE): " << ANSI_RED
-                << "[ERROR: " << cls::status_to_symbol(dt_err) << "]"
+                << "[ERROR: " << cl_lib::status_to_symbol(dt_err) << "]"
                 << ANSI_RESET;
     } else {
       std::cout << " " << std::setw(4);
@@ -652,8 +656,8 @@ void list_device_info_for_device(
     if (is_2_0_plus || platform_exts.find("cl_khr_icd") != std::string::npos)
       PLATFORM_INFO_STRING(CL_PLATFORM_ICD_SUFFIX_KHR);
   } else {
-    std::cout << ANSI_RED << "[ERROR: " << cls::status_to_symbol(plt_res) << "]"
-              << ANSI_RESET;
+    std::cout << ANSI_RED << "[ERROR: " << cl_lib::status_to_symbol(plt_res)
+              << "]" << ANSI_RESET;
   }
   /////////////////////////////////////////////////////////////////////////////
   START_GROUP("DEVICE");

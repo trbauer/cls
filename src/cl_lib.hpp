@@ -4,7 +4,7 @@
 #include "cl_headers.hpp"
 
 #include <ostream>
-
+#include <string>
 
 // Dynamic access to OpenCL APIs simplifies build dependencies
 struct cl_lib {
@@ -526,6 +526,8 @@ public:
   clCreatePerfCountersCommandQueueINTEL_Fn
       clCreatePerfCountersCommandQueueINTEL = nullptr;
 
+  /////////////////////////////////////////////////////////////////////////////
+  static std::string status_to_symbol(cl_int error);
 }; // cl_lib
 
 #endif // CL_LIB_HPP

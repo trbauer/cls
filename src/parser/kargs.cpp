@@ -450,14 +450,14 @@ program_info *cls::k::parse_program_info_from_api(
   if (err != CL_SUCCESS) {
     ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
-      status_to_symbol(err));
+      cl_lib::status_to_symbol(err));
   }
   cl_kernel *ks = (cl_kernel*)alloca(sizeof(*ks) * ks_len);
   err = clCreateKernelsInProgram(program, ks_len, ks, nullptr);
   if (err != CL_SUCCESS) {
     ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
-      status_to_symbol(err));
+      cl_lib::status_to_symbol(err));
   }
 
   program_info *pi = new program_info();
@@ -488,7 +488,7 @@ program_info *cls::k::parse_program_info_from_api(
       ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
     char *knm =
       (knm_len + 1 < sizeof(knm_buf_static)) ?
@@ -505,7 +505,7 @@ program_info *cls::k::parse_program_info_from_api(
       ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
     ki.name = knm;
 
@@ -521,7 +521,7 @@ program_info *cls::k::parse_program_info_from_api(
       ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelWorkGroupInfo(CL_KERNEL_GLOBAL_WORK_SIZE): ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
 
     cl_uint ka_len = 0;
@@ -535,7 +535,7 @@ program_info *cls::k::parse_program_info_from_api(
       ds.fatal_at(at,
         "failed to parse program info program: "
         "clGetKernelInfo(CL_KERNEL_NUM_ARGS): ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
 
     // FIXME: vector resize leads to corruption
@@ -562,7 +562,7 @@ program_info *cls::k::parse_program_info_from_api(
           ds.fatal_at(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
-            status_to_symbol(err));
+            cl_lib::status_to_symbol(err));
         }
         char *buf = (char *)alloca(len + 1);
         err = clGetKernelArgInfo(
@@ -576,7 +576,7 @@ program_info *cls::k::parse_program_info_from_api(
           ds.fatal_at(at,
             "failed to parse program info program object: "
             "clGetKernelArgInfo(", param_name, "): ",
-            status_to_symbol(err));
+            cl_lib::status_to_symbol(err));
         }
         buf[len] = 0;
         return std::string(buf);
@@ -613,7 +613,7 @@ program_info *cls::k::parse_program_info_from_api(
         ds.fatal_at(at,
           "failed to parse program info program object: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ADDRESS_QUALIFIER): ",
-          status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
       }
 
       err = clGetKernelArgInfo(
@@ -627,7 +627,7 @@ program_info *cls::k::parse_program_info_from_api(
         ds.fatal_at(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_ACCESS_QUALIFIER): ",
-          status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
       }
 
       err = clGetKernelArgInfo(
@@ -641,14 +641,14 @@ program_info *cls::k::parse_program_info_from_api(
         ds.fatal_at(at,
           "failed to parse program info program: "
           "clGetKernelArgInfo(CL_KERNEL_ARG_TYPE_QUALIFIER): ",
-          status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
       }
     } // for kernel args
     err = clReleaseKernel(ks[k_ix]);
     if (err != CL_SUCCESS) {
       ds.fatal_at(at,
         "failed to parse program info program: clReleaseKernel(): ",
-        status_to_symbol(err));
+        cl_lib::status_to_symbol(err));
     }
   } // for kernels
 

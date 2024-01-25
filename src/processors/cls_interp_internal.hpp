@@ -278,12 +278,12 @@ struct cl_interface {
   do { \
     cl_int _err = CL_FUNCTION(__VA_ARGS__); \
     if (is_debug())\
-      debug_at(loc(), cls::status_to_symbol(_err), " <= ", \
+      debug_at(loc(), cl_lib::status_to_symbol(_err), " <= ", \
         CL_SYM_STR(CL_FUNCTION), "(", \
         text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
       fatal_at(LOC, CL_SYM_STR(CL_FUNCTION), \
-        " (", cls::status_to_symbol(_err), ")"); \
+        " (", cl_lib::status_to_symbol(_err), ")"); \
     } \
   } while(0)
 #define CL_COMMAND_CREATE(ASSIGN_TO, LOC, CL_FUNCTION, ...) \
@@ -291,12 +291,12 @@ struct cl_interface {
     cl_int _err = 0; \
     ASSIGN_TO = CL_FUNCTION(__VA_ARGS__, &_err); \
     if (is_debug())\
-      debug_at(loc(), cls::status_to_symbol(_err), " <= ", \
+      debug_at(loc(), cl_lib::status_to_symbol(_err), " <= ", \
         CL_SYM_STR(CL_FUNCTION), "(", \
           text::intercalate((const char *)", ", __VA_ARGS__), ")"); \
     if (_err != CL_SUCCESS) { \
       fatal_at(LOC, CL_SYM_STR(CL_FUNCTION), \
-        " (", cls::status_to_symbol(_err), ")"); \
+        " (", cl_lib::status_to_symbol(_err), ")"); \
     } \
   } while(0)
 
