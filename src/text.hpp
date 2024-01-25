@@ -5,18 +5,98 @@
 #include <cstring>
 #include <iomanip>
 #include <ostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
 
-// TODO:
-// text::col(FOO,16)  places a std::setw and std::right or std::right
-//     depending on FOO's type (integer or not)
-//
-
 
 namespace text
 {
+  ///////////////////////////////////////////////////////
+  // text tools
+  // EXAMPLES:
+  //   auto s = format("foo=", foo_val, "; bar=", bar_val);
+  //
+  // extra ostream decorators:
+  // a hex number of with fill of 8
+  //   std::cout << hex(x, 8)
+  // a fractional number with precision 5
+  //   std::cout << frac(x, 5)
+  // formatting with a fraction inline with 3 digits of precions
+  //   auto s = format("foo=", foo_val, "; bar=", frac(bar_val, 3));
+  //    or
+  //   format_to(std::cout, "foo=", foo_val, "; bar=", frac(bar_val, 3));
+  // left-aligned column of 32 rendering x (of any type T):
+  //   std::cout << coll(x, 32) << ...
+  // right-aligned with dots padding
+  //   std::cout << "0x" << colr(x, 8, '.')
+  // with variable column setting
+  //   std::cout << col(x, pad::L, 32)
+  //
+
+  // hex stream decorator (a right-justified column)
+  struct hex
+  {
+    uint64_t value;
+    int columns;
+    template <typename T>
+    explicit hex(T v, int cls = 2 * sizeof(T)) : value((uint64_t)v), columns(cls) { }
+  };
+
+  // decimal stream decorator (a right-justified column)
+  template <typename T> // could be signed or unsigned
+  struct dec
+  {
+    T value;
+    explicit dec(T v) : value(v) { }
+  };
+
+  struct frac
+  {
+    union {
+      float f32;
+      double f64;
+    };
+    const enum {F32 = 1, F64} tag;
+    const int columns;
+    const int prec;
+    explicit frac(float v, int _prec = 3, int cols = -1)
+        : columns(cols), prec(_prec), tag(F32) {
+      f32 = v;
+    }
+    explicit frac(double v, int _prec = 4, int cols = -1)
+        : columns(cols), prec(_prec), tag(F64) {
+      f64 = v;
+    }
+  }; // frac
+
+  enum class pad {L, R};
+
+  template <typename T>
+  struct col
+  {
+    const pad pd;
+    const T &value;
+    size_t width;
+    char pad_fill;
+    explicit col(const T &val, pad p, size_t wid, char f = ' ')
+      : pd(p), value(val), width(wid), pad_fill(f) { }
+  }; // col
+  template <typename T>
+  struct coll : col<T>
+  {
+    explicit coll(const T &val, size_t wid, char f = ' ')
+      : col<T>(val, pad::L, wid, f) { }
+  };
+  template <typename T>
+  struct colr : col<T>
+  {
+    explicit colr(const T &val, size_t wid, char f = ' ')
+      : col<T>(val, pad::R, wid, f) { }
+  };
+
+
   static bool streq(const char *str1, const char *str2) {
     return str1 == str2 || (str1 && str2 && strcmp(str1, str2) == 0);
   }
@@ -25,12 +105,13 @@ namespace text
   }
 
   template <typename T>
-  static std::string fmt_hex(T val, int w = 2*sizeof(T)) {
+  static std::string fmt_hex(T val, int w = 2 * sizeof(T)) {
     std::stringstream ss;
     ss << std::uppercase << std::hex << std::setfill('0') << std::setw(w) <<
       val;
     return ss.str();
   }
+
 
 
   /////////////////////////////////////////////////////////////////////////////
@@ -52,6 +133,7 @@ namespace text
     std::string esc;
     ansi(std::string _esc) : esc(_esc) { }
   };
+
   constexpr ansi_literal ANSI_NOP(nullptr);
   constexpr ansi_literal ANSI_RESET("\033[0m");
 
@@ -109,17 +191,17 @@ namespace text
     };
 
     template<typename T>
-    ansi_span<T> RED(T t) {return ansi_span<T>(ANSI_RED.esc,t);}
+    ansi_span<T> RED(T t) {return ansi_span<T>(ANSI_RED.esc, t);}
     template<typename T>
-    ansi_span<T> GREEN(T t) {return ansi_span<T>(ANSI_GREEN.esc,t);}
+    ansi_span<T> GREEN(T t) {return ansi_span<T>(ANSI_GREEN.esc, t);}
     template<typename T>
-    ansi_span<T> BLUE(T t) {return ansi_span<T>(ANSI_RED.esc,t);}
+    ansi_span<T> BLUE(T t) {return ansi_span<T>(ANSI_RED.esc, t);}
     template<typename T>
-    ansi_span<T> YELLOW(T t) {return ansi_span<T>(ANSI_YELLOW.esc,t);}
+    ansi_span<T> YELLOW(T t) {return ansi_span<T>(ANSI_YELLOW.esc, t);}
     template<typename T>
-    ansi_span<T> CYAN(T t) {return ansi_span<T>(ANSI_CYAN.esc,t);}
+    ansi_span<T> CYAN(T t) {return ansi_span<T>(ANSI_CYAN.esc, t);}
     template<typename T>
-    ansi_span<T> MAGENTA(T t) {return ansi_span<T>(ANSI_MAGENTA.esc,t);}
+    ansi_span<T> MAGENTA(T t) {return ansi_span<T>(ANSI_MAGENTA.esc, t);}
 
     template<typename T>
     std::ostream &operator <<(std::ostream &os, const ansi_span<T> &e) {
@@ -160,12 +242,14 @@ namespace text
     std::stringstream ss; format_to(ss, ts...); return ss.str();
   }
 
-  template <typename S, typename...Ts>
-  void          intercalate_to_successive(const S &, std::ostream &) { }
-  template <typename S, typename T, typename...Ts>
-  void          intercalate_to_successive(const S &sep, std::ostream &os, T t, Ts...ts) {
+  template<typename S, typename... Ts>
+  void intercalate_to_successive(const S &, std::ostream &) { }
+  template<typename S, typename T, typename... Ts>
+  void intercalate_to_successive(const S &sep, std::ostream &os, T t, Ts... ts)
+  {
     os << sep;
-    os << t; intercalate_to_successive(sep, os, ts...);
+    os << t;
+    intercalate_to_successive(sep, os, ts...);
   }
   template <typename S, typename...Ts>
   void          intercalate_to(const S &, std::ostream &) { }
@@ -186,26 +270,46 @@ namespace text
     std::stringstream ss; t.str(ss); return ss.str();
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+  // INTEGER PARSING
+  // - parses decimal (decimal digits) or hex (0x...)
+  // - signed version allows leading negation (-)
+  // - separators (e.g. "_") are optional
+  // - parse_seq_* allows an end pointer is optional and holds next
+  //   non-consumed character (enables suffix handling by caller);
+  //   the other functions forbid suffixes (e.g. "123abc" fails)
+  //
+  // DEVNOTE: strto* allow overflow and saturate; this is dumb.
+  // These function return std::nullopt.
+  //
+  std::optional<uint64_t>
+  parse_uint64(const char *str, const char *seps = nullptr);
+  std::optional<int64_t>
+  parse_sint64(const char *str, const char *seps = nullptr);
+  std::optional<uint64_t> parse_seq_uint64(
+      const char *str, const char *seps = nullptr, const char **sfx = nullptr);
+  std::optional<int64_t> parse_seq_sint64(
+      const char *str, const char *seps = nullptr, const char **sfx = nullptr);
 
   /////////////////////////////////////////////////////////////////////////////
   // formats buffers
-  void          format_buffer(
-    std::ostream &os,
-    const void *buf,           // buffer base pointer
-    size_t buf_len,            // the total size of the buffer in bytes
-    size_t elem_wbytes,        // width per element in bytes: 8 for cl_float2
-    size_t elem_vwidth,        // vector size of each work element: 2 for cl_float2
-    bool floating_point,       // if we should show floating-point values
-    size_t max_cols = 0,       // preferred size in columns to use in rendering
-    size_t elems_per_row = 0); // preferred elements per row
+  void format_buffer(
+      std::ostream &os,
+      const void   *buf,         // buffer base pointer
+      size_t        buf_len,     // the total size of the buffer in bytes
+      size_t        elem_wbytes, // width per element in bytes: 8 for cl_float2
+      size_t elem_vwidth, // vector size of each work element: 2 for cl_float2
+      bool   floating_point,    // if we should show floating-point values
+      size_t max_cols      = 0, // preferred size in columns to use in rendering
+      size_t elems_per_row = 0); // preferred elements per row
 
-  std::string   format_buffer_diff(
-    const void *b, // buffer
-    const void *r, // reference
-    size_t n_elems,
-    size_t elem_w = 1,
-    unsigned cols = 0,
-    bool show_chars = false);
+  std::string format_buffer_diff(
+      const void *b, // buffer
+      const void *r, // reference
+      size_t      n_elems,
+      size_t      elem_w     = 1,
+      unsigned    cols       = 0,
+      bool        show_chars = false);
 
   /////////////////////////////////////////////////////////////////////////////
   // Run the C preprocessor on an input file.
@@ -240,6 +344,21 @@ namespace text
 
   /////////////////////////////////////////////////////////////////////////////
   // TEXT TABLES
+  //
+  // EXAMPLE:
+  //  table t;
+  //  auto &c0 = t.define_col("Key", false);
+  //  t.define_spacer("|");
+  //  auto &c1 = t.define_col("Value", false);
+  //  t.define_spacer("|");
+  //  auto &c2 = t.define_col("FloatValue", false);
+  //  c0.emit(key_row0);
+  //  c0.emit(key_row1);
+  //  c1.emit(val_row0);
+  //  c1.emit(val_row1);
+  //  c2.emit(fval_row0, 3); // .000
+  //  c2.emit(fval_row1, 3); // .000
+  //  t.str(std::cout);
   struct table {
     struct col {
       std::string label;
@@ -256,6 +375,8 @@ namespace text
       {
         emit(lab);
       }
+      col(const col &) = delete;
+      col operator=(const col &) = delete;
 
       template <typename T>
       void emit(const T &t) {
@@ -304,15 +425,50 @@ namespace text
       return ss.str();
     }
 
-    void str(std::ostream &os,const char *delim = "  ") const;
+    void str(std::ostream &os, const char *delim = "  ") const;
   private:
     table(const table &) = delete;
     table &operator=(const table &t) = delete;
   }; // table
-} // namespace
+} // namespace cls
 
-std::ostream &operator <<(std::ostream &os, text::ansi e);
-std::ostream &operator <<(std::ostream &os, text::ansi_literal e);
+std::ostream &operator <<(std::ostream &os, text::hex h);
+template <typename T>
+static inline std::ostream &operator <<(std::ostream &os, const text::dec<T> &d) {
+  os << text::format(d.value);
+  return os;
+}
+std::ostream &operator <<(std::ostream &os, text::frac f);
 
+std::ostream &operator <<(std::ostream &os, const text::ansi &e);
+std::ostream &operator <<(std::ostream &os, const text::ansi_literal &e);
+
+template <typename T>
+static inline std::ostream &operator<< (std::ostream &os, const text::col<T> &p) {
+  auto s = text::format(p.value);
+  std::stringstream ss;
+  if (p.pd == text::pad::R) {
+    for (size_t i = s.size(); i < p.width; i++)
+      ss << p.pad_fill;
+  }
+  ss << s;
+  if (p.pd == text::pad::L) {
+    for (size_t i = s.size(); i < p.width; i++)
+      ss << p.pad_fill;
+  }
+  os << ss.str();
+  return os;
+}
+
+
+template <typename T>
+static inline
+std::ostream &operator <<(std::ostream &os, const std::optional<T> &ov) {
+  if (ov)
+    os << *ov;
+  else
+    os << "std::nullopt";
+  return os;
+}
 
 #endif

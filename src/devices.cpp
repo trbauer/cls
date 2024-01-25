@@ -22,7 +22,7 @@
     } \
   } while(0)
 
-static std::vector<cl_device_id> get_device_ids()
+std::vector<cl_device_id> get_device_ids()
 {
   cl_platform_id *ps;
   cl_uint nps = 0;
@@ -165,24 +165,6 @@ cl_device_id get_device_default()
     cls::fatal("get_device_default: no devices found");
   }
   return ds[0];
-}
-
-// list_device.cpp
-void list_device_info_for_device(const cls::opts &os, cl_device_id d, int devIx);
-
-void list_device_info(const cls::opts &os)
-{
-  if (!os.list_devices_specific.empty()) {
-    for (auto &d : os.list_devices_specific) {
-      list_device_info_for_device(os, d, -1);
-    }
-  } else {
-    auto ds = get_device_ids();
-    for (int ix = 0; ix < (int)ds.size(); ix++) {
-      list_device_info_for_device(os, ds[ix], ix);
-    }
-  }
-  std::cout.flush();
 }
 
 cl_spec get_device_spec(cl_device_id d) {

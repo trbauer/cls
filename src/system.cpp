@@ -1243,6 +1243,47 @@ process_result sys::process_read(
   return process_read(exe, argv, "");
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// ENVIRONMENT
+std::optional<std::string> sys::find_env(const char *key) {
+#if WIN32
+  std::vector<char> vs;
+  vs.resize(256);
+  while (true) {
+    auto n = GetEnvironmentVariableA(key, vs.data(), (DWORD)vs.size());
+    if (n == 0) {
+      auto e = GetLastError();
+      if (e == ERROR_ENVVAR_NOT_FOUND) {
+        return std::nullopt;
+      } else {
+        cls::fatal_internal("GetEnvironmentVariableA failed ", e);
+      }
+    } else if (n <= vs.size()) {
+      break;
+    } else {
+      vs.resize(n); // try again
+    }
+  }
+  return std::make_optional<std::string>(vs.data());
+#else // !WIN32
+  const char *e = getenv(key);
+  if (e == nullptr) {
+    return std::nullopt;
+  }
+  return std::make_optional<std::string>(e);
+#endif
+}
+#if 0
+  auto ov0 = sys::find_env("FOOBAR");
+  if (ov0)
+    std::cout << *ov0 << "\n";
+  auto ov1 = sys::find_env("HOMEDRIVE");
+  if (ov1)
+    std::cout << *ov1 << "\n";
+  auto ov2 = sys::find_env("PATH");
+  if (ov2)
+    std::cout << *ov2 << "\n";
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // REGISTRY

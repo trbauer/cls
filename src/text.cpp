@@ -8,8 +8,10 @@
 #include <sys/ioctl.h>
 #endif
 #include <cstdint>
+#include <cstring>
 #include <cctype>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -17,19 +19,6 @@
 bool text::is_tty(std::ostream &os)
 {
   return sys::is_tty(os);
-}
-
-std::ostream &operator <<(std::ostream &os, text::ansi e)
-{
-  if (sys::is_tty(os))
-    os << e.esc;
-  return os;
-}
-std::ostream &operator <<(std::ostream &os, text::ansi_literal e)
-{
-  if (e.esc && sys::is_tty(os))
-    os << e.esc;
-  return os;
 }
 
 #ifdef _WIN32
@@ -189,6 +178,249 @@ std::string text::printf(const char *patt, ...)
 
   return ss.str();
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// integer parsing
+template <typename T>
+static std::optional<T>
+parse_seq_integral(const char *str, const char *seps, const char **sfx) {
+  if (!str || !*str)
+    return std::nullopt;
+
+  auto is_sep = [seps](char c) {
+    // this is delicate
+    return c && seps && *seps && std::strchr(seps, c) != nullptr;
+  };
+  using parse_digit_func = std::function<std::optional<T>(char)>;
+  auto parse_loop = [&](T                radix,
+                        parse_digit_func parse_dig) -> std::optional<T> {
+    T val = 0;
+    int ndigits = 0;
+    while (true) {
+      if (is_sep(*str)) {
+#if _DEBUG
+        // if seps has digits, then internally fail
+        if (parse_dig(*str) != std::nullopt) {
+          cls::fatal_internal("parse_seq_integral: seps overlaps with digits");
+        }
+#endif
+        str++;
+        continue;
+      }
+      auto odig = parse_dig(*str);
+      if (!odig) {
+        break;
+      }
+      T new_val = radix * val + *odig;
+      if (new_val < val)
+        return std::nullopt;
+      val = new_val;
+      ndigits++;
+      str++;
+    }
+    if (ndigits == 0) // e.g. all separators or an empty string
+      return std::nullopt;
+    if (sfx)
+      *sfx = str;
+    return std::make_optional<T>(val);
+  }; // parse_loop
+
+
+  if (strlen(str) > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+    str += 2;
+    auto parse_hex_digit = [](char c) -> std::optional<T> {
+      T dig = 0;
+      if (c >= 'a' && c <= 'f') {
+        dig = (c - 'a' + 10);
+      } else if (c >= 'A' && c <= 'F') {
+        dig = (c - 'A' + 10);
+      } else if (c >= '0' && c <= '9') {
+        dig = c - '0';
+      } else {
+        return std::nullopt;
+      }
+      return dig;
+    };
+    return parse_loop(T(16), parse_hex_digit);
+  } else {
+    auto parse_dec_digit = [](char c) -> std::optional<T> {
+      return (c >= '0' && c <= '9') ? std::make_optional<T>(c - '0')
+                                    : std::nullopt;
+    };
+    return parse_loop(T(10), parse_dec_digit);
+  }
+} // parse_integral_seq
+
+
+template <typename T>
+static std::optional<T>
+parse_seq_signed_integral(const char *str, const char *seps, const char **sfx)
+{
+  if (!str)
+    return std::nullopt;
+  T sign = 1;
+  if (*str == '-') {
+    str++;
+    sign = T(-1);
+  }
+  if (auto ov = parse_seq_integral<T>(str, seps, sfx)) {
+    return *ov * sign;
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<uint64_t>
+text::parse_seq_uint64(const char *str, const char *seps, const char **sfx)
+{
+  return parse_seq_integral<uint64_t>(str, seps, sfx);
+} // parse_uint64
+
+
+std::optional<int64_t>
+text::parse_seq_sint64(const char *str, const char *seps, const char **sfx)
+{
+  return parse_seq_signed_integral<uint64_t>(str, seps, sfx);
+} // parse_sint64
+
+std::optional<uint64_t>
+text::parse_uint64(const char *str, const char *seps)
+{
+  const char *end = nullptr;
+  auto ov = parse_seq_uint64(str, seps, &end);
+  if (ov && *end != '\0') {
+    return std::nullopt;
+  }
+  return ov;
+}
+
+std::optional<int64_t>
+text::parse_sint64(const char *str, const char *seps)
+{
+  const char *end = nullptr;
+  auto ov = parse_seq_sint64(str, seps, &end);
+  if (ov && *end != '\0') {
+    return std::nullopt;
+  }
+  return ov;
+}
+
+#define TEST_INT_PARSING
+#ifdef TEST_INT_PARSING
+static std::string to_str(const char *s)
+{
+  if (!s) return "nullptr";
+  std::stringstream ss;
+  ss << "\"" << s << "\"";
+  return ss.str();
+}
+
+template<typename T>
+static void test_integral_seq_parse(
+    const char *func,
+    std::optional<T>(*parse_func)(const char *, const char *, const char **),
+    const char      *inp,
+    const char      *seps    = nullptr,
+    std::optional<T> exp     = std::nullopt,
+    std::string      end_exp = "")
+{
+  std::stringstream ss;
+  ss << func << "(" << to_str(inp) << ", " << to_str(seps)
+            << ", " << exp << "): ";
+  const char *end_act = nullptr;
+  std::cout << text::coll(ss.str(), 64);
+  auto x0 = parse_func(inp, seps, &end_act);
+  // special handling for nullptr case (ignore end)
+  if (x0 != exp) {
+    cls::fatal("FAILED: value incorrect (", x0, ")\n");
+  } else if (exp && (!end_act || end_exp != end_act)) {
+    // only check end pointer if parsing succeeded
+    cls::fatal("FAILED: end_ptr is incorrect (", to_str(end_act), ")\n");
+  }
+  auto x1 = parse_func(inp, seps, nullptr);
+  if (x0 != x1) {
+    cls::fatal("FAILED: parses differently based on end ptr\n");
+  } else {
+    std::cout << "OK\n";
+  }
+};
+
+
+void test_int_parsing()
+{
+  auto testS = [](const char            *inp,
+                  const char            *seps    = nullptr,
+                  std::optional<int64_t> exp     = std::nullopt,
+                  std::string            end_exp = "") {
+    test_integral_seq_parse<int64_t>(
+        "parse_seq_sint64", text::parse_seq_sint64, inp, seps, exp, end_exp);
+  };
+
+  testS("0x45", "", 0x45); // unused sep is fine
+
+  testS(nullptr, nullptr);
+  testS("", nullptr); // fails
+  testS("abc");
+  testS("-"); // fails
+  testS("4", nullptr, 4, "");
+  testS("45", nullptr, 45);
+  testS("0xF", nullptr, 0xF);
+  testS("0xF1", nullptr, 0xF1);
+  testS("0xf1aE", nullptr, 0xF1AE);
+  testS("-1", nullptr, -1);
+  testS("-13", nullptr, -13);
+  testS("-0xA", nullptr, -0xA);
+  testS("-0xA1", nullptr, -0xA1);
+  testS("0xFEDCBA9876543210", nullptr, 0xFEDCBA9876543210i64);
+  testS("0xFEDCBA9876543210A");
+  testS("0x8000000000000000", nullptr, 0x8000000000000000i64);
+  testS("0x7FFFFFFFFFFFFFFF", nullptr, 0x7FFFFFFFFFFFFFFFi64);
+  testS("-0x7FFFFFFFFFFFFFFF", nullptr, -0x7FFFFFFFFFFFFFFFi64);
+  testS("-0x8000000000000000", nullptr, -0x8000000000000000i64);
+  // suffixes
+  testS("4 K", nullptr, 4, " K");
+  testS("-0x45, abc", nullptr, -0x45, ", abc");
+  // separators
+  testS("45", "", 45); // empty string seps is same as nullptr
+  testS("45", "_", 45); // unused sep is fine
+  testS("_", "_"); // only seps
+  testS("_4_5___", "_", 45); // used seps (anywhere)
+  testS("-_4`5___", "`_", -45); // multiple seps
+  testS("0x_4`5___", "`_", 0x45); // multiple seps hex
+
+  auto testU = [](const char            *inp,
+                  const char            *seps    = nullptr,
+                  std::optional<int64_t> exp     = std::nullopt,
+                  std::string            end_exp = "") {
+    test_integral_seq_parse<uint64_t>(
+        "parse_seq_uint64", text::parse_seq_uint64, inp, seps, exp, end_exp);
+  };
+
+  testU(nullptr);
+  testU("");
+  testU("-");
+  testU("-1");
+  testU("-13");
+  testU("4", nullptr, 4);
+  testU("45", nullptr, 45);
+  testU("-0xA", nullptr);
+  testU("0xA", nullptr, 0xA);
+  testU("0xAB1", nullptr, 0xAB1);
+  testU("0xFEDCBA9876543210", nullptr, 0xFEDCBA9876543210ull);
+  testU("0xFEDCBA9876543210A", nullptr);
+  // suffixes
+  testU("4 K", nullptr, 4, " K");
+  testU("0x4, abc", nullptr, 0x4, ", abc");
+  // separators
+  testS("45", "", 45); // empty string seps is same as nullptr
+  testS("45", "_", 45); // unused sep is fine
+  testS("_", "_"); // only seps
+  testS("_4_5___", "_", 45); // used seps (anywhere)
+  testS("_4`5___", "`_", 45); // multiple seps
+  testS("0x_4`5___", "`_", 0x45); // multiple seps hex
+} // test_int_parsing
+#endif // TEST_INT_PARSING
+
 
 void text::format_buffer(
   std::ostream &os,
@@ -496,13 +728,13 @@ static std::string find_clang()
 #ifdef _WIN32
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang++.exe");
   RETURN_IF_EXISTS("C:\\Program Files\\LLVM\\bin\\clang.exe");
-  RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
   RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang++.exe");
+  RETURN_IF_EXISTS("C:\\Program Files (x86)\\LLVM\\bin\\clang.exe");
   //  RETURN_IF_EXISTS("C:\\Progra~1\\LLVM\\bin\\clang.exe");
   //  RETURN_IF_EXISTS("C:\\Progra~2\\LLVM\\bin\\clang.exe");
 #else
-  RETURN_IF_EXISTS("/usr/bin/clang");
   RETURN_IF_EXISTS("/usr/bin/clang++");
+  RETURN_IF_EXISTS("/usr/bin/clang");
 #endif
   return search_env("clang");
 }
@@ -540,15 +772,16 @@ text::cpp_result text::load_c_preprocessed(
   const std::string &args)
 {
   auto pp_exe = find_cpp();
-  if (pp_exe.empty()) {
+  // start searching $PATH
+  if (pp_exe.empty())
     pp_exe = sys::find_exe("cpp");
-    // if (pp_exe.empty()) {
-    //   pp_exe = sys::find_exe("mcpp");
-    // }
-    if (pp_exe.empty()) {
-      return cpp_result(cpp_result::status::CPP_NOT_FOUND, "cpp");
-    }
-  }
+  if (pp_exe.empty())
+    pp_exe = sys::find_exe("clang");
+  if (pp_exe.empty())
+    pp_exe = sys::find_exe("clang++");
+  if (pp_exe.empty())
+    return cpp_result(cpp_result::status::CPP_NOT_FOUND, "cpp");
+
   return load_c_preprocessed_using(pp_exe, inp_path, args);
 }
 
@@ -654,3 +887,36 @@ void text::table::str(std::ostream &os, const char *delim) const {
   }
 }
 
+std::ostream &operator <<(std::ostream &os, text::hex h) {
+  std::stringstream ss;
+  ss << std::setw(h.columns) <<
+    std::setfill('0') << std::hex << std::uppercase << h.value;
+  os << ss.str();
+  return os;
+}
+std::ostream &operator <<(std::ostream &os, text::frac f) {
+  std::stringstream ss;
+  if (f.columns >= 0)
+    ss << std::setw(f.columns);
+  ss << std::setprecision(f.prec) << std::fixed;
+  if (f.tag == text::frac::F32)
+    ss << f.f32;
+  else if (f.tag == text::frac::F64)
+    ss << f.f64;
+  else
+    ss << "??";
+  os << ss.str();
+  return os;
+}
+std::ostream &operator <<(std::ostream &os, const text::ansi &e)
+{
+  if (sys::is_tty(os))
+    os << e.esc;
+  return os;
+}
+std::ostream &operator <<(std::ostream &os, const text::ansi_literal &e)
+{
+  if (e.esc && sys::is_tty(os))
+    os << e.esc;
+  return os;
+}

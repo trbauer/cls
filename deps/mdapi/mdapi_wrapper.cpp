@@ -639,13 +639,13 @@ std::vector<ms_info> mdapi_lib::list_metric_sets() const
 
 uint32_t mdapi_lib::get_configuration() const {
   if (!impl) {
-    return false;
+    return 0x0;
   }
   return ((struct mdapi_wrapper_impl *)impl)->get_configuration();
 }
 uint32_t mdapi_lib::get_query_report_size() const {
   if (!impl) {
-    return false;
+    return 0x0;
   }
   return ((struct mdapi_wrapper_impl *)impl)->get_query_report_size();
 }

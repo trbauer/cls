@@ -6,6 +6,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <ostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -272,6 +273,10 @@ namespace sys
   // std::string process_read(std::string exe, std::vector<std::string> args, std::string input);
   // use this process's standard input and output streams
   // void process_fork(...)
+
+  /////////////////////////////////////////////////////////////////////////////
+  // ENVIRONMENT
+  std::optional<std::string> find_env(const char *key);
 
   /////////////////////////////////////////////////////////////////////////////
   // REGISTRY

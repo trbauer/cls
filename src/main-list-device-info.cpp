@@ -982,3 +982,18 @@ void list_device_info_for_device(
   std::cout << "  === DEVICE EXTENSIONS:\n";
   list_extensions(std::cout, extensions_string);
 }
+
+void list_device_info(const cls::opts &os)
+{
+  if (!os.list_devices_specific.empty()) {
+    for (auto &d : os.list_devices_specific) {
+      list_device_info_for_device(os, d, -1);
+    }
+  } else {
+    auto ds = get_device_ids();
+    for (int ix = 0; ix < (int)ds.size(); ix++) {
+      list_device_info_for_device(os, ds[ix], ix);
+    }
+  }
+  std::cout.flush();
+}

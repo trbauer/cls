@@ -18,14 +18,6 @@
 #include "text.hpp"
 #include "../deps/mdapi/mdapi_wrapper.hpp"
 
-
-enum class units
-{
-  UNITS_US = 0,
-  UNITS_MS,
-  UNITS_S,
-};
-
 static void run_file(
   struct cls::opts &os,
   std::string file_name,
@@ -33,6 +25,10 @@ static void run_file(
 
 // main-format-metrics.cpp
 void emit_metrics(const cls::opts &os, const cls::mdapi_ctrs &mdcs);
+// main-list-sysinfo.cpp
+void list_system_info(const cls::opts &os);
+// main-list-device-info.cpp
+void list_device_info(const cls::opts &os);
 
 int main(int argc, const char **argv)
 {
@@ -110,7 +106,7 @@ int main(int argc, const char **argv)
     "EXAMPLES:\n"
     " -l         lists all devices on the sytstem\n"
     " -l=0       lists device 0\n"
-    " -l=GTX     lists the device with \"GTX\" as a substring of "
+    " -l=RTX     lists the device with \"RTX\" as a substring of "
     "its CL_DEVICE_NAME\n"
     "",
     opts::ALLOW_MULTI|opts::FLAG_VALUE,
@@ -124,7 +120,7 @@ int main(int argc, const char **argv)
       } else {
         os.list_devices_specific.push_back(get_device_by_name(os, value));
       }
-  });
+    });
   cmdspec.defineOpt(
       "lm",
       "list-metrics",
@@ -138,6 +134,20 @@ int main(int argc, const char **argv)
       opts::ALLOW_MULTI | opts::FLAG_VALUE,
       [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
         os.list_metrics.push_back(value);
+      });
+  cmdspec.defineOpt(
+      "ls",
+      "list-sysinfo",
+      "FILTER?",
+      "list system info",
+      "Lists various system info.\n"
+      "EXAMPLES:\n"
+      " -ls           list all system info\n"
+      " -ls=FILTER    ...implementation defined\n"
+      "",
+      opts::ALLOW_MULTI | opts::FLAG_VALUE,
+      [] (const char *value, const opts::ErrorHandler &eh, cls::opts &os) {
+        os.list_sysinfo.push_back(value);
       });
   cmdspec.defineOpt(
       "mf",
@@ -245,7 +255,12 @@ int main(int argc, const char **argv)
       os.use_kernel_arg_info);
 
   cmdspec.defineOpt(
-    "v","verbosity","INT","sets the output level","",opts::FLAG_VALUE,
+      "v",
+      "verbosity",
+      "INT",
+      "sets the output level",
+      "",
+      opts::FLAG_VALUE,
     [] (const char *value, const opts::ErrorHandler &eh, cls::opts &opts) {
       if (*value == 0) { // -v
         opts.verbosity = 1;
@@ -281,6 +296,14 @@ int main(int argc, const char **argv)
     opts::OptAttrs::NONE,
     os.no_cleanup);
   xGrp.defineFlag(
+    "no-device-check",
+    nullptr,
+    "disables device checks for various system-specific uses",
+    "Ignores device checks for things like MDAPI and other device-"
+    "specific tasks.",
+    opts::OptAttrs::NONE,
+    os.no_device_check);
+  xGrp.defineFlag(
     "no-exit-on-diff-fail",
     nullptr,
     "diff commands will not trigger an exit failure",
@@ -291,18 +314,29 @@ int main(int argc, const char **argv)
   if (!cmdspec.parse(argc, argv, os)) {
     exit(EXIT_FAILURE);
   }
-  if (!os.list_metrics.empty() && os.list_devices) {
+  if (os.list_devices && !os.list_metrics.empty()) {
     std::cerr << "-l mutually exclusive with -lm\n";
     return EXIT_FAILURE;
   }
-  if (!os.list_metrics.empty()) {
-    list_mdapi_metrics(os.verbosity, os.list_metrics);
-    return EXIT_SUCCESS;
-  } else if (os.list_devices) {
+  if (os.list_devices && !os.list_sysinfo.empty()) {
+    std::cerr << "-l mutually exclusive with -ls\n";
+    return EXIT_FAILURE;
+  }
+  if (!os.list_metrics.empty() && !os.list_sysinfo.empty()) {
+    std::cerr << "-ls mutually exclusive with -lm\n";
+    return EXIT_FAILURE;
+  }
+
+  if (os.list_devices) {
     list_device_info(os);
     return EXIT_SUCCESS;
-  }
-  if (os.input_expr.size() == 0 && os.input_files.empty()) {
+  } else if (!os.list_metrics.empty()) {
+    list_mdapi_metrics(os.verbosity, os.list_metrics);
+    return EXIT_SUCCESS;
+  } else if (!os.list_sysinfo.empty()) {
+    list_system_info(os);
+    return EXIT_SUCCESS;
+  } else if (os.input_expr.size() == 0 && os.input_files.empty()) {
     std::cerr << "expected input -e or file arguments\n";
     return EXIT_FAILURE;
   }

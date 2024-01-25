@@ -767,6 +767,7 @@ static cl_command_queue make_command_queue(
   const mdapi_lib *md,
   bool profiling_queue,
   std::string metric_counter_set,
+  bool no_device_check,
   cl_device_id dev_id,
   cl_context &ctx)
 {
@@ -779,7 +780,7 @@ static cl_command_queue make_command_queue(
   const char *cl_function = "clCreateCommandQueue";
   if (!metric_counter_set.empty()) {
     props |= CL_QUEUE_PROFILING_ENABLE; // -tMD implies -tCL?
-    if (!is_intel_gen(get_device_microarch(dev_id))) {
+    if (!is_intel_gen(dev_id) && !no_device_check) {
       ds.fatal_at(at, "-tMD=.. set, but device does not support MDAPI");
     }
     if (md == nullptr) {
@@ -840,7 +841,7 @@ device_object &script_compiler::create_device_object(const device_spec *ds)
   device_object &dobj =
       csi->devices.emplace_back(dev_key, get_diagnostics(), ds, dev_id, os.verbosity);
   if (!os.metric_counter_set.empty()) {
-    if (!is_intel_gen(get_device_microarch(dev_id))) {
+    if (!is_intel_gen(dev_id) && !os.no_device_check) {
       fatal_at(ds->defined_at, "-tMD=.. set but device does not support MDAPI");
     }
     dobj.md = new mdapi_lib();
@@ -880,6 +881,7 @@ device_object &script_compiler::create_device_object(const device_spec *ds)
       dobj.md,
       os.prof_time,
       os.metric_counter_set,
+      os.no_device_check,
       dev_id,
       dobj.context);
 

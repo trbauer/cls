@@ -2,17 +2,18 @@
 #define DEVICES_HPP
 #include "cls_opts.hpp"
 #include "cl_lib.hpp"
-#include "../deps/mdapi/mdapi_wrapper.hpp"
 
 #include <string>
+#include <vector>
 
+// get all devices of all platforms
+std::vector<cl_device_id> get_device_ids();
 //
 std::string get_device_name(cl_device_id d);
 //
 cl_int get_device_info(cl_device_id d, cl_device_info info, std::string &value);
 cl_int get_device_info(cl_device_id d, cl_device_info info, cl_uint &value);
 //
-
 bool get_device_by_name(
     const cls::opts &opts,
     std::string      substr,
@@ -27,8 +28,6 @@ bool get_device_by_index(
 cl_device_id get_device_by_index(const cls::opts &opts, int dev_ix);
 
 cl_device_id get_device_default();
-
-void list_device_info(const cls::opts &opts);
 
 bool device_has_extension(cl_device_id dev_id, const char *ext);
 

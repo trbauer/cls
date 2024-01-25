@@ -21,9 +21,11 @@ struct opts {
   bool                        list_devices = false;
   std::vector<cl_device_id>   list_devices_specific;
   std::vector<std::string>    list_metrics; // -lm
+  std::vector<std::string>    list_sysinfo; // -ls
   enum {NAT,TRANS,CSV}        metric_format = TRANS;
   bool                        no_cleanup = false;
   bool                        no_exit_on_diff_fail = false;
+  bool                        no_device_check = false;
   bool                        parse_only = false;
   bool                        prof_time = false;
   std::string                 metric_counter_set;
@@ -33,6 +35,8 @@ struct opts {
   bool                        use_kernel_arg_info = false; // OpenCL 1.2+
   int                         verbosity = 0;
   bool                        wall_time = false;
+
+  opts() = default;
 
   bool debug_enabled() const {return verbosity >= 2;}
   bool verbose_enabled() const {return verbosity >= 1;}
