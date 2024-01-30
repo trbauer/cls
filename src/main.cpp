@@ -185,6 +185,15 @@ int main(int argc, const char **argv)
   cmdspec.defineExtraHelpSection("syn-sex", "surface initializers expressions",
     cls::CLS_SYN_SEX());
 
+  auto &w = cmdspec.defineGroup("W", "warning options");
+  w.defineFlag(
+      "old-dispatch-syntax",
+      nullptr,
+      "warns on old dispatch syntax",
+      "Warns with programs ",
+      opts::NONE,
+      os.warn_old_dipatch_syntax);
+
   auto &g = cmdspec.defineGroup("t", "profiling options");
   g.defineFlag(
       "W", nullptr, "profiles with wall timers", "", opts::NONE, os.wall_time);

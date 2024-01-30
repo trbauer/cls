@@ -35,6 +35,7 @@ struct opts {
   bool                        use_kernel_arg_info = false; // OpenCL 1.2+
   int                         verbosity = 0;
   bool                        wall_time = false;
+  bool                        warn_old_dipatch_syntax = false; // old dispatch
 
   opts() = default;
 

@@ -453,11 +453,13 @@ std::string cls::CLS_SYN_SEX()
 
 
 struct cls_parser : parser {
+  const opts &os;
   script &s;
 
   cls_parser(
+    const opts &_os,
     diagnostics &ds, const std::string &inp, script &_s)
-    : parser(ds, inp), s(_s) { }
+    : parser(ds, inp), os(_os), s(_s) { }
 
   // a rough solution to enable use to read tokens including spaces
   // e.g. `path/has spaces/baz.cl[-DTYPE=int -cl-some-option]`kernel
@@ -1490,7 +1492,7 @@ struct cls_parser : parser {
     } // if
   }
 
-  // Three full forms
+  // Three full forms:
   // Full form:                   #1`path/foo.cl`kernel<128,16>(...)
   // Partially applied program:   BAR`baz<1024,128>(...)
   // Paritally applied kernel:    FOO<1024,128>(...)
@@ -1765,13 +1767,33 @@ struct cls_parser : parser {
       fatal("expected statement");
     }
 
+    // Dispatch invocation dimensions
+    // We need to allow:
     // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
     //                      ^^^^^^^^^^^^^^^^^
-    parse_dispatch_statement_dimensions(*ds);
+    // #1`path/foo.cl`kernel(...)<1024x1024,16x16>
+    //                           ^^^^^^^^^^^^^^^^^
+
+    bool old_style_dims = looking_at(LANGLE);
+    if (old_style_dims) {
+      // #1`path/foo.cl`kernel<1024x1024,16x16>(...)
+      //                      ^^^^^^^^^^^^^^^^^
+      if (os.warn_old_dipatch_syntax) {
+        warning("old style dispatch syntax (place <...> after kernel args)");
+      }
+      parse_dispatch_statement_dimensions(*ds);
+    }
 
     // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where ...
     //                                 ^^^^^^^^^^^^^^^^^^^^^^^
     parse_dispatch_statement_arguments(*ds);
+
+    if (!old_style_dims) {
+      // #1`path/foo.cl`kernel(...)<1024x1024,16x16>
+      //                           ^^^^^^^^^^^^^^^^^
+      parse_dispatch_statement_dimensions(*ds);
+    }
+
     // #1`path/foo.cl`kernel<1024x1024>(0:rw,1:r,33) where X = ..., Y = ...
     //                                               ^^^^^^^^^^^^^^^^^^^^^^
     parse_dispatch_statement_where_clause(*ds, nullptr);
@@ -2209,6 +2231,6 @@ void cls::parse_script(
   script &s,
   diagnostics &ds)
 {
-  cls_parser cp(ds, input, s);
+  cls_parser cp(os, ds, input, s);
   cp.parse_script();
 }
