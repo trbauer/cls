@@ -308,7 +308,7 @@ microarch get_device_microarch(cl_device_id d)
     } else if (name_has({"RTX 30"})) {
       arch = microarch::NVIDIA_AMP;
     } else if (name_has({"RTX 40"})) {
-      arch = microarch::NVIDIA_HOP;
+      arch = microarch::NVIDIA_ADA;
     } else {
       arch = microarch::NVIDIA_UNK;
     }

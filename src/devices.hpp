@@ -82,7 +82,8 @@ enum class microarch {
   NVIDIA_VOL  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0007),
   NVIDIA_TUR  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0008),
   NVIDIA_AMP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x0009),
-  NVIDIA_HOP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x000A),
+  NVIDIA_ADA  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x000A),
+  NVIDIA_HOP  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0x000B),
   NVIDIA_UNK  = ((static_cast<int>(vendor::NVIDIA) << 16) | 0xFFFE), // unknown
   //
   OTHER       = 0x7FFF0000,
@@ -116,6 +117,7 @@ static const char *format(microarch ma)
   case microarch::NVIDIA_VOL:   return "nvda_vol";
   case microarch::NVIDIA_TUR:   return "nvda_tur";
   case microarch::NVIDIA_AMP:   return "nvda_amp";
+  case microarch::NVIDIA_ADA:   return "nvda_ada";
   case microarch::NVIDIA_HOP:   return "nvda_hop";
   case microarch::NVIDIA_UNK:   return "nvda_unk";
   //
