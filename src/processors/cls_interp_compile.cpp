@@ -291,8 +291,8 @@ static void emit_compiled_kernel_properties(
   // only valid if it's a builtin kernel
   // KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_2, CL_KERNEL_GLOBAL_WORK_SIZE, ndr_temp);
   KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
-  KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_WORK_GROUP_SIZE, size_t);
-  KERNEL_WORKGROUP_PROPERTY(cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
+  KERNEL_WORKGROUP_PROPERTY(
+      cl_spec::CL_1_0, CL_KERNEL_COMPILE_WORK_GROUP_SIZE, ndr_temp);
   KERNEL_WORKGROUP_PROPERTY(
     cl_spec::CL_1_1, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, size_t);
   KERNEL_WORKGROUP_PROPERTY_MEM(cl_spec::CL_1_0, CL_KERNEL_LOCAL_MEM_SIZE);
@@ -590,10 +590,34 @@ program_object &script_compiler::compile_program(const program_spec *ps)
         po.device->device) << "\n";
       fatal_at(ps->defined_at, ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
+      // CL_PROGRAM_BUILD_GLOBAL_VARIABLE_TOTAL_SIZE
       debug_at(ps->defined_at, get_labeled_build_log(
         ps->defined_at,
         po.program,
         po.device->device));
+
+      cl_program_binary_type bt = 0;
+      CL_COMMAND(
+          ps->defined_at,
+          clGetProgramBuildInfo,
+          po.program,
+          po.device->device,
+          CL_PROGRAM_BINARY_TYPE,
+          sizeof(bt),
+          &bt,
+          nullptr);
+      auto btstr = text::expand_bitset(
+          bt,
+          {
+              {CL_PROGRAM_BINARY_TYPE_NONE, "CL_PROGRAM_BINARY_TYPE_NONE"},
+              {CL_PROGRAM_BINARY_TYPE_COMPILED_OBJECT,
+               "CL_PROGRAM_BINARY_TYPE_COMPILED_OBJECT"},
+              {CL_PROGRAM_BINARY_TYPE_LIBRARY,
+               "CL_PROGRAM_BINARY_TYPE_LIBRARY"},
+              {CL_PROGRAM_BINARY_TYPE_EXECUTABLE,
+               "CL_PROGRAM_BINARY_TYPE_EXECUTABLE"},
+          });
+      debug_at(ps->defined_at, "program binary is: ", btstr);
     } else if (bp_err != CL_SUCCESS) {
       fatal_at(
           ps->defined_at,

@@ -180,6 +180,47 @@ std::string text::printf(const char *patt, ...)
 }
 
 /////////////////////////////////////////////////////////////////////////////
+void text::expand_bitset_to(
+  std::ostream &os,
+  uint64_t val,
+  std::initializer_list<std::pair<uint64_t,const char *>> mappings)
+{
+  // check for a zero symbol or a compound match
+  for (auto [v,sym] : mappings) {
+    if (val == v) {
+      os << sym;
+      return;
+    }
+  }
+  // no match and no mapping for 0x0 => emit 0x0
+  if (val == 0) {
+    os << "0x0";
+    return;
+  }
+  // loop through bits
+  bool first = true;
+  auto add_sep = [&]() {
+    if (first) {
+      first = false;
+    } else {
+      os << '|';
+    }
+  };
+  // 
+  for (auto [v,sym] : mappings) {
+    if (val & v) {
+      add_sep();
+      os << sym;
+      val &= ~v;
+    }
+  }
+  if (val != 0) {
+    add_sep();
+    os << "0x" << text::hex(val, 0);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // integer parsing
 template <typename T>
 static std::optional<T>

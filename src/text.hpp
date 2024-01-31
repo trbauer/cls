@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <initializer_list>
 #include <iomanip>
 #include <ostream>
 #include <optional>
@@ -271,6 +272,28 @@ namespace text
   }
 
   /////////////////////////////////////////////////////////////////////////////
+  // BITSET EXPANSION
+  // - expands a bitset to a | separated list of symbols:
+  // - exact matches tested first: so 0x0 can have a mapping
+  //   as can compound symbols e.g. enum {READ=1, WRITE=2, READ_WRITE=3}
+  //   (we render READ_WRITE intead of READ|WRITE)
+  // - leftovers printed in hex; e.g. READ|0x8 given 9 or just 0x8 given 0x8
+  // - if the value is 0 and no mapping exists, then we render 0x0
+  // - chooses first symbols first; so put READ_WRITE ahead of READ; so if
+  //   there are other undefined bits you will see READ_WRITE|0x8 rather
+  //   than READ|WRITE|0x8
+  void expand_bitset_to(
+      std::ostream                                            &os,
+      uint64_t                                                 bs,
+      std::initializer_list<std::pair<uint64_t, const char *>> mappings);
+  static inline std::string expand_bitset(
+      uint64_t                                                 bs,
+      std::initializer_list<std::pair<uint64_t, const char *>> mappings) {
+    std::stringstream ss; expand_bitset_to(ss, bs, mappings); return ss.str();
+  }
+
+
+  /////////////////////////////////////////////////////////////////////////////
   // INTEGER PARSING
   // - parses decimal (decimal digits) or hex (0x...)
   // - signed version allows leading negation (-)
@@ -430,7 +453,7 @@ namespace text
     table(const table &) = delete;
     table &operator=(const table &t) = delete;
   }; // table
-} // namespace cls
+} // namespace text
 
 std::ostream &operator <<(std::ostream &os, text::hex h);
 template <typename T>

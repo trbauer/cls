@@ -90,11 +90,12 @@ help = do
     "  runDiffSurfaceTestMismatchImm\n" ++
     "  runContextIdentifierTest\n" ++
     "  runContextIdentifierNegativeTest\n" ++
-    "  runInitConstWithDim\n" ++
-    "  runInitRandomTests\n" ++
+    "  runInitConstTests\n" ++
+    "  runInitConstWithDimTests\n" ++
     "  runInitSequenceTests\n" ++
     "  runInitFiniteSequenceTests\n" ++
     "  runInitCycleTests\n" ++
+    "  runInitRandomTests\n" ++
     "  runInitFileBinTest\n" ++
     "  runSlmDynamicTest\n" ++
     "  runSlmStaticTest\n" ++
@@ -290,16 +291,18 @@ runWithOpts os = run_tests >> print_summary >> exit
           runContextIdentifierNegativeTest os
           --
           -- MEM INITIALIZERS
+          --   CONSTANT INIT
+          runInitConstTests os
           --   EXPLICIT DIMENSION
-          runInitConstWithDim os
-          --   RANDOM VARIABLES
-          runInitRandomTests os
+          runInitConstWithDimTests os
           --   SEQUENCE VARIABLES
           runInitSequenceTests os
           --   FINITE SEQUENCE VARIABLES
           runInitFiniteSequenceTests os
           --   CYCLE VARIABLES
           runInitCycleTests os
+          --   RANDOM VARIABLES
+          runInitRandomTests os
           --
           --   BINARY FILE MEM INITIALIZERS
           runInitFileBinTest os
@@ -783,8 +786,33 @@ runSaveImageTest os = do
 
 -------------------------------------------------------------------------------
 -- MEM INIT
-runInitConstWithDim :: Opts -> IO ()
-runInitConstWithDim os = do
+runInitConstTests :: Opts -> IO ()
+runInitConstTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let arg_zero
+              | isDigit (last type_name) = "(" ++ type_name ++ ")0"
+              | otherwise = "0"
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add(A," ++ arg_zero ++ ")<4>\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
+
+
+  -- general testing
+  runTest "int"    "4"   [4,4,4,4 :: Int]
+  runTest "int"    "-1"  [-1,-1,-1,-1 :: Int]
+  runTest "float"  "-2"  [-2,-2,-2,-2 :: Float]
+  -- vector types
+  runTest "int2"   "(int2)4"     [4,4, 4,4, 4,4, 4,4 :: Int]
+  runTest "int2"   "(int2)(3,4)" [3,4, 3,4, 3,4, 3,4 :: Int]
+
+runInitConstWithDimTests :: Opts -> IO ()
+runInitConstWithDimTests os = do
   let script :: String
       script =
         "let A=0:[4*8*2]w\n" ++
@@ -799,6 +827,99 @@ runInitConstWithDim os = do
         "0020:             1             2             1             2             1             2             1             2\n" ++
         ""
   runScript os "init surface with explicit size" (mShouldExit 0 .&&. buffer_matches) script
+
+-------------------------------------------------------------------------------
+--
+runInitSequenceTests :: Opts -> IO ()
+runInitSequenceTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<4>(A,0)\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
+  -- general testing
+  runTest "int"    "seq()"     [0,1,2,3]
+  runTest "int"    "seq(0,4)"  [0,4,8,12]
+  runTest "int"    "seq(0,-1)" [0,-1,-2,-3]
+  runTest "float"  "seq()"     [0,1,2,3 :: Float]
+
+-------------------------------------------------------------------------------
+--
+runInitFiniteSequenceTests :: Opts -> IO ()
+runInitFiniteSequenceTests os = do
+  let runTestG :: (Eq n,Show n,Read n) => String -> String -> String -> [n] -> IO ()
+      runTestG arg_zero type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add(A," ++ arg_zero ++ ")<4>\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
+
+      runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest = runTestG "0"
+
+  -- general testing
+  runTest "int"    "fseq(1)"     [(1 :: Int),1,1,1]
+  runTest "int"    "fseq(4,0)"   [(4 :: Int),0,0,0]
+  runTest "int"    "fseq(0,-1)"  [(0 :: Int),-1,-1,-1]
+  runTest "float"  "fseq(0,1,2)" [0,1,2,2 :: Float]
+  -- vector types
+  runTestG "(int2)(0,0)" "int2"   "fseq(1,2,3)" [(1 :: Int),2, 3,3, 3,3, 3,3]
+
+-------------------------------------------------------------------------------
+--
+runInitCycleTests :: Opts -> IO ()
+runInitCycleTests os = do
+  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
+      runTest type_name init ns = do
+        let script :: String
+            script =
+              "let A=" ++ init ++ ":rw\n" ++
+              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add(A,0)<4>\n" ++
+              "print(A)\n" ++
+              ""
+            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
+        runScript os ("init cyc test " ++ type_name ++ " " ++ init)  matches script
+  -- general testing
+  runTest "int"    "cyc(12)"  [12,12,12,12]
+  runTest "int"    "cyc(1,-1)" [1,-1,1,-1]
+  runTest "float"  "cyc(-2,2)" [-2,2,-2,2 :: Float]
+
+
+-- let A=file.bin
+runInitFileBinTest :: Opts -> IO ()
+runInitFileBinTest os = do
+  let bin_file = "init.bin"
+  BS.writeFile bin_file $ BS.pack (take 8 [12..])
+  let script :: String
+      script =
+        -- all forms are equivalent
+        "let A=file('" ++ bin_file ++ "'):rw\n" ++
+        "let B=file<>('" ++ bin_file ++ "'):rw\n" ++
+        "let C=file<bin>('" ++ bin_file ++ "'):rw\n" ++
+        --
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(A,1)<8>\n" ++
+        "diff(seq(13):r,A)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(B,1)<8>\n" ++
+        "diff(seq(13):r,B)\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(C,1)<8>\n" ++
+        "diff(seq(13):r,C)\n" ++
+        "\n" ++
+        -- with the initializer inline
+        "let D=2:rw\n" ++
+        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`addv(D,file<bin>(" ++ show bin_file ++ "):r)<8>\n" ++
+        "diff(seq(14):r,D)\n" ++
+        ""
+  runScript os "init by file binary" (mShouldExit 0) script
+  removeFile bin_file
 
 -------------------------------------------------------------------------------
 --
@@ -884,93 +1005,6 @@ runInitRandomTests os = do
   runNegativeTestLowGtHigh "int"   "random(0,-1)"
   runNegativeTestLowGtHigh "float" "random(0,-1)"
   runNegativeTestLowGtHigh "float" "random(-1)"
-
--------------------------------------------------------------------------------
---
-runInitSequenceTests :: Opts -> IO ()
-runInitSequenceTests os = do
-  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
-      runTest type_name init ns = do
-        let script :: String
-            script =
-              "let A=" ++ init ++ ":rw\n" ++
-              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add<4>(A,0)\n" ++
-              "print(A)\n" ++
-              ""
-            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
-        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
-  -- general testing
-  runTest "int"    "seq()"     [0,1,2,3]
-  runTest "int"    "seq(0,4)"  [0,4,8,12]
-  runTest "int"    "seq(0,-1)" [0,-1,-2,-3]
-  runTest "float"  "seq()"     [0,1,2,3 :: Float]
-
--------------------------------------------------------------------------------
---
-runInitFiniteSequenceTests :: Opts -> IO ()
-runInitFiniteSequenceTests os = do
-  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
-      runTest type_name init ns = do
-        let script :: String
-            script =
-              "let A=" ++ init ++ ":rw\n" ++
-              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add(A,0)<4>\n" ++
-              "print(A)\n" ++
-              ""
-            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
-        runScript os ("init seq test " ++ type_name ++ " " ++ init)  matches script
-  -- general testing
-  runTest "int"    "fseq(1)"     [(1 :: Int),1,1,1]
-  runTest "int"    "fseq(4,0)"   [(4 :: Int),0,0,0]
-  runTest "int"    "fseq(0,-1)"  [(0 :: Int),-1,-1,-1]
-  runTest "float"  "fseq(0,1,2)" [0,1,2,2 :: Float]
-
--------------------------------------------------------------------------------
---
-runInitCycleTests :: Opts -> IO ()
-runInitCycleTests os = do
-  let runTest :: (Eq n,Show n,Read n) => String -> String -> [n] -> IO ()
-      runTest type_name init ns = do
-        let script :: String
-            script =
-              "let A=" ++ init ++ ":rw\n" ++
-              "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=" ++ type_name ++ "]`add(A,0)<4>\n" ++
-              "print(A)\n" ++
-              ""
-            matches = mShouldExit 0 .&&. mPrintMatchesValues 0 ns
-        runScript os ("init cyc test " ++ type_name ++ " " ++ init)  matches script
-  -- general testing
-  runTest "int"    "cyc(12)"  [12,12,12,12]
-  runTest "int"    "cyc(1,-1)" [1,-1,1,-1]
-  runTest "float"  "cyc(-2,2)" [-2,2,-2,2 :: Float]
-
-
--- let A=file.bin
-runInitFileBinTest :: Opts -> IO ()
-runInitFileBinTest os = do
-  let bin_file = "init.bin"
-  BS.writeFile bin_file $ BS.pack (take 8 [12..])
-  let script :: String
-      script =
-        -- all forms are equivalent
-        "let A=file('" ++ bin_file ++ "'):rw\n" ++
-        "let B=file<>('" ++ bin_file ++ "'):rw\n" ++
-        "let C=file<bin>('" ++ bin_file ++ "'):rw\n" ++
-        --
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(A,1)<8>\n" ++
-        "diff(seq(13):r,A)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(B,1)<8>\n" ++
-        "diff(seq(13):r,B)\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`add(C,1)<8>\n" ++
-        "diff(seq(13):r,C)\n" ++
-        "\n" ++
-        -- with the initializer inline
-        "let D=2:rw\n" ++
-        "#" ++ show (oDeviceIndex os) ++ "`tests/add.cl[-DT=uchar]`addv(D,file<bin>(" ++ show bin_file ++ "):r)<8>\n" ++
-        "diff(seq(14):r,D)\n" ++
-        ""
-  runScript os "init by file binary" (mShouldExit 0) script
-  removeFile bin_file
 
 -------------------------------------------------------------------------------
 --
@@ -1342,12 +1376,17 @@ mFileExists path = \_ _ _ -> do
   if z then mSuccess
     else mFail (path ++ ": file not found after run")
 
+
 mPrintMatchesValues :: (Show n,Read n,Eq n) => Int -> [n] -> Matcher
 mPrintMatchesValues pr_ix ns _ out _ = proc 0 (lines out)
   where proc ix (ln0:ln1:lns)
           | "PRINT<" `isPrefixOf` ln0 =
-          if ix  < pr_ix then proc (ix+1) lns -- skip it
-            else match ns (drop 1 (words ln1))
+          if ix  < pr_ix then proc (ix + 1) lns -- skip it
+            else do
+              -- strip out ( ) so that we can flatten vector types
+              let tks = drop 1 (words (filter (`notElem`"(,)") ln1))
+              -- print tks
+              match ns tks
         proc ix [] = mFail ("failed to find PRINT<..> instance " ++ show pr_ix ++ " in output")
 
         match (n:ns) (w:ws) =
