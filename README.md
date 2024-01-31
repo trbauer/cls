@@ -1,7 +1,7 @@
 # CL Script - *cls* on Unix *cls64.exe* or *cls32.exe* on Windows
 ## An OpenCL Scripting Language for Testing, Profiling, Debugging, and More
 
-OpenCL programs require considerable boilerplate host-side source code to: load source; compile it; check and print errors; allocate and initialize buffers and images (surfaces) from constants, file, random data, or other source; bind those arguments to a kernel instance, and then dispatch kernels on a command queue.  In addition, more boilerplate code is required depending on the specific task beit: timing, debugging (printing intermediate data), saving or printing output, or refereeing output with reference values.  CL Script realizes many of these common tasks in a terse syntax.  Many typical uses result in "one-liners" that can be passed via command line (c.f. the `-e` option).  More complex scripts can be passed via a file containing a sequence of commands on separate lines.
+OpenCL programs require considerable boilerplate host-side source code to: load source; compile it; check and print errors; allocate and initialize buffers and images (surfaces) from constants, file, random data, or other source; bind those arguments to a kernel instance, and then dispatch kernels on a command queue.  In addition, more boilerplate code is required depending on the specific task be it: timing, debugging (printing intermediate data), saving or printing output, or refereeing output with reference values.  CL Script realizes many of these common tasks in a terse syntax.  Many typical uses result in "one-liners" that can be passed via command line (c.f. the `-e` option).  More complex scripts can be passed via a file containing a sequence of commands on separate lines.
 
 ## Applications
 Some practical applications for CL Script include the following and are illustrated in more detail in further sections.
@@ -20,7 +20,7 @@ CL Script has a powerful integrated help system. Use `-h` on the command line to
 A CL Script program consists of a sequence of CL Script statements.  Statements by definitions (let expressions), commands such as *dispatches* (kernel enqueues), buffer *diff*ing (verification), buffer *print*ing and other such commands.
 
 ### Dispatch Command
-A dispatch command represents a kernel ND Range enqueue on a command queue.  It captures specification of the OpenCL device, context, and command-queue creation, buffer and image creation and initialization, program and kernel compilation as well as argument specifiction and finally dispatch.
+A dispatch command represents a kernel ND Range enqueue on a command queue.  It captures specification of the OpenCL device, context, and command-queue creation, buffer and image creation and initialization, program and kernel compilation as well as argument specification and finally dispatch.
 
 #### Example: demo.cl
 ```OpenCL
@@ -34,21 +34,22 @@ kernel void addK(
 
 Testing this kernel can be performed by the compact CL Script given below.  This can be placed in a file argument to CL Script or passed as a literal string using the `-e` option.  Execute with `-h=e` for more information on that option.
 ```
-#0`demo.cl`addK<32,4>(0:w,seq(10):r,random<12007>(0,4):rw,3)
+#0`demo.cl`addK(0:w,seq(10):r,random<12007>(0,4):rw,3)<32,4>
 ```
 This command breaks down into several sections separated by a \` (backtick).
   * `#0` creates a command queue on device 0 in a linear flattened order of the OpenCL platform/device tree.  (Run CL Script with the `-l` option to list devices by index on the current machine.)
   * The `demo.cl` part loads the OpenCL C source file and creates a program from that source.  This section can be suffixed with build options passed to `clBuildProgram`.  For example, `demo.cl[-DTYPE=int -cl-opt-disable]` would use the build option string `"-DTYPE=int -cl-opt-disable"`.
   * The `addK` section specifies the name of the kernel to create from the program compiled.
-  * The angle bracket section `<32,4>` specifies the global and local sizes.   The local size may be omitted and CL Script will use `nullptr` as the local size (letting the driver choose the workgroup size. If the  `__attribute__((reqd_work_group_size(X,Y,Z)))` attribute is present, omission of the local size will cause CL Script to select the required workgroup size value. Two or three dimensional sizes are also supported using an `x` as part of the lexical token. E.g. `<1024x768,16x16>` would be an example 2D dimension specification.  Finally, constant expressions are also supported. For example `<(1024*2)x768>` would be the same as `<2048x768>`.
-  * Finally, the kernel arguments constitute the rest of the command in parentheses `(0:w,seq(10):r,random<12007>(0,4):rw,3)`.  The general syntax for surface initializers (buffers or images) is an exprssion suffixed with a `:` and a string of surface attributes.
+  * The kernel arguments constitute the rest of the command in parentheses `(0:w,seq(10):r,random<12007>(0,4):rw,3)`.  Arguments are separated by commas and apply in the order given in the kernel.  Buffers and images have dedicated syntax for surface initializers appearing as initializer expressions suffixed with a `:` and a string of surface attributes.  The next paragraph says more.
+  * Finally, the angle bracket section `<32,4>` specifies the global and local sizes.   The local size may be omitted and CL Script will use `nullptr` as the local size letting the driver choose the workgroup size.  If the  `__attribute__((reqd_work_group_size(X,Y,Z)))` attribute is present, omission of the local size will cause CL Script to select the required workgroup size value.  Two or three dimensional sizes are also supported using an `x` as part of the lexical token. E.g. `<1024x768,16x16>` would be an example 2D dimension specification.  Finally, constant expressions are also supported if surrounded by parentheses.  For example `<(1024*2)x768>` would be the same as `<2048x768>`, indicating a global size of `2048` in the X-dimension (`get_global_id(0)`) and `768` in the Y (`get_global_id(1)`).
 
-The specific meaning of the argument initializers above follows.
 
-  * The first argument `0:w` creates a buffer of zeros `0` with `w` write-only access (`CL_MEM_WRITE_ONLY`).  By default CL Script automatically chooses the buffer size by assuming one element per work item in the global range of the enqueue.  It infers the type of buffer elements to be `int` by parsing the C preprocessed source code as well.  For a buffer unified with an kernel argument of type `global T *` CL Script will create a buffer of `get_global_size(0)*get_global_size(1)*get_global_size(2)*sizeof(T)`.  In the case of the example above this is `32*sizeof(int)`.
+The specific meaning of the argument initializers in the above example follows.
 
-  The buffer size can be overridden with a specific size if needed. For example, `0:[64*4]w` would force the buffer to be 256 bytes.  Note how the the buffer size expression is bytes, not elements.  Custom sizes enable kernel that processes several element per workitem or pad a surface.
-  * The second argument initializer `seq(10):r` creates a similar sized buffer with a sequence of integer values starting at 10.  The `:r` surface attribute specifies an access mode of `CL_MEM_READ_ONLY`.
+  * The first argument `0:w` creates a buffer of zeros (`0`) with write-only (`w`) access (`CL_MEM_WRITE_ONLY`).  By default CL Script automatically chooses the buffer size by assuming one element per work item in the global range of the enqueue and the buffer type size.  CL script infers the type of buffer elements to be `int` by parsing the C preprocessed source code as well.  For a buffer unified with an kernel argument of type `global T *` CL Script will create a buffer of `get_global_size(0)*get_global_size(1)*get_global_size(2)*sizeof(T)`.  In the case of the example above this is `32*sizeof(int)`.
+
+  The buffer size can be overridden with a specific size if needed. For example, `0:[64*4]w` would force the buffer to be 256 bytes.  Note well, the the buffer size expression is *bytes* not elements.  Custom sizes enable kernels that processes several element per workitem, pad a surface, or have a shared variable of some sort.
+  * The second argument initializer `seq(10):r` creates a similar sized buffer, one per workitem, with an arithmetic sequence of integer values starting at 10 (i.e. 10, 11, ...).  The `:r` surface attribute specifies an access mode of `CL_MEM_READ_ONLY`.
   * The third argument creates another similar sized buffer with access mode `CL_MEM_READ_WRITE`. The contents are initialized to random values using a seed of `12007` and in the (inclusive) range `[0,4]` (inclusive).
   * The final argument is a scalar/uniform kernel argument of `3`.
 
@@ -118,9 +119,9 @@ let SRC=image<rgba,u8>('demos/lena.png'):r
 let IMG1=image<rgba,u8,512x512>:rw
 let IMG2=image<rgba,u8,512x512>:rw
 let IMG3=image<rgba,u8,512x512>:rw
-#1`demos/blur9.cl`blur<512x512>(IMG1,SRC)
-#1`demos/blur9.cl`blur<512x512>(IMG2,IMG1)
-#1`demos/blur9.cl`blur<512x512>(IMG3,IMG2)
+#1`demos/blur9.cl`blur(IMG1,SRC)<512x512>
+#1`demos/blur9.cl`blur(IMG2,IMG1)<512x512>
+#1`demos/blur9.cl`blur(IMG3,IMG2)<512x512>
 save("b1.png",IMG1)
 save("b2.png",IMG2)
 save("b3.png",IMG3)
@@ -138,9 +139,9 @@ CL Script has a very power buffer initializer syntax as shown above, but often w
 Consider the CL Script given below (`demo.cls`).
 ```
 let A=0:rwp8
-#0`demo.cl`addK<16>(A, A, 1:rw, 0)
+#0`demo.cl`addK(A, A, 1:rw, 0)<16>
 print<4>(A)
-#0`demo.cl`addK<16>(A, A, 2:rw, 0)
+#0`demo.cl`addK(A, A, 2:rw, 0)<16>
 print<uint,4>(A)
 ```
 This results output similar to the following.
@@ -165,7 +166,7 @@ This enables us to reference the same buffer several times.  Also observe how th
 
 #
 ## The `diff` Command
-The `diff` command allows us to compare buffers to a specific value or another buffer.  If a difference is encountered, the `diff` command exits with an error (though this can be overriden via the `-Xno-exit-on-diff-fail` flag).
+The `diff` command allows us to compare buffers to a specific value or another buffer.  If a difference is encountered, the `diff` command exits with an error (though this can be overridden via the `-Xno-exit-on-diff-fail` flag).
 
 Integer types use binary comparison.  Floating-point also handle NaN comparison and also permit an absolute difference threshold.  Consider the following example (`demo2.cl`).
 ```OpenCL
@@ -180,8 +181,8 @@ The kernel above will create a NaN value for local id 1 (0.0f/0.0f).  Different 
 ```
 let A=0:rw
 let B=0:rw
-#0`demo2.cl`div<8>(A)
-#1`demo2.cl`div<8>(B)
+#0`demo2.cl`div(A)<8>
+#1`demo2.cl`div(B)<8>
 print<uint>(A)
 print(A)
 print<uint>(B)
@@ -217,8 +218,8 @@ kernel void test(global float *dst)
 The script below tests the effect of the `-cl-fp32-correctly-rounded-divide-sqrt` OpenCL build option.
 ```
 let A=seq(10):rw, B=seq(10):rw
-#0`demo3.cl`test<8>(A)
-#0`demo3.cl[-cl-fp32-correctly-rounded-divide-sqrt]`test<8>(B)
+#0`demo3.cl`test(A)<8>
+#0`demo3.cl[-cl-fp32-correctly-rounded-divide-sqrt]`test(B)<8>
 diff(A,B)
 ```
 The above program detects a difference on the second element in the buffer and emits something similar to the below.  Note, that the minor fractional difference does not show up with the default precision.
@@ -247,13 +248,13 @@ PRINT<uint>[0x0000015FD63A6F00  (32 B)] =>
 PRINT<uint>[0x0000015FD63A7120  (32 B)] =>
 00000:  0x404A62C2  0x40544395  0x405DB3D7  0x4066C15A  0x406F7751  0x4077DEF6  0x40800000  0x4083F07B
 ```
-We can see that the second elements differ in the lowest bit of the manissa (`0x40544394` and `0x40544395`).
+We can see that the second elements differ in the lowest bit of the mantissa (`0x40544394` and `0x40544395`).
 
 Now suppose we don't care about a minor difference.  Change the script to following to solve this problem.
 ```
 let A=seq(10):rw, B=seq(10):rw
-#0`demo3.cl`test<8>(A)
-#0`demo3.cl[-cl-fp32-correctly-rounded-divide-sqrt]`test<8>(B)
+#0`demo3.cl`test(A)<8>
+#0`demo3.cl[-cl-fp32-correctly-rounded-divide-sqrt]`test(B)<8>
 print<uint>(A); print<uint>(B)
 diff<float,0.001>(A,B)
 ```
@@ -262,7 +263,7 @@ The diff will succeed and the program will exit 0 with no error message.
 
 #
 ## Printing Buffers With the `print` Command
-The `print` command, illustrated earlier, prints a surface's values.  The surface type can be overriden (re-interpreted) via an optional parameter.
+The `print` command, illustrated earlier, prints a surface's values.  The surface type can be overridden (re-interpreted) via an optional parameter.
 
 #
 ## Saving Buffers and Images With `save`
@@ -283,10 +284,9 @@ Currently, `float4` and `uchar4`, both in RGBA order, are supported.
 # Execution Details
 CL Script executes in three phases.
 1. **Parsing**.  The CL Script syntax is parsed to an intermediate form either from a file given or via an immediate argument using the `-e` option.  The `-P` option stops processing after parsing.
-2. **Compilation**.  Elements of the constructed IR are bound to actual objects representing those things. This includes contructing OpenCL contexts, command queues, buffers, and other elements.  Some additional checking is performed here.  Inferred surface sizes and properties are resolved in this phase.
+2. **Compilation**.  Elements of the constructed IR are bound to actual objects representing those things. This includes constructing OpenCL contexts, command queues, buffers, and other elements.  Some additional checking is performed here.  Inferred surface sizes and properties are resolved in this phase.
 3. **Execution**.  This final phase walks through the list of commands generated in the compilation phase and executes each in order. The `-i` option specifies the number of iterations to repeats this phase.  **NOTE:** Surfaces are initialized in this phase; consequently, *each successive iteration* will re-initialize buffers with an `-i` value greater than 1.  Consider using the `undef` value to suppress initialization of given buffers. (E.g. `undef:w` defines writable buffer of undefined values.)
 
-#
 # Other Usage Modes
 
 ## Performance Analysis
