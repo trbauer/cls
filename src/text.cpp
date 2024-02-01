@@ -206,7 +206,7 @@ void text::expand_bitset_to(
       os << '|';
     }
   };
-  // 
+  // main body of symbols
   for (auto [v,sym] : mappings) {
     if (val & v) {
       add_sep();
