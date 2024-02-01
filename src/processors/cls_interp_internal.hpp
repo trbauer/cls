@@ -193,6 +193,14 @@ struct dispatch_command {
     ss << dev_name << ":" << kernel->program->device->device;
     ss << "`";
     ss << kernel->program->program << "`" << kernel->kernel;
+    ss << "(";
+    size_t next_so = 0;
+    for (size_t i = 0; i < evaluated_args.size(); i++) {
+      if (i > 0)
+        ss << ", ";
+      ss << evaluated_args[i];
+    }
+    ss << ")";
     ss << "<";
     if (spec) {
       ss << global_size.str();
@@ -204,14 +212,6 @@ struct dispatch_command {
       ss << "<nullptr>";
     }
     ss << ">";
-    ss << "(";
-    size_t next_so = 0;
-    for (size_t i = 0; i < evaluated_args.size(); i++) {
-      if (i > 0)
-        ss << ", ";
-      ss << evaluated_args[i];
-    }
-    ss << ")";
     return ss.str();
   }
 };

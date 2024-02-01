@@ -1044,6 +1044,13 @@ size_t ndr::product() const {
 
 void dispatch_spec::str(std::ostream &os, format_opts fopts) const {
   kernel.str(os, fopts);
+  os << "(";
+  for (size_t i = 0; i < arguments.size(); i++) {
+    if (i > 0)
+      os << ", ";
+    arguments[i].str(os,fopts);
+  }
+  os << ")";
   os << "<";
   for (size_t i = 0; i < global_size.size(); i++) {
     if (i > 0)
@@ -1059,13 +1066,6 @@ void dispatch_spec::str(std::ostream &os, format_opts fopts) const {
     }
   }
   os << ">";
-  os << "(";
-  for (size_t i = 0; i < arguments.size(); i++) {
-    if (i > 0)
-      os << ", ";
-    arguments[i].str(os,fopts);
-  }
-  os << ")";
   if (!where_bindings.empty()) {
     os << " " << fopts.keyword("where") << " ";
     for (size_t i = 0; i < where_bindings.size(); i++) {

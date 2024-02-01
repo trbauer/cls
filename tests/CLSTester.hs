@@ -305,7 +305,6 @@ runWithOptsWithTrs os io_trs = body
           addDiffSurfaceTestMismatchVar os ior
           addDiffSurfaceTestMismatchImm os ior
 
-
           -- MEM INITIALIZERS
           --   CONSTANT INIT
           addInitConstTests os ior
@@ -1206,7 +1205,7 @@ addInitRandomTests os ts_ior = do
   --
   let addNegativeTestLowGtHigh type_name expr = do
         addScript os ts_ior
-          ("mem.init.rand." ++ type_name ++ ".(" ++ expr ++ ")")
+          ("mem.init.rand.neg." ++ type_name ++ ".(" ++ expr ++ ")")
           ("init random negative test " ++ type_name ++ " " ++ expr)
           (mShouldExit 1 .&&. mStderrContains "low bound > high bound") $
             "let A=" ++ expr ++ ":rw\n" ++ -- ensure <> empty works
@@ -1218,6 +1217,7 @@ addInitRandomTests os ts_ior = do
   addNegativeTestLowGtHigh "int"   "random(0,-1)"
   addNegativeTestLowGtHigh "float" "random(0,-1)"
   addNegativeTestLowGtHigh "float" "random(-1)"
+
 
 
 -- let A=file.bin
