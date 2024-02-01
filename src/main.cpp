@@ -162,7 +162,7 @@ int main(int argc, const char **argv)
           os.metric_format = cls::opts::NAT;
         } else if (s == "t" || s == "trans" || s == "transposed") {
           os.metric_format = cls::opts::TRANS;
-        } else if (s == "c" || s == "csv" || s == "csv") {
+        } else if (s == "c" || s == "csv") {
           os.metric_format = cls::opts::CSV;
         } else {
           eh("invalid format (must be n, t, or c)");
