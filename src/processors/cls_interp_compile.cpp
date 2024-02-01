@@ -526,19 +526,6 @@ program_object &script_compiler::compile_program(const program_spec *ps)
         "and .bin, .ptx, and .obj imply binary\n");
     }
   }
-  auto fatalHere =
-    [&](const char *do_what, const char *with_what, cl_int err) {
-      std::string dev_nm;
-      cl_int errd;
-      if ((errd = get_device_info(
-        po.device->device, CL_DEVICE_NAME, dev_nm)) != CL_SUCCESS)
-      {
-        dev_nm = cl_lib::status_to_symbol(errd);
-      }
-      fatal_at(ps->defined_at,
-        ps->path, ": failed to ", do_what, " with ", with_what,
-        " (", cl_lib::status_to_symbol(err), ") on device [", dev_nm, "]");
-    };
 
   std::string build_opts = ps->build_options;
   std::string build_opts_with_arg_info = build_opts;
