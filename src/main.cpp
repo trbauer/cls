@@ -247,6 +247,7 @@ int main(int argc, const char **argv)
               for (const ms_info &mis : mss) {
                 ss << " * " << mis.set << "\n";
               }
+              delete md_lib;
               eh(ss.str());
             }
           }
