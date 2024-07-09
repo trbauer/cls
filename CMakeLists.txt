@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 project(cls)
 
@@ -165,7 +165,8 @@ add_executable("${CLS_EXE}" ${CLS_SOURCES})
 # enable parallel build
 if (MSVC)
   target_compile_options("${CLS_EXE}" PRIVATE "/MP")
-  add_compile_options("/w4")
+#  target_compile_options("${CLS_EXE}" PRIVATE "/MP" "/w4")
+#  add_compile_options("/w4")
 endif()
 
 if (UNIX)
@@ -245,4 +246,43 @@ target_compile_features(${CLS_EXE} PRIVATE cxx_std_20)
 set_target_properties("${CLS_EXE}" PROPERTIES
   CXX_STANDARD 20
   OUTPUT_NAME  "${CLS_EXE}"
+)
+
+
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+set(CL2BIN_EXE "cl2bin")
+
+set(CL2BIN_SOURCES
+    "src/cl2bin/cl2bin.cpp"
+    "src/cl_headers.hpp"
+    "src/cl_exts.hpp"
+    "src/cls_opts.hpp"
+    "src/cl_lib.cpp" "src/cl_lib.hpp"
+    "src/devices.hpp" "src/devices.cpp"
+    "src/fatal.hpp" "src/fatal.cpp"
+    "src/system.hpp" "src/system.cpp"
+    "src/text.hpp" "src/text.cpp"
+    )
+
+add_executable("${CL2BIN_EXE}" ${CL2BIN_SOURCES})
+
+source_group("src\\cl2bin" FILES "src/cl2bin/cl2bin.cpp")
+
+target_compile_features(${CL2BIN_EXE} PRIVATE cxx_std_20)
+target_include_directories("${CL2BIN_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS} "src")
+
+
+if (MSVC)
+  target_compile_options("${CL2BIN_EXE}" PRIVATE "/MP")
+#  target_compile_options("${CL2BIN_EXE}" PRIVATE "/MP" "/w4")
+endif()
+
+set_target_properties("${CL2BIN_EXE}" PROPERTIES
+  CXX_STANDARD 20
+  OUTPUT_NAME  "${CL2BIN_EXE}"
 )

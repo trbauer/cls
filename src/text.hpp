@@ -235,7 +235,7 @@ namespace text
   void          format_to(std::ostream &) { }
   template <typename T, typename...Ts>
   void          format_to(std::ostream &os, T t, Ts...ts) {
-      os << t; format_to(os, ts...);
+    os << t; format_to(os, ts...);
   }
 
   template <typename...Ts>

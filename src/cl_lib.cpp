@@ -81,6 +81,8 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
   BIND_SYM(clReleaseProgram);
   //
   BIND_SYM(clBuildProgram);
+  BIND_SYM(clGetProgramInfo);
+  BIND_SYM(clGetProgramBuildInfo);
   BIND_SYM(clCreateKernel);
   BIND_SYM(clCreateKernelsInProgram);
   BIND_SYM(clSetKernelArg);

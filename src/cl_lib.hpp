@@ -245,7 +245,7 @@ public:
   clReleaseProgram_Fn clReleaseProgram = nullptr;
 
   /////////////////////////////////////////////////////////////////////////////
-  // clGetEventProfilingInfo
+  // clBuildProgram
   using clBuildProgram_Fn = CL_API_ENTRY cl_int(CL_API_CALL *)(
       cl_program /* program */,
       cl_uint /* num_devices */,
@@ -257,12 +257,33 @@ public:
   clBuildProgram_Fn clBuildProgram = nullptr;
 
   /////////////////////////////////////////////////////////////////////////////
+  // clGetProgramBuildInfo
+  using clGetProgramBuildInfo_Fn = CL_API_ENTRY cl_int(CL_API_CALL *)(
+      cl_program            /* program */,
+      cl_device_id          /* device */,
+      cl_program_build_info /* param_name */,
+      size_t                /* param_value_size */,
+      void *                /* param_value */,
+      size_t *              /* param_value_size_ret */);
+  clGetProgramBuildInfo_Fn clGetProgramBuildInfo = nullptr;
+
+  /////////////////////////////////////////////////////////////////////////////
   // clCreateKernel
   using clCreateKernel_Fn = CL_API_ENTRY cl_kernel(CL_API_CALL *)(
         cl_program /* program */,
         const char * /* kernel_name */,
         cl_int * /* errcode_ret */);
   clCreateKernel_Fn clCreateKernel = nullptr;
+
+  /////////////////////////////////////////////////////////////////////////////
+  // clGetProgramInfo
+  using clGetProgramInfo_Fn = CL_API_ENTRY cl_int (CL_API_CALL *)(
+        cl_program         /* program */,
+        cl_program_info    /* param_name */,
+        size_t             /* param_value_size */,
+        void *             /* param_value */,
+        size_t *           /* param_value_size_ret */);
+  clGetProgramInfo_Fn clGetProgramInfo = nullptr;
 
   /////////////////////////////////////////////////////////////////////////////
   // clCreateKernelsInProgram
