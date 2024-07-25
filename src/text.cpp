@@ -715,7 +715,7 @@ static std::string find_msvc()
   const char *msvc_2022_comm_root =
     "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\";
   if (sys::directory_exists(msvc_2022_comm_root)) {
-    for (auto &p : sys::list_directory_full_paths(msvc_2022_prof_root)) {
+    for (auto &p : sys::list_directory_full_paths(msvc_2022_comm_root)) {
       RETURN_IF_EXISTS(p + "\\bin\\HostX64\\x64\\cl.exe");
       RETURN_IF_EXISTS(p + "\\bin\\HostX86\\x86\\cl.exe");
     }
