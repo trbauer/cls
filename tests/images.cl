@@ -1,3 +1,4 @@
+// e.g. % cls64 -e "tests/images.cl`flip_channels(image<rgba,un8,4x4>:Sw,image<rgba,un8>('tests/test_image.ppm'):r)<4x4>"
 __constant sampler_t sampler =
       CLK_NORMALIZED_COORDS_FALSE
     | CLK_ADDRESS_CLAMP_TO_EDGE
