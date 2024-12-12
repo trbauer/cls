@@ -343,6 +343,7 @@ namespace text
   // we loaded (emitting a warning) and hope for the best.
   struct cpp_result {
     enum class status {
+      INVALID = -1,
       SUCCESS = 0,
       FILE_NOT_FOUND,
       CPP_NOT_FOUND,
@@ -351,7 +352,7 @@ namespace text
     std::string cpp_path;
     std::string output; // can contain error output if cpp fails due to #error
 
-    cpp_result() { }
+    cpp_result() : result(status::INVALID) {}
     cpp_result(status s, std::string cpp = "", std::string oup = "")
       : result(s), cpp_path(cpp), output(oup) { }
     std::string status_to_string() const;
