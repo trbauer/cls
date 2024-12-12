@@ -627,19 +627,18 @@ void compiled_script_impl::execute(dispatch_command &dc)
 
   cl_event enq_evt;
   CL_COMMAND(dc_at,
-    clEnqueueNDRangeKernel,
-      queue,
-      kernel,
-      (cl_uint)dc.global_size.rank(),
-      nullptr, // global offset
-      dc.global_size.get(),
-      dc.local_size.rank() > 0 ? dc.local_size.get() : nullptr,
-      0,
-      nullptr,
-      &enq_evt);
+      dc.dobj->cl->clEnqueueNDRangeKernel,
+        queue,
+        kernel,
+        (cl_uint)dc.global_size.rank(),
+        nullptr, // global offset
+        dc.global_size.get(),
+        dc.local_size.rank() > 0 ? dc.local_size.get() : nullptr,
+        0,
+        nullptr,
+        &enq_evt);
 
-  CL_COMMAND(dc_at,
-    clWaitForEvents, 1, &enq_evt);
+  CL_COMMAND(dc_at, dc.dobj->cl->clWaitForEvents, 1, &enq_evt);
 
   auto duration_exec =
     std::chrono::duration_cast<std::chrono::microseconds>(
@@ -649,12 +648,12 @@ void compiled_script_impl::execute(dispatch_command &dc)
   if (os.prof_time) {
     cl_ulong st;
     CL_COMMAND(dc_at,
-      clGetEventProfilingInfo,
-        enq_evt, CL_PROFILING_COMMAND_START, sizeof(st), &st, nullptr);
+        dc.dobj->cl->clGetEventProfilingInfo,
+          enq_evt, CL_PROFILING_COMMAND_START, sizeof(st), &st, nullptr);
     cl_ulong en;
     CL_COMMAND(dc_at,
-      clGetEventProfilingInfo,
-        enq_evt, CL_PROFILING_COMMAND_END, sizeof(en), &en, nullptr);
+        dc.dobj->cl->clGetEventProfilingInfo,
+          enq_evt, CL_PROFILING_COMMAND_END, sizeof(en), &en, nullptr);
     dc.prof_times.add((en - st)/1000.0/1000.0/1000.0);
     debug_at(dc_at,
       "CL_PROFILING_COMMAND_START: ", en, "; CL_PROFILING_COMMAND_END: ", en);
@@ -670,12 +669,12 @@ void compiled_script_impl::execute(dispatch_command &dc)
     memset(rep_buf, 0, rep_buf_len);
     size_t output_size = 0;
     CL_COMMAND(dc_at,
-      clGetEventProfilingInfo,
-        enq_evt,
-        CL_PROFILING_COMMAND_PERFCOUNTERS_INTEL,
-        (size_t)rep_buf_len,
-        rep_buf,
-        &output_size);
+        dc.dobj->cl->clGetEventProfilingInfo,
+          enq_evt,
+          CL_PROFILING_COMMAND_PERFCOUNTERS_INTEL,
+          (size_t)rep_buf_len,
+          rep_buf,
+          &output_size);
     if (rep_buf_len != output_size) {
       fatal_at(dc_at, "mdapi_lib: get_report_size() returned wrong length");
     }
@@ -693,22 +692,21 @@ void compiled_script_impl::execute(dispatch_command &dc)
 
   cl_int enq_evt_st = 0;
   CL_COMMAND(dc_at,
-    clGetEventInfo, enq_evt,
-      CL_EVENT_COMMAND_EXECUTION_STATUS,
-      sizeof(enq_evt_st), &enq_evt_st, nullptr);
+      dc.dobj->cl->clGetEventInfo,
+        enq_evt,
+        CL_EVENT_COMMAND_EXECUTION_STATUS,
+        sizeof(enq_evt_st), &enq_evt_st, nullptr);
   if (enq_evt_st != CL_COMPLETE) {
     // this is where NVidia might return -9999
     fatal_at(dc_at, "synchronizing event status returned " ,
       enq_evt_st, " (after wait)");
   }
 
-  CL_COMMAND(dc_at,
-    clReleaseEvent, enq_evt);
+  CL_COMMAND(dc_at, dc.dobj->cl->clReleaseEvent, enq_evt);
 
   print_surfaces(false);
 
-  CL_COMMAND(dc_at,
-    clFinish, queue);
+  CL_COMMAND(dc_at, dc.dobj->cl->clFinish, queue);
 }
 
 void compiled_script_impl::execute(
@@ -965,7 +963,7 @@ void cl_interface::with_buffer_map_read(
 {
   void *host_ptr = nullptr;
   CL_COMMAND_CREATE(host_ptr, at,
-    clEnqueueMapBuffer,
+    cl_lib::DEFAULT.clEnqueueMapBuffer,
       so->queue,
       so->memobj,
       CL_BLOCKING,
@@ -978,13 +976,13 @@ void cl_interface::with_buffer_map_read(
   apply(host_ptr);
 
   CL_COMMAND(at,
-    clEnqueueUnmapMemObject,
-      so->queue,
-      so->memobj,
-      host_ptr,
-      0,
-      nullptr,
-      nullptr);
+      cl_lib::DEFAULT.clEnqueueUnmapMemObject,
+        so->queue,
+        so->memobj,
+        host_ptr,
+        0,
+        nullptr,
+        nullptr);
 }
 
 void cl_interface::with_buffer_map_write(
@@ -994,26 +992,26 @@ void cl_interface::with_buffer_map_write(
 {
   void *host_ptr = nullptr;
   CL_COMMAND_CREATE(host_ptr, at,
-    clEnqueueMapBuffer,
-      so->queue,
-      so->memobj,
-      CL_BLOCKING,
-      CL_MAP_WRITE,
-      0,
-      so->size_in_bytes,
-      0, nullptr,
-      nullptr);
+      cl_lib::DEFAULT.clEnqueueMapBuffer,
+        so->queue,
+        so->memobj,
+        CL_BLOCKING,
+        CL_MAP_WRITE,
+        0,
+        so->size_in_bytes,
+        0, nullptr,
+        nullptr);
 
   apply(host_ptr);
 
   CL_COMMAND(at,
-    clEnqueueUnmapMemObject,
-      so->queue,
-      so->memobj,
-      host_ptr,
-      0,
-      nullptr,
-      nullptr);
+      cl_lib::DEFAULT.clEnqueueUnmapMemObject,
+        so->queue,
+        so->memobj,
+        host_ptr,
+        0,
+        nullptr,
+        nullptr);
 }
 
 void cl_interface::with_image_map_read(
@@ -1029,27 +1027,27 @@ void cl_interface::with_image_map_read(
   region[2] = std::max(so->image_desc.image_depth, (size_t)1);
   size_t row_pitch = 0, slice_pitch = 0;
   CL_COMMAND_CREATE(host_ptr, at,
-    clEnqueueMapImage,
-      so->queue,
-      so->memobj,
-      CL_BLOCKING,
-      CL_MAP_READ,
-      origin,
-      region,
-      &row_pitch,
-      &slice_pitch,
-      0, nullptr, nullptr);
+      cl_lib::DEFAULT.clEnqueueMapImage,
+        so->queue,
+        so->memobj,
+        CL_BLOCKING,
+        CL_MAP_READ,
+        origin,
+        region,
+        &row_pitch,
+        &slice_pitch,
+        0, nullptr, nullptr);
 
   apply(row_pitch, slice_pitch, host_ptr);
 
   CL_COMMAND(at,
-    clEnqueueUnmapMemObject,
-      so->queue,
-      so->memobj,
-      host_ptr,
-      0,
-      nullptr,
-      nullptr);
+      cl_lib::DEFAULT.clEnqueueUnmapMemObject,
+        so->queue,
+        so->memobj,
+        host_ptr,
+        0,
+        nullptr,
+        nullptr);
 }
 
 void cl_interface::with_image_map_write(
@@ -1065,28 +1063,28 @@ void cl_interface::with_image_map_write(
   region[2] = std::max(so->image_desc.image_depth, (size_t)1);
 
   size_t row_pitch = 0, slice_pitch = 0;
-  CL_COMMAND_CREATE(host_ptr,at,
-    clEnqueueMapImage,
-    so->queue,
-    so->memobj,
-    CL_BLOCKING,
-    CL_MAP_WRITE,
-    origin,
-    region,
-    &row_pitch,
-    &slice_pitch,
-    0,nullptr,nullptr);
+  CL_COMMAND_CREATE(host_ptr, at,
+      cl_lib::DEFAULT.clEnqueueMapImage,
+        so->queue,
+        so->memobj,
+        CL_BLOCKING,
+        CL_MAP_WRITE,
+        origin,
+        region,
+        &row_pitch,
+        &slice_pitch,
+        0, nullptr, nullptr);
 
-  apply(row_pitch,slice_pitch,host_ptr);
+  apply(row_pitch, slice_pitch, host_ptr);
 
   CL_COMMAND(at,
-    clEnqueueUnmapMemObject,
-      so->queue,
-      so->memobj,
-      host_ptr,
-      0,
-      nullptr,
-      nullptr);
+      cl_lib::DEFAULT.clEnqueueUnmapMemObject,
+        so->queue,
+        so->memobj,
+        host_ptr,
+        0,
+        nullptr,
+        nullptr);
 }
 
 

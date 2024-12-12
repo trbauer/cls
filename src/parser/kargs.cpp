@@ -443,17 +443,18 @@ program_info *cls::k::parse_program_info_from_api(
   const cls::opts &os,
   cls::diagnostics &ds, cls::loc at,
   cl_program program,
-  cl_device_id dev_id)
+  cl_device_id dev_id,
+  const cl_lib &cl)
 {
   cl_uint ks_len = 0;
-  auto err = clCreateKernelsInProgram(program, 0, nullptr, &ks_len);
+  auto err = cl.clCreateKernelsInProgram(program, 0, nullptr, &ks_len);
   if (err != CL_SUCCESS) {
     ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
       cl_lib::status_to_symbol(err));
   }
   cl_kernel *ks = (cl_kernel*)alloca(sizeof(*ks) * ks_len);
-  err = clCreateKernelsInProgram(program, ks_len, ks, nullptr);
+  err = cl.clCreateKernelsInProgram(program, ks_len, ks, nullptr);
   if (err != CL_SUCCESS) {
     ds.fatal_at(at,
       "failed to parse program info program: clCreateKernelsInProgram: ",
@@ -478,7 +479,7 @@ program_info *cls::k::parse_program_info_from_api(
     kernel_info &ki = pi->kernels.back();
 
     size_t knm_len = 0;
-    err = clGetKernelInfo(
+    err = cl.clGetKernelInfo(
       ks[k_ix],
       CL_KERNEL_FUNCTION_NAME,
       0,
@@ -495,7 +496,7 @@ program_info *cls::k::parse_program_info_from_api(
         &knm_buf_static[0] : (char *)alloca(knm_len + 1);
     memset(knm,0,knm_len+1);
 
-    err = clGetKernelInfo(
+    err = cl.clGetKernelInfo(
       ks[k_ix],
       CL_KERNEL_FUNCTION_NAME,
       knm_len,
@@ -510,7 +511,7 @@ program_info *cls::k::parse_program_info_from_api(
     ki.name = knm;
 
     memset(ki.reqd_word_group_size, 0, sizeof(ki.reqd_word_group_size));
-    err = clGetKernelWorkGroupInfo(
+    err = cl.clGetKernelWorkGroupInfo(
       ks[k_ix],
       dev_id,
       CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
@@ -525,7 +526,7 @@ program_info *cls::k::parse_program_info_from_api(
     }
 
     cl_uint ka_len = 0;
-    err = clGetKernelInfo(
+    err = cl.clGetKernelInfo(
       ks[k_ix],
       CL_KERNEL_NUM_ARGS,
       sizeof(ka_len),
@@ -551,7 +552,7 @@ program_info *cls::k::parse_program_info_from_api(
       auto get_string_param = [&] (cl_int param, const char *param_name) {
         cl_int err = 0;
         size_t len = 0;
-        err = clGetKernelArgInfo(
+        err = cl.clGetKernelArgInfo(
           ks[k_ix],
           ka_ix,
           param,
@@ -565,7 +566,7 @@ program_info *cls::k::parse_program_info_from_api(
             cl_lib::status_to_symbol(err));
         }
         char *buf = (char *)alloca(len + 1);
-        err = clGetKernelArgInfo(
+        err = cl.clGetKernelArgInfo(
           ks[k_ix],
           ka_ix,
           param,
@@ -582,9 +583,9 @@ program_info *cls::k::parse_program_info_from_api(
         return std::string(buf);
       };
 
-      ai.name = get_string_param(CL_KERNEL_ARG_NAME,"CL_KERNEL_ARG_NAME");
+      ai.name = get_string_param(CL_KERNEL_ARG_NAME, "CL_KERNEL_ARG_NAME");
       auto full_type_name =
-        get_string_param(CL_KERNEL_ARG_TYPE_NAME,"CL_KERNEL_ARG_TYPE_NAME");
+        get_string_param(CL_KERNEL_ARG_TYPE_NAME, "CL_KERNEL_ARG_TYPE_NAME");
       // e.g. float*
       bool is_pointer = false;
       auto star = full_type_name.find("*");
@@ -602,13 +603,13 @@ program_info *cls::k::parse_program_info_from_api(
           ai.arg_type = &pi->pointer_to(*ai.arg_type, bytes_per_addr);
       }
 
-      err = clGetKernelArgInfo(
-        ks[k_ix],
-        ka_ix,
-        CL_KERNEL_ARG_ADDRESS_QUALIFIER,
-        sizeof(ai.addr_qual),
-        &ai.addr_qual,
-        nullptr);
+      err = cl.clGetKernelArgInfo(
+          ks[k_ix],
+          ka_ix,
+          CL_KERNEL_ARG_ADDRESS_QUALIFIER,
+          sizeof(ai.addr_qual),
+          &ai.addr_qual,
+          nullptr);
       if (err != CL_SUCCESS) {
         ds.fatal_at(at,
           "failed to parse program info program object: "
@@ -616,13 +617,13 @@ program_info *cls::k::parse_program_info_from_api(
           cl_lib::status_to_symbol(err));
       }
 
-      err = clGetKernelArgInfo(
-        ks[k_ix],
-        ka_ix,
-        CL_KERNEL_ARG_ACCESS_QUALIFIER,
-        sizeof(ai.accs_qual),
-        &ai.accs_qual,
-        nullptr);
+      err = cl.clGetKernelArgInfo(
+          ks[k_ix],
+          ka_ix,
+          CL_KERNEL_ARG_ACCESS_QUALIFIER,
+          sizeof(ai.accs_qual),
+          &ai.accs_qual,
+          nullptr);
       if (err != CL_SUCCESS) {
         ds.fatal_at(at,
           "failed to parse program info program: "
@@ -630,7 +631,7 @@ program_info *cls::k::parse_program_info_from_api(
           cl_lib::status_to_symbol(err));
       }
 
-      err = clGetKernelArgInfo(
+      err = cl.clGetKernelArgInfo(
         ks[k_ix],
         ka_ix,
         CL_KERNEL_ARG_TYPE_QUALIFIER,
@@ -644,7 +645,7 @@ program_info *cls::k::parse_program_info_from_api(
           cl_lib::status_to_symbol(err));
       }
     } // for kernel args
-    err = clReleaseKernel(ks[k_ix]);
+    err = cl.clReleaseKernel(ks[k_ix]);
     if (err != CL_SUCCESS) {
       ds.fatal_at(at,
         "failed to parse program info program: clReleaseKernel(): ",

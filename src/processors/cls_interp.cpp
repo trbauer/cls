@@ -26,26 +26,22 @@ compiled_script_impl::~compiled_script_impl()
 {
   // deletes OpenCL driver resources
   for (surface_object *so : surfaces) {
-    CL_COMMAND(so->init->defined_at,
-      clReleaseMemObject,
+    CL_COMMAND(so->init->defined_at, cl_lib::DEFAULT.clReleaseMemObject,
         so->memobj);
   }
   for (kernel_object *ko : kernels) {
-    CL_COMMAND(ko->spec->defined_at,
-      clReleaseKernel,
+    CL_COMMAND(ko->spec->defined_at, cl_lib::DEFAULT.clReleaseKernel,
         ko->kernel);
   }
   for (program_object *po : programs) {
-    CL_COMMAND(po->spec->defined_at,
-      clReleaseProgram,
+    CL_COMMAND(po->spec->defined_at, cl_lib::DEFAULT.clReleaseProgram,
         po->program);
   }
   for (device_object *dobj : devices) {
-    CL_COMMAND(dobj->spec->defined_at,
-      clReleaseCommandQueue,
+    CL_COMMAND(dobj->spec->defined_at, cl_lib::DEFAULT.clReleaseCommandQueue,
         dobj->queue);
-    CL_COMMAND(dobj->spec->defined_at,
-      clReleaseContext,
+    CL_COMMAND(
+        dobj->spec->defined_at, cl_lib::DEFAULT.clReleaseContext,
         dobj->context);
 
     delete dobj->cl;
@@ -58,8 +54,7 @@ compiled_script_impl::~compiled_script_impl()
   }
 
   for (const auto &s : samplers) {
-    CL_COMMAND(std::get<0>(s),
-      clReleaseSampler,
+    CL_COMMAND(std::get<0>(s), cl_lib::DEFAULT.clReleaseSampler,
         std::get<1>(s));
   }
 
@@ -241,7 +236,7 @@ void evaluator::set_kernel_arg_immediate(
 
   CL_COMMAND(
     ris.defined_at, // use the arg actual location, not the let
-    clSetKernelArg,
+    dc.dobj->cl->clSetKernelArg,
       dc.kernel->kernel,
       arg_index,
       ab.size(),
@@ -318,11 +313,11 @@ void evaluator::set_kernel_arg_buffer(
     cl_mem memobj = nullptr;
     cl_context context = dc.kernel->program->device->context;
     CL_COMMAND_CREATE(memobj, at,
-      clCreateBuffer,
-        context,
-        cl_mfs,
-        buffer_size,
-        nullptr);
+        dc.dobj->cl->clCreateBuffer,
+          context,
+          cl_mfs,
+          buffer_size,
+          nullptr);
     so = csi->define_surface(
       ism,
       surface_object::SO_BUFFER,
@@ -337,11 +332,11 @@ void evaluator::set_kernel_arg_buffer(
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
   CL_COMMAND(at,
-    clSetKernelArg,
-      dc.kernel->kernel,
-      arg_index,
-      sizeof(cl_mem),
-      (const void *)&so->memobj);
+      dc.dobj->cl->clSetKernelArg,
+        dc.kernel->kernel,
+        arg_index,
+        sizeof(cl_mem),
+        (const void *)&so->memobj);
   debug_at(at,
     " ==> ARG ", ai.arg_type->syntax(), " ", ai.name, " = ", so->str());
 }
@@ -987,12 +982,12 @@ void evaluator::set_kernel_arg_image(
     cl_mem_flags cl_mfs = init_cl_mem_flags(ism);
     cl_mem memobj = nullptr;
     CL_COMMAND_CREATE(memobj, at,
-      clCreateImage,
-        dc.kernel->program->device->context,
-        cl_mfs,
-        &img_fmt,
-        &img_desc,
-        nullptr);
+        dc.dobj->cl->clCreateImage,
+          dc.kernel->program->device->context,
+          cl_mfs,
+          &img_fmt,
+          &img_desc,
+          nullptr);
     so = csi->define_surface(
       ism,
       surface_object::SO_IMAGE,
@@ -1015,11 +1010,11 @@ void evaluator::set_kernel_arg_image(
   so->dispatch_uses.emplace_back(&dc, arg_index, ai);
   //
   CL_COMMAND(at,
-    clSetKernelArg,
-      dc.kernel->kernel,
-      arg_index,
-      sizeof(cl_mem),
-      (const void *)&so->memobj);
+      dc.dobj->cl->clSetKernelArg,
+        dc.kernel->kernel,
+        arg_index,
+        sizeof(cl_mem),
+        (const void *)&so->memobj);
   //
   ss << "IMG<";
   ss << img_desc.image_width;
@@ -1114,17 +1109,15 @@ void evaluator::set_kernel_arg_sampler(
 
   cl_context context = dc.dobj->context;
   cl_sampler sampler;
-  CL_COMMAND_CREATE(
-    sampler, ris.defined_at,
-    clCreateSampler,
-      context,
-      ndc,
-      am,
-      fm);
+  CL_COMMAND_CREATE(sampler, ris.defined_at,
+      dc.dobj->cl->clCreateSampler,
+        context,
+        ndc,
+        am,
+        fm);
   csi->samplers.emplace_back(ris.defined_at, sampler);
-  CL_COMMAND(
-    ris.defined_at,
-    clSetKernelArg,
+  CL_COMMAND(ris.defined_at,
+    dc.dobj->cl->clSetKernelArg,
       dc.kernel->kernel,
       arg_index,
       sizeof(cl_sampler),
@@ -1162,9 +1155,8 @@ void evaluator::set_kernel_arg_slm(
   evaluator::context ec(dc);
   auto v = csi->e->eval_to<size_t>(ec,(const init_spec_atom *)is);
   size_t local_bytes = (size_t)v.u64;
-  CL_COMMAND(
-    ris.defined_at, // use the arg actual location, not the let
-    clSetKernelArg,
+  CL_COMMAND(ris.defined_at, // use the arg actual location, not the let
+    dc.dobj->cl->clSetKernelArg,
       dc.kernel->kernel,
       arg_index,
       local_bytes,

@@ -46,7 +46,7 @@ private:
   device_object &create_device_object(const device_spec *ds);
 
   std::string get_labeled_build_log(
-    const loc &at, cl_program p, cl_device_id dev_id);
+      const loc &at, cl_program p, device_object &dobj);
 };
 
 // a dummy type for size_t[3]
@@ -71,19 +71,20 @@ std::ostream &operator <<(std::ostream &os, ndr_temp t) {
 #if 0
 // dummy type to represent size_t[3] and emit to an ostream
 static void emit_compiled_kernel_property_dims(
-  cl_kernel kernel,
-  cl_device_id device,
-  cl_int param,
-  const char *param_name)
+    const cl_lib &cl,
+    cl_kernel kernel,
+    cl_device_id device,
+    cl_int param,
+    const char *param_name)
 {
   std::cout << std::setw(48) << param_name << ": ";
   size_t vals[3];
   auto err =
-    clGetKernelWorkGroupInfo(
-      kernel, device, param,
-      sizeof(vals),
-      &vals[0],
-      nullptr);
+      cl.clGetKernelWorkGroupInfo(
+        kernel, device, param,
+        sizeof(vals),
+        &vals[0],
+        nullptr);
   if (err != CL_SUCCESS) {
     std::cout << text::spans::RED(status_to_symbol(err));
   } else {
@@ -99,23 +100,24 @@ static void emit_compiled_kernel_property_dims(
 static void emit_param_name(const char *param_name)
 {
   std::cout << std::left <<
-    std::setw(48) << (std::string(param_name) + ':') << " ";
+      std::setw(48) << (std::string(param_name) + ':') << " ";
 }
 
 template <typename T>
 static void emit_compiled_kernel_workgroup_property(
-  cl_kernel kernel,
-  cl_device_id device,
-  cl_int param,
-  const char *param_name,
-  bool is_mem,
-  const char *units = nullptr)
+    const cl_lib &cl,
+    cl_kernel kernel,
+    cl_device_id device,
+    cl_int param,
+    const char *param_name,
+    bool is_mem,
+    const char *units = nullptr)
 {
   std::cout << text::ANSI_FADED;
   emit_param_name(param_name);
   T val;
   auto err =
-    clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
+      cl.clGetKernelWorkGroupInfo(kernel, device, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
     std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
@@ -139,18 +141,19 @@ static void emit_compiled_kernel_workgroup_property(
 
 template <typename T>
 static void emit_compiled_kernel_property(
-  cl_kernel kernel,
-  cl_device_id device,
-  cl_int param,
-  const char *param_name,
-  bool is_mem,
-  const char *units = nullptr)
+    const cl_lib &cl,
+    cl_kernel kernel,
+    cl_device_id device,
+    cl_int param,
+    const char *param_name,
+    bool is_mem,
+    const char *units = nullptr)
 {
   std::cout << text::ANSI_FADED;
   emit_param_name(param_name);
   T val;
   auto err =
-    clGetKernelInfo(kernel, param, sizeof(T), &val, nullptr);
+      cl.clGetKernelInfo(kernel, param, sizeof(T), &val, nullptr);
   if (err != CL_SUCCESS) {
     std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
@@ -173,22 +176,22 @@ static void emit_compiled_kernel_property(
 }
 
 static void emit_compiled_kernel_property_str(
-  cl_kernel kernel,
-  cl_device_id device,
-  cl_int param,
-  const char *param_name)
+    const cl_lib &cl,
+    cl_kernel kernel,
+    cl_device_id device,
+    cl_int param,
+    const char *param_name)
 {
   std::cout << text::ANSI_FADED;
   emit_param_name(param_name);
   size_t n;
-  auto err = clGetKernelInfo(kernel, param, 0, nullptr, &n);
+  auto err = cl.clGetKernelInfo(kernel, param, 0, nullptr, &n);
   if (err != CL_SUCCESS) {
     std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
   } else {
     std::vector<char> cs;
     cs.resize(n + 1, 0);
-    err =
-        clGetKernelInfo(kernel, param, n, cs.data(), nullptr);
+    err = cl.clGetKernelInfo(kernel, param, n, cs.data(), nullptr);
     if (err != CL_SUCCESS) {
       std::cout << text::ANSI_RED << cl_lib::status_to_symbol(err);
     } else {
@@ -217,28 +220,28 @@ clGetSubgroupInfo_Fn find_subgroup_function()
   if (function == nullptr) {
     void *lib = sys::load_library("OpenCL");
     function = (clGetSubgroupInfo_Fn)
-      sys::get_symbol_address(lib, "clGetKernelSubGroupInfo");
+        sys::get_symbol_address(lib, "clGetKernelSubGroupInfo");
     if (function == nullptr)
       function = (clGetSubgroupInfo_Fn)
-        sys::get_symbol_address(lib, "clGetKernelSubGroupInfoKHR");
+          sys::get_symbol_address(lib, "clGetKernelSubGroupInfoKHR");
     if (function == nullptr)
       function = (clGetSubgroupInfo_Fn)
-        sys::get_symbol_address(lib, "clGetKernelSubGroupInfoIntel");
+          sys::get_symbol_address(lib, "clGetKernelSubGroupInfoIntel");
   }
   return function;
 }
 
 template <typename T>
 static void emit_compiled_kernel_subgroup_property(
-  clGetSubgroupInfo_Fn fn,
-  cl_kernel kernel,
-  cl_device_id device,
-  cl_kernel_sub_group_info param,
-  const char *param_name,
-  size_t inp_size,
-  const void *inp,
-  bool is_mem,
-  const char *units = nullptr)
+    clGetSubgroupInfo_Fn fn,
+    cl_kernel kernel,
+    cl_device_id device,
+    cl_kernel_sub_group_info param,
+    const char *param_name,
+    size_t inp_size,
+    const void *inp,
+    bool is_mem,
+    const char *units = nullptr)
 {
   std::cout << text::ANSI_FADED;
   emit_param_name(param_name);
@@ -271,19 +274,18 @@ static void emit_compiled_kernel_properties(
   cl_device_id device = ko.program->device->device;
   cl_spec spec = get_device_spec(device);
 
-
 #define KERNEL_WORKGROUP_PROPERTY(MINSPEC,PARAM,TYPE) \
   if (spec >= (MINSPEC)) \
     emit_compiled_kernel_workgroup_property<TYPE>(\
-      kernel, device, PARAM, #PARAM, false, nullptr)
+        *ko.program->device->cl, kernel, device, PARAM, #PARAM, false, nullptr)
 #define KERNEL_WORKGROUP_PROPERTY_DIM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
     emit_compiled_kernel_workgroup_property(\
-      kernel, device, PARAM, #PARAM)
+        *ko.program->device->cl, kernel, device, PARAM, #PARAM)
 #define KERNEL_WORKGROUP_PROPERTY_MEM(MINSPEC,PARAM) \
   if (spec >= (MINSPEC)) \
     emit_compiled_kernel_workgroup_property<cl_ulong>(\
-      kernel, device, PARAM, #PARAM, true, nullptr)
+        *ko.program->device->cl, kernel, device, PARAM, #PARAM, true, nullptr)
 
   std::cout << text::ANSI_FADED << "=== clGetKernelWorkGroupInfo\n"
             << text::ANSI_RESET;
@@ -335,11 +337,11 @@ static void emit_compiled_kernel_properties(
 #define KERNEL_PROPERTY(MINSPEC, PARAM, TYPE, UNITS) \
   if (spec >= (MINSPEC)) \
     emit_compiled_kernel_property<TYPE>(\
-      kernel, device, PARAM, #PARAM, false, UNITS)
+        *ko.program->device->cl, kernel, device, PARAM, #PARAM, false, UNITS)
 #define KERNEL_PROPERTY_STR(MINSPEC, PARAM) \
   if (spec >= (MINSPEC)) \
     emit_compiled_kernel_property_str(\
-      kernel, device, PARAM, #PARAM)
+        *ko.program->device->cl, kernel, device, PARAM, #PARAM)
   std::cout << text::ANSI_FADED << "=== clGetKernelInfo\n"
             << text::ANSI_RESET;
 
@@ -373,40 +375,40 @@ kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
   //
   // NOTE: avoid CL_COMMAND_CREATE macro because we want error code
   cl_int err_ck = 0;
-  auto k = clCreateKernel(ko.program->program, ks->name.c_str(), &err_ck);
+  const cl_lib &cl = *ko.program->device->cl;
+  auto k = cl.clCreateKernel(ko.program->program, ks->name.c_str(), &err_ck);
   if (err_ck == CL_SUCCESS) {
     ko.kernel = k;
   } else if (err_ck == CL_INVALID_KERNEL_NAME) {
     std::stringstream ss;
     std::vector<cl_kernel> all_ks;
     cl_uint nks;
-    cl_int err =
-      clCreateKernelsInProgram(po->program, 0, nullptr, &nks);
+    cl_int err = cl.clCreateKernelsInProgram(po->program, 0, nullptr, &nks);
     if (err != CL_SUCCESS) {
       fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
-        cl_lib::status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
     }
     all_ks.resize(nks);
-    err =
-      clCreateKernelsInProgram(po->program, nks, all_ks.data(), nullptr);
+    err = cl.clCreateKernelsInProgram(po->program, nks, all_ks.data(), nullptr);
     if (err != CL_SUCCESS) {
       fatal_at(ks->defined_at, "clCreateKernelsInProgram: ",
-        cl_lib::status_to_symbol(err));
+          cl_lib::status_to_symbol(err));
     }
     ss << "valid kernels in the program are:\n";
     for (cl_kernel k : all_ks) {
       size_t n;
-      auto err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, 0, nullptr, &n);
+      auto err = cl.clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, 0, nullptr, &n);
       if (err != CL_SUCCESS)
         fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-          cl_lib::status_to_symbol(err));
+            cl_lib::status_to_symbol(err));
 
       char *name = (char *)alloca(n + 1);
       memset(name, 0, n + 1);
-      err = clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n + 1, name, nullptr);
+      err =
+          cl.clGetKernelInfo(k, CL_KERNEL_FUNCTION_NAME, n + 1, name, nullptr);
       if (err != CL_SUCCESS)
         fatal_at(ks->defined_at, "clGetKernelInfo(CL_KERNEL_FUNCTION_NAME): ",
-          cl_lib::status_to_symbol(err));
+            cl_lib::status_to_symbol(err));
       ss << " * " << name << "\n";
     }
     fatal_at(ks->defined_at,"unable to find kernel in program\n",ss.str());
@@ -431,13 +433,13 @@ kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
   // Fetch the required workgroup size
   // __attribute__((reqd_work_group_size(X, Y, Z)))
   CL_COMMAND(ks->defined_at,
-    clGetKernelWorkGroupInfo,
-      ko.kernel,
-      po->device->device,
-      CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
-      sizeof(ko.kernel_info->reqd_word_group_size),
-      ko.kernel_info->reqd_word_group_size,
-      nullptr);
+      cl.clGetKernelWorkGroupInfo,
+        ko.kernel,
+        po->device->device,
+        CL_KERNEL_COMPILE_WORK_GROUP_SIZE,
+        sizeof(ko.kernel_info->reqd_word_group_size),
+        ko.kernel_info->reqd_word_group_size,
+        nullptr);
 
   if (is_debug()) {
     debug_at(ks->defined_at,
@@ -449,17 +451,18 @@ kernel_object &script_compiler::compile_kernel(const kernel_spec *ks)
 }
 
 std::string script_compiler::get_labeled_build_log(
-  const loc &at, cl_program p, cl_device_id dev_id)
+    const loc &at, cl_program p, device_object &dobj)
 {
+  cl_device_id dev_id = dobj.device;
   size_t len = 0;
   CL_COMMAND(at,
-    clGetProgramBuildInfo,
-      p, dev_id, CL_PROGRAM_BUILD_LOG, 0, nullptr, &len);
+      dobj.cl->clGetProgramBuildInfo,
+        p, dev_id, CL_PROGRAM_BUILD_LOG, 0, nullptr, &len);
   char *log_buf = (char *)alloca(len + 1);
 
   CL_COMMAND(at,
-    clGetProgramBuildInfo,
-      p, dev_id, CL_PROGRAM_BUILD_LOG, len, log_buf, nullptr);
+      dobj.cl->clGetProgramBuildInfo,
+        p, dev_id, CL_PROGRAM_BUILD_LOG, len, log_buf, nullptr);
   log_buf[len] = 0;
 
   std::stringstream ss;
@@ -562,37 +565,35 @@ program_object &script_compiler::compile_program(const program_spec *ps)
     const char *src = inp.c_str();
     size_t len = inp.size();
     CL_COMMAND_CREATE(po.program, ps->defined_at,
-      clCreateProgramWithSource,
-      ctx, 1, &src, &len);
+        po.device->cl->clCreateProgramWithSource,
+          ctx, 1, &src, &len);
 
-    cl_int bp_err =
-      clBuildProgram(po.program, 1, &po.device->device,
+    cl_int bp_err = po.device->cl->clBuildProgram(
+        po.program,
+        1,
+        &po.device->device,
         build_opts.c_str(), nullptr, nullptr);
     if (bp_err == CL_BUILD_PROGRAM_FAILURE) {
       std::stringstream ss;
       ss << "failed to build source:\n";
-      ss << get_labeled_build_log(
-        ps->defined_at,
-        po.program,
-        po.device->device) << "\n";
+      ss << get_labeled_build_log(ps->defined_at, po.program, *po.device)
+         << "\n";
       fatal_at(ps->defined_at, ss.str());
     } else if (bp_err == CL_SUCCESS && os.verbosity >= 2) {
       // CL_PROGRAM_BUILD_GLOBAL_VARIABLE_TOTAL_SIZE
-      debug_at(ps->defined_at, get_labeled_build_log(
-        ps->defined_at,
-        po.program,
-        po.device->device));
+      debug_at(
+          ps->defined_at,
+          get_labeled_build_log(ps->defined_at, po.program, *po.device));
 
       cl_program_binary_type bt = 0;
-      CL_COMMAND(
-          ps->defined_at,
-          clGetProgramBuildInfo,
-          po.program,
-          po.device->device,
-          CL_PROGRAM_BINARY_TYPE,
-          sizeof(bt),
-          &bt,
-          nullptr);
+      CL_COMMAND(ps->defined_at,
+          po.device->cl->clGetProgramBuildInfo,
+            po.program,
+            po.device->device,
+            CL_PROGRAM_BINARY_TYPE,
+            sizeof(bt),
+            &bt,
+            nullptr);
       auto btstr = text::expand_bitset(
           bt,
           {
@@ -631,16 +632,16 @@ program_object &script_compiler::compile_program(const program_spec *ps)
 
       size_t bits_len = 0;
       CL_COMMAND(ps->defined_at,
-        clGetProgramInfo,
-          po.program,
-          CL_PROGRAM_BINARY_SIZES,
-          sizeof(bits_len),
-          &bits_len,
-          nullptr);
+          po.device->cl->clGetProgramInfo,
+            po.program,
+            CL_PROGRAM_BINARY_SIZES,
+            sizeof(bits_len),
+            &bits_len,
+            nullptr);
       unsigned char *bits = (unsigned char *)alloca(bits_len);
       CL_COMMAND(ps->defined_at,
-        clGetProgramInfo,
-          po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
+          po.device->cl->clGetProgramInfo,
+            po.program, CL_PROGRAM_BINARIES, bits_len, &bits, nullptr);
 
       // int err_x = 0;
       // CL_COMMAND_CREATE(po.program, ps->defined_at,
@@ -658,30 +659,30 @@ program_object &script_compiler::compile_program(const program_spec *ps)
     auto bits = sys::read_file_binary(ps->path);
     if (is_spv) {
       CL_COMMAND_CREATE(po.program, ps->defined_at,
-        clCreateProgramWithIL,
-        ctx,
-        bits.data(),
-        bits.size());
+          po.device->cl->clCreateProgramWithIL,
+            ctx,
+            bits.data(),
+            bits.size());
     } else {
       const uint8_t *bin = bits.data();
       size_t bin_len = bits.size();
       CL_COMMAND_CREATE(po.program, ps->defined_at,
-        clCreateProgramWithBinary,
-          ctx,
-          1,
-          &po.device->device,
-          &bin_len,
-          &bin,
-          nullptr);
+          po.device->cl->clCreateProgramWithBinary,
+            ctx,
+            1,
+            &po.device->device,
+            &bin_len,
+            &bin,
+            nullptr);
     }
     CL_COMMAND(ps->defined_at,
-      clBuildProgram,
-        po.program,
-        1,
-        &po.device->device,
-        build_opts.empty() ? nullptr : build_opts.c_str(),
-        nullptr,
-        nullptr);
+        po.device->cl->clBuildProgram,
+          po.program,
+          1,
+          &po.device->device,
+          build_opts.empty() ? nullptr : build_opts.c_str(),
+          nullptr,
+          nullptr);
   }
 
   ////////////////////////////////////////////////
@@ -693,7 +694,8 @@ program_object &script_compiler::compile_program(const program_spec *ps)
       get_diagnostics(),
       ps->defined_at,
       po.program,
-      po.device->device);
+      po.device->device,
+      *po.device->cl);
   } else {
     // use kargs library
     po.program_info = parse_program_info(
@@ -814,13 +816,13 @@ static cl_command_queue make_command_queue(
     queue                = cl.clCreatePerfCountersCommandQueueINTEL(
         ctx, dev_id, props, mdapi_config, &err);
   } else {
-    queue = clCreateCommandQueue(ctx, dev_id, props, &err);
+    queue = cl.clCreateCommandQueue(ctx, dev_id, props, &err);
   }
   if (err != CL_SUCCESS) {
     ds.fatal_at(
-      at,
-      cl_function, ": failed to create command queue for device "
-      "(", cl_lib::status_to_symbol(err), ")");
+        at,
+        cl_function, ": failed to create command queue for device "
+        "(", cl_lib::status_to_symbol(err), ")");
   }
   return queue;
 }
@@ -872,12 +874,11 @@ device_object &script_compiler::create_device_object(const device_spec *ds)
           ds->defined_at,
           "-tMD=", os.metric_counter_set, ": failed to bind to counter set");
   }
-  cl_lib *cl = new cl_lib(os.verbosity, dev_id);
 
   cl_context context;
   // const cl_context_properties props {...};
   CL_COMMAND_CREATE(context, ds->defined_at,
-    clCreateContext,
+    dobj.cl->clCreateContext,
       nullptr,
       1,
       &dev_id,
@@ -1037,7 +1038,7 @@ void script_compiler::compile()
         cl_mem memobj = nullptr;
         cl_context context = dc->kernel->program->device->context;
         CL_COMMAND_CREATE(memobj, ism_ref->defined_at,
-          clCreateBuffer,
+          dc->dobj->cl->clCreateBuffer,
             context,
             cl_mfs,
             dfsc->so_sut->size_in_bytes,

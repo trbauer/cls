@@ -1,7 +1,7 @@
 #ifndef PARSER_KARGS
 #define PARSER_KARGS
 
-#include "../cl_headers.hpp"
+#include "../cl_lib.hpp"
 #include "../cls_opts.hpp"
 #include "../fatal.hpp"
 #include "../ir/types.hpp"
@@ -106,7 +106,8 @@ namespace cls
       const cls::opts &os,
       cls::diagnostics &ds, cls::loc at,
       cl_program program,
-      cl_device_id dev_id);
+      cl_device_id dev_id,
+      const cl_lib &cl);
 
     // https://www.khronos.org/registry/OpenCL/sdk/2.1/docs/man/xhtml/functionQualifiers.html
     // __attribute__((vec_type_hint(<type>)))

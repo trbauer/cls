@@ -110,6 +110,8 @@ cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
   BIND_SYM(clEnqueueUnmapMemObject);
   BIND_SYM(clEnqueueNDRangeKernel);
   //
+  BIND_SYM(clCreateSampler);
+  //
   clGetExtensionFunctionAddressForPlatform =
       (clGetExtensionFunctionAddressForPlatform_Fn)find(
           "clGetExtensionFunctionAddressForPlatform");
