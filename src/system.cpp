@@ -593,7 +593,7 @@ std::string sys::find_exe(const char *exe)
 #else
   path_value = getenv("PATH");
 #endif
-  std::stringstream stream(path_value);
+  std::stringstream stream(path_value ? path_value : "");
 #ifdef _WIN32
   const char path_sep = ';';
 #else
@@ -733,7 +733,7 @@ static void process_reader(process_io_args args)
     DWORD nr = 0;
     if (!ReadFile(args.handle, buf, sizeof(buf) - 1, &nr, NULL)) {
       DWORD err = GetLastError();
-      if (err = ERROR_BROKEN_PIPE) {
+      if (err == ERROR_BROKEN_PIPE) {
         if (nr > 0) {
           buf[nr] = 0;
           ss << buf;
@@ -766,7 +766,7 @@ static void process_writer(process_io_args args)
       NULL))
     {
       DWORD err = GetLastError();
-      if (err = ERROR_BROKEN_PIPE) {
+      if (err == ERROR_BROKEN_PIPE) {
         break;
       }
       cls::fatal("process_writer failed ", (int)err);
