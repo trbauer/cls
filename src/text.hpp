@@ -2,6 +2,7 @@
 #define _TEXT_HPP
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <iomanip>

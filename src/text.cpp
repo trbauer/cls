@@ -373,7 +373,10 @@ static void test_integral_seq_parse(
   auto x0 = parse_func(inp, seps, &end_act);
   // special handling for nullptr case (ignore end)
   if (x0 != exp) {
-    cls::fatal("FAILED: value incorrect (", x0, ")\n");
+    auto val_str =
+        x0 ? text::format(*x0)
+           : "std::nullopt";
+    cls::fatal("FAILED: value incorrect (", val_str, ")\n");
   } else if (exp && (!end_act || end_exp != end_act)) {
     // only check end pointer if parsing succeeded
     cls::fatal("FAILED: end_ptr is incorrect (", to_str(end_act), ")\n");
@@ -412,12 +415,12 @@ void test_int_parsing()
   testS("-13", nullptr, -13);
   testS("-0xA", nullptr, -0xA);
   testS("-0xA1", nullptr, -0xA1);
-  testS("0xFEDCBA9876543210", nullptr, 0xFEDCBA9876543210i64);
+  testS("0xFEDCBA9876543210", nullptr, 0xFEDCBA9876543210LL);
   testS("0xFEDCBA9876543210A");
-  testS("0x8000000000000000", nullptr, 0x8000000000000000i64);
-  testS("0x7FFFFFFFFFFFFFFF", nullptr, 0x7FFFFFFFFFFFFFFFi64);
-  testS("-0x7FFFFFFFFFFFFFFF", nullptr, -0x7FFFFFFFFFFFFFFFi64);
-  testS("-0x8000000000000000", nullptr, -0x8000000000000000i64);
+  testS("0x8000000000000000", nullptr, 0x8000000000000000LL);
+  testS("0x7FFFFFFFFFFFFFFF", nullptr, 0x7FFFFFFFFFFFFFFFLL);
+  testS("-0x7FFFFFFFFFFFFFFF", nullptr, -0x7FFFFFFFFFFFFFFFLL);
+  testS("-0x8000000000000000", nullptr, -0x8000000000000000LL);
   // suffixes
   testS("4 K", nullptr, 4, " K");
   testS("-0x45, abc", nullptr, -0x45, ", abc");

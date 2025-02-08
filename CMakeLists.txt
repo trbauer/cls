@@ -142,14 +142,16 @@ file(GLOB MDAPI_SRC
   "deps/mdapi/*.h" "deps/mdapi/*.hpp" "deps/mdapi/*.cpp"
 )
 
-source_group("src" FILES ${CLS_ROOT})
-source_group("src\\ir" FILES ${CLS_IR})
-source_group("src\\parser" FILES ${CLS_PARSE})
-source_group("src\\interp" FILES ${CLS_PROC})
-if (${USE_LODE_PNG})
-  source_group("src\\deps\\lodepng" FILES ${LODE_PNG_SRC})
+if (MSVC)
+  source_group("src" FILES ${CLS_ROOT})
+  source_group("src\\ir" FILES ${CLS_IR})
+  source_group("src\\parser" FILES ${CLS_PARSE})
+  source_group("src\\interp" FILES ${CLS_PROC})
+  if (${USE_LODE_PNG})
+    source_group("src\\deps\\lodepng" FILES ${LODE_PNG_SRC})
+  endif()
+  source_group("src\\deps\\mdapi" FILES ${MDAPI_SRC})
 endif()
-source_group("src\\deps\\mdapi" FILES ${MDAPI_SRC})
 
 set(CLS_SOURCES
   ${CLS_ROOT}
@@ -214,11 +216,11 @@ if (WIN32)
     message(FATAL_ERROR
        "deps/oclsdk/* not found; download Intel OpenCL SDK and copy in inlcude and libs under this")
   endif()
-  set(OpenCL_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/include")
-  if (NOT EXISTS "${OpenCL_INCLUDE_DIRS}")
-    message(FATAL_ERROR
-        "${OpenCL_INCLUDE_DIRS}: OpenCL include directory; setup deps/oclsdk/include")
-  endif()
+  # set(OpenCL_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/include")
+  # if (NOT EXISTS "${OpenCL_INCLUDE_DIRS}")
+  #  message(FATAL_ERROR
+  #      "${OpenCL_INCLUDE_DIRS}: OpenCL include directory; setup deps/oclsdk/include")
+  # endif()
 #  if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 #    set(OpenCL_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/deps/oclsdk/lib/x86/OpenCL.lib")
 #  else()
@@ -228,14 +230,11 @@ if (WIN32)
 #    message(FATAL_ERROR
 #        "${OpenCL_LIBRARIES}: OpenCL library not found; setup deps/oclsdk")
 #  endif()
-else()
-  find_package(OpenCL REQUIRED)
 endif()
 
-target_include_directories("${CLS_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS})
+target_include_directories("${CLS_EXE}" PUBLIC "deps/oclsdk/include")
 if (WIN32)
-  target_link_libraries("${CLS_EXE}" SetupAPI Shlwapi)
-#  target_link_libraries("${CLS_EXE}" "${OpenCL_LIBRARIES}" SetupAPI Shlwapi)
+  target_link_libraries("${CLS_EXE}" SetupAPI Shlwapi) # SetupAPI
 else()
   target_link_libraries("${CLS_EXE}" ${OpenCL_LIBRARIES} "dl" "pthread")
 endif()
@@ -271,10 +270,12 @@ set(CL2BIN_SOURCES
 
 add_executable("${CL2BIN_EXE}" ${CL2BIN_SOURCES})
 
-source_group("src\\cl2bin" FILES "src/cl2bin/cl2bin.cpp")
+if (MSVC)
+  source_group("src\\cl2bin" FILES "src/cl2bin/cl2bin.cpp")
+endif()
 
-target_compile_features(${CL2BIN_EXE} PRIVATE cxx_std_20)
-target_include_directories("${CL2BIN_EXE}" PUBLIC ${OpenCL_INCLUDE_DIRS} "src")
+target_compile_features("${CL2BIN_EXE}" PRIVATE cxx_std_20)
+target_include_directories("${CL2BIN_EXE}" PUBLIC "deps/oclsdk/include" "src")
 
 
 if (MSVC)

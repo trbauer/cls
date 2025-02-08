@@ -154,7 +154,8 @@ int main(int argc, const char **argv)
   if (os.device_filter.empty()) {
     dev = get_device_default();
   } else if (std::all_of(os.device_filter.begin(),
-                         os.device_filter.end(), std::isdigit)) {
+                         os.device_filter.end(),
+                         [](char c){return std::isdigit(c);})) {
     dev = get_device_by_index(cls_os, std::atoi(os.device_filter.c_str()));
   } else {
     std::string err;
