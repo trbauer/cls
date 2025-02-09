@@ -844,15 +844,24 @@ addSaveImageTest os ts_ior = do
       mkOutputMatcher tystr _ _ _ = do
         let ref_file = "tests/save-image-" ++ tystr ++ "-ref.ppm"
             sut_file = mkSutFile tystr
-        let fail msg = mFail (ref_file ++ ": " ++ msg)
         zr <- doesFileExist ref_file
         zs <- doesFileExist sut_file
-        if not zr then mFail (ref_file ++ ": output file not found")
-          else if not zs then mFail (sut_file ++ ": INTERNAL ERROR: reference file not found")
+        if not zs then mFail (sut_file ++ ": output file not found")
+          else if not zr then mFail (ref_file ++ ": INTERNAL ERROR: reference file not found")
           else do
-            bs1 <- BS.readFile sut_file
-            bs2 <- BS.readFile ref_file
-            if bs1 /= bs2 then mFail (sut_file ++ ": mismatch in image output")
+            -- PPM files are text and will save with \r\n on Windows on \n on Linux
+            -- Use text comparison by lines so the test functions on both platforms.
+            let stripCR = concatMap (\c -> if c /= '\r' then [c] else [])
+            ss_r <- stripCR <$> readFile' ref_file
+            -- putStrLn "============" >> mapM_ print ss_r
+            ss_s <- stripCR <$> readFile' sut_file
+            -- putStrLn "============" >> mapM_ print ss_s
+            -- bs_r <- BS.readFile ref_file
+            -- bs_s <- BS.readFile sut_file
+            if ss_r /= ss_s
+              then do
+                copyFile sut_file (sut_file ++ ".failed")
+                mFail (sut_file ++ ": mismatch in image output")
               else mSuccess
 
   let t_setup0 = removeIfExists (mkSutFile "uchar4")

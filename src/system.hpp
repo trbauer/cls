@@ -59,8 +59,6 @@ static bool strsfx(const char *sfx, std::string str)
   return str.rfind(sfx) == str.size() - strlen(sfx);
 }
 
-
-
 namespace sys
 {
   /////////////////////////////////////////////////////////////////////////////
@@ -223,6 +221,10 @@ namespace sys
   void               close_library(void *lib);
   void              *get_loaded_library(const char *name);
   void              *get_symbol_address(void *lib,const char *name);
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Fetching environment variable
+  std::optional<std::string> find_env(std::string var);
 
   /////////////////////////////////////////////////////////////////////////////
   // PROCESS CREATION

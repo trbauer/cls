@@ -443,7 +443,7 @@ std::string sys::get_temp_dir(status &st)
   tmp_path[tmp_dir_len] = 0;
   path = tmp_path;
 #else
-  const char *e = getenv("TEMP");
+  const char *e = ::getenv("TEMP");
   if (e == nullptr) {
     e = getenv("TMP");
   }
@@ -591,7 +591,7 @@ std::string sys::find_exe(const char *exe)
     free(msc_buf);
   }
 #else
-  path_value = getenv("PATH");
+  path_value = ::getenv("PATH");
 #endif
   std::stringstream stream(path_value ? path_value : "");
 #ifdef _WIN32
@@ -700,6 +700,30 @@ void *sys::get_symbol_address(void *lib, const char *name) {
 #else
   return dlsym(lib,name);
 #endif
+}
+
+// Fetching environment variable
+std::optional<std::string> sys::find_env(std::string var)
+{
+#ifdef _WIN32
+  //  errno_t getenv_s(
+  //      size_t *restrict len, char *restrict value,
+  //      rsize_t valuesz, const char *restrict name);
+  size_t len = 0;
+  char buf[4096];
+  char *val = nullptr;
+  auto err = getenv_s(&len, val, sizeof(buf), var.c_str());
+  if (val != 0) {
+    return std::nullopt;
+  }
+  return std::make_optional<std::string>(val);
+#else // !_WIN32
+  const char *val = ::getenv(var.c_str());
+  if (val == nullptr) {
+    return std::nullopt;
+  }
+#endif // _WIN32
+  return std::make_optional<std::string>(val);
 }
 
 

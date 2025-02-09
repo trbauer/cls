@@ -13,7 +13,18 @@ using namespace cls;
 #ifdef WIN32
   const char *LIB_FILE = "OpenCL.dll";
 #else
-  const char *LIB_FILE = "libOpenCL.so";
+  // Hints on getting this working in WSL.
+  // 1. Build POCL (see https://github.com/microsoft/WSL/issues/6951#issuecomment-1955857286 )
+  // 2. (sudo make install)
+  // 3. On my system pocl added
+  //          /usr/local/etc/OpenCL/vendors/pocl.icd
+  //  but my KHR loader required /etc/OpenCL/vendors
+  // Other useful paths to know:
+  //   /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 (ICD loader that lib load takes)
+  //   /usr/local/share/pocl/include/opencl-c.h
+  //   /usr/local/lib/libpocl.so
+  //   /usr/local/bin/poclcc
+const char *LIB_FILE = "libOpenCL.so";
 #endif
 
 const cl_lib cl_lib::DEFAULT {0, nullptr};
@@ -21,10 +32,14 @@ const cl_lib cl_lib::DEFAULT {0, nullptr};
 cl_lib::cl_lib(int _verbosity, cl_device_id dev_id, bool auto_ld_exts)
     : verbosity(_verbosity)
 {
-  lib = sys::load_library(LIB_FILE);
+  std::string lib_file = LIB_FILE;
+  if (auto override = sys::find_env("CLS_OPENCL_LIB_PATH")) {
+    lib_file = *override;
+  }
+  lib = sys::load_library(lib_file.c_str());
   if (!lib) {
-    std::cerr << LIB_FILE << ": failed to load\n";
-    return;
+    std::cerr << lib_file << ": failed to load\n";
+    exit(EXIT_INTERNAL_ERROR);
   }
 
   auto get = [&](const char *func) {
